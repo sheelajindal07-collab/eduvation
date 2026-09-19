@@ -1,73 +1,81 @@
 # Status
 
-**Milestone:** M0 (BCI-001), M1 (BCI-002), **M2 all DONE** (BCI-003).
-**M3 starting** (BCI-004). **Commit:** see `git log -1` on `main`.
-**Repo:** [github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
+**Milestone:** M0 (BCI-001), M1 (BCI-002), M2 (BCI-003) all DONE. **M3
+first slice shipped** (BCI-004: sign-in + saved plans). **Commit:** see
+`git log -1` on `main`. **Repo:**
+[github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
 verified healthy, talking to the real database).
 
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
-- `GET /compare?pathway_id=X&pathway_id=Y` — trust-labelled comparison
-  fields plus a real computed `net_to_arrange` (not just a raw claim
-  value); `?estimated_additional_expenses=` overrides the assumption for
-  one request, never persisted; a missing verified-charges claim still
-  correctly returns `net_to_arrange: null`, even with an override
-  present.
-- `GET /eligibility?pathway_id=X&age=..&marks_percentage=..&...` —
-  criteria built **dynamically from a pathway's own published claims**,
-  never hardcoded per exam. No claims published → vacuously `meets`,
-  not a fabricated unknown.
-- `POST /timeline` — stateless Career Life Span Calculator; client sends
-  editable stages, gets the computed total, honest about unknown
-  durations and overlap.
+- `GET /compare?pathway_id=X&pathway_id=Y` — trust-labelled fields plus
+  a real computed `net_to_arrange`; assumption editing via query param.
+- `GET /eligibility?pathway_id=X&age=..&...` — criteria built
+  dynamically from a pathway's own published claims.
+- `POST /timeline` — stateless Career Life Span Calculator.
+- `POST /auth/sign-up`, `POST /auth/sign-in` — real Supabase Auth,
+  proven to actually authenticate against RLS (not just well-formed).
+- `POST/GET/PATCH/DELETE /plans` — save/list/edit/delete a plan. **Code
+  complete, lint/typecheck/CI clean — but the 7 live tests for this one
+  are currently skipping**, not passing: migration `0002_saved_plans.sql`
+  hasn't been applied to the project yet. See "Needs your input" below —
+  this is the one real thing blocking full verification right now.
 - Deployed on your Oracle VM alongside `hisab`/`lekha`/`attendance-app`,
-  same conventions, nothing else touched.
+  nothing else touched.
 
-**110 tests passing** (92 unit + 18 live DB), lint/typecheck clean, CI
-green on every push this session.
+**119 tests passing, 7 honestly skipped** (92 unit + 27 live DB + 7
+skipped), lint/typecheck clean, CI green on every push this session.
 
 ## Blockers
-None.
+One real one: `db/migrations/0002_saved_plans.sql` needs applying before
+the saved-plans feature is actually verified end to end (code is
+written and passes every check that doesn't need that table).
+
+## Also this session: a real security bug found and fixed
+`app/db/client.py`'s database client was a shared singleton — under
+real concurrent traffic, one user's access token could have leaked onto
+another user's request, or a guest could have inherited a signed-in
+user's identity. Found while building the auth work, fixed immediately,
+regression-tested, deployed. Nothing in current public/production use
+was exposed (the app isn't publicly reachable yet). Full details in
+`docs/DECISIONS.md`.
 
 ## Next task
-**M3 — sign-in, saved plans, consent** (`tasks/BCI-004.md`, just
-started). First slice: guest sessions made explicit, Supabase Auth
-sign-in/sign-up, a `saved_plans` table with RLS, guest→account
-migration. Explicitly NOT in this first slice: the distress/support
-queue (needs M5's AI surface), full consent/safeguarding for real minor
-accounts (a separate, deliberately gated decision), export/deletion.
+Rest of M3 (guest→account plan migration, then a deliberate, separate
+decision on full consent/safeguarding for real minor accounts — see
+`tasks/BCI-004.md`), or M4/M5 — your call once M3's first slice is
+verified.
 
 ## Infrastructure
 | Thing | Status |
 | --- | --- |
-| Supabase | **Live.** Mumbai (`ap-south-1`), schema applied, RLS verified. |
+| Supabase | **Live.** Mumbai (`ap-south-1`). Schema: `0001` applied and verified; **`0002` written, not yet applied.** |
 | GitHub | **Live.** `sheelajindal07-collab/eduvation`, CI green. |
 | Oracle hosting | **Live.** `eduvation.service` on `moulding-app-a1`, port 8010 (localhost only — no public domain/nginx site yet). |
 | AI provider | Gemini, owner-confirmed. Not used before M5. |
 
-## Needs your input — none blocking
-1. **Public domain** — if you want the app reachable from outside the
+## Needs your input
+1. **Apply `db/migrations/0002_saved_plans.sql`** — same process as
+   `0001` (SQL Editor, paste, Run — see `db/migrations/README.md`). No
+   new secrets needed. This is the one thing between "code complete"
+   and "verified" for saved plans.
+2. **Public domain** — if you want the app reachable from outside the
    VM, send a domain/subdomain and I'll add an nginx site.
-2. **Pilot state** — still assumed Gujarat, confirm or correct.
-3. **Named content reviewers** — not blocking engineering.
-4. **Gemini model** — can wait until M5.
+3. **Pilot state** — still assumed Gujarat, confirm or correct.
+4. **Named content reviewers**, **Gemini model** — not blocking.
 
 ## Not claimed
 No e2e test, no live AI call, no public exposure of the deployed app
-yet. No real content exists — every test uses clearly-labelled synthetic
-fixtures; nothing has been published as a verified fact for an actual
-student to see.
+yet, no guest→account plan migration yet (next slice of M3). No real
+content exists — every test uses clearly-labelled synthetic fixtures.
 
 ## Concurrent sessions — multiple sessions worked this repo today
 This session shared the repo with at least one other active Claude
 session for a significant stretch (same machine, same working
-directory, not separate clones). Coordination happened via direct
-cross-session messaging: file-touch lists exchanged before editing,
-commits deliberately kept separate when both sides had uncommitted work,
-and a real circular-import bug (comparison.py <-> cost.py) was caught
-independently by both sessions within moments of each other and
-confirmed fixed before either committed further. See `docs/DECISIONS.md`
-for the full log. If you're running multiple sessions on purpose, this
-worked cleanly; if not, worth knowing — check `git log`/`git status`
-before starting a new session's task.
+directory). Coordination happened via direct cross-session messaging:
+file-touch lists exchanged before editing, commits kept separate when
+both sides had uncommitted work, a real circular-import bug caught and
+fixed collaboratively. See `docs/DECISIONS.md` for the full log. If
+you're running multiple sessions on purpose, this worked cleanly; if
+not, worth knowing.
