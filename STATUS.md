@@ -48,11 +48,49 @@ verified healthy, talking to the real database).
   route in `claims.py` 403s/400s until then, and its 12 tests correctly
   skip rather than pretend to pass.
 
-**207 tests total** (182 passing + 25 correctly skipping pending the
-0003 migration — verified with `pytest --collect-only`; the jump from
-163 includes a concurrent session's edge-case test additions plus this
-UI slice's 6), lint/typecheck clean, CI green on every push this
-session.
+**209 tests total** (184 passing + 25 correctly skipping pending the
+0003 migration — verified live this session, not just collected),
+lint/typecheck clean, CI green on every push this session.
+
+## Open findings from the background UX review, not yet fixed
+A read-only `ux-qa-reviewer` pass this session (separate from the two
+maker-checker bugs above, already fixed) flagged two more real gaps,
+still open:
+1. **HIGH** — `GET /eligibility`'s `CriterionResultOut.source_claim_id`
+   and `POST /timeline`'s `StageOut`/`ParallelActivityOut.source_claim_id`
+   are bare claim UUIDs with no route that resolves one into an actual
+   displayable source (authority name, official link, verification
+   date) — unlike `GET /compare`, which already does this via
+   `FieldValueOut.source_url`/`verification_date`. Fine while these two
+   screens are JSON-only; becomes a real problem the moment someone
+   builds the eligibility or timeline/cost-calculator UI screens (next
+   on `tasks/BCI-006.md`'s list) — docs/UI.md requires "source
+   authority, applicable cycle, verification date, official link" on
+   every fact shown, and right now those two screens have nowhere to
+   get it from. Whoever picks up that UI work should resolve this
+   first, following `app/api/compare.py`'s existing
+   `_row_to_source`/`sources_by_id` pattern.
+2. **LOW** — `app/api/auth.py`'s docstring cites a guest-session design
+   (anonymous server session, random token, 7-day expiry, "never
+   localStorage") that docs/UI.md describes but no route actually
+   implements yet, and the citation to `docs/DECISIONS.md` for it
+   doesn't point at anything real. Not a live bug (nothing currently
+   claims this exists at runtime), just a docs-accuracy gap worth
+   closing before someone builds a guest-session route assuming the
+   docstring already describes what's there.
+
+## Design mockup (2026-09-19, separate session — no repo code touched)
+A design canvas of the whole app now exists, built from `docs/UI.md` and
+`docs/PRODUCT.md`: the seven student screens at phone width (quick start,
+explore, compare with a working route switch, time and cost, programme
+detail, my plan, Ask BCION), the comparison screen on desktop, the
+reviewer publishing console, and a difficult-states sheet.
+Link (private to the owner until shared):
+https://claude.ai/artifact/UfLEdwJgiswwBPGu8cbXVo
+Every figure on it is sample data under a "not verified facts" ribbon;
+bracketed items are blanks for real records. Not rendered or reviewed by
+a person yet — it is a starting point for usability round 1, not a frozen
+component set.
 
 ## Blockers
 None on engineering. **One real blocker on judgment, below.**
@@ -116,6 +154,21 @@ verbatim).
    ₹0 for the same case — the breakdown now shows 0.0 too, so the line
    item always matches what the total was computed from. 6 new
    regression tests in `tests/unit/test_comparison.py`.
+6. **Fixed, more serious** (commit `0e57606`): `GET /eligibility`
+   trusted RLS visibility as a proxy for "this claim is published" —
+   true for a guest/student, but a reviewer's own RLS-scoped client can
+   also SELECT draft/in_review/superseded claims (by design, so they
+   can review them; `db/migrations/0001_init.sql`'s
+   `claims_select_published` policy is `status = 'published' or
+   is_reviewer()`). `_criteria_from_claims` built a criterion from
+   whatever came back with no status check, so a reviewer calling
+   `/eligibility` on a pathway with an unapproved draft criterion got
+   an actual **eligibility outcome** computed from it — not just a
+   wrong displayed number, a wrong "meets"/"does_not_meet". Fixed by
+   filtering to published claims first. Proved the test catches the
+   real bug, not just green-by-luck: reverted the fix locally, confirmed
+   the new regression test in `tests/db/test_api_eligibility.py` fails,
+   restored the fix, confirmed it passes again.
 
 Full details on all of these in `docs/DECISIONS.md`.
 
