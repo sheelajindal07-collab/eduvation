@@ -290,3 +290,80 @@ class TestAssembleCostSummary:
         claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
         assert summary.confirmed_assistance == ()
+
+    def test_an_unpublished_hint_is_ignored_not_leaked_into_net_to_arrange(self) -> None:
+        """A draft/in_review estimated_additional_expenses_hint must be
+        treated exactly like no hint at all -- CLAUDE.md's maker-checker
+        rule ("unapproved facts never reach public results") applies to
+        this field too, not just the ones that read as plain facts."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "estimated_additional_expenses_hint": _field_claim(
+                "estimated_additional_expenses_hint", 15000, status=ClaimStatus.draft
+            ),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.estimated_additional_expenses == 0.0
+        assert summary.net_to_arrange == 100000
+
+    def test_a_synthetic_sourced_hint_is_ignored_not_leaked_into_net_to_arrange(self) -> None:
+        synthetic_sources = {**SOURCES_BY_ID, SYNTHETIC_SOURCE.id: SYNTHETIC_SOURCE}
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "estimated_additional_expenses_hint": _field_claim(
+                "estimated_additional_expenses_hint", 15000, source_id=SYNTHETIC_SOURCE.id
+            ),
+        }
+        summary = assemble_cost_summary(claims_by_field, synthetic_sources, as_of=TODAY)
+        assert summary.estimated_additional_expenses == 0.0
+        assert summary.net_to_arrange == 100000
+
+
+class TestAssembleCostBreakdownEstimateHintProvenance:
+    """assemble_cost_breakdown's estimated_additional_expenses must go
+    through the same published/synthetic checks as assemble_cost_summary
+    -- previously it read the hint claim's raw value straight out of the
+    dict, bypassing field_value_for() entirely."""
+
+    def test_an_unpublished_hint_does_not_leak_into_the_displayed_value(self) -> None:
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "estimated_additional_expenses_hint": _field_claim(
+                "estimated_additional_expenses_hint", 15000, status=ClaimStatus.draft
+            ),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.estimated_additional_expenses.value == 0.0
+
+    def test_a_synthetic_sourced_hint_does_not_leak_into_the_displayed_value(self) -> None:
+        synthetic_sources = {**SOURCES_BY_ID, SYNTHETIC_SOURCE.id: SYNTHETIC_SOURCE}
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "estimated_additional_expenses_hint": _field_claim(
+                "estimated_additional_expenses_hint", 15000, source_id=SYNTHETIC_SOURCE.id
+            ),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, synthetic_sources, as_of=TODAY)
+        assert breakdown.estimated_additional_expenses.value == 0.0
+
+    def test_a_published_official_hint_is_shown(self) -> None:
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "estimated_additional_expenses_hint": _field_claim(
+                "estimated_additional_expenses_hint", 15000
+            ),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.estimated_additional_expenses.value == 15000
+
+    def test_no_hint_at_all_displays_zero_matching_what_the_summary_assumes(self) -> None:
+        """The line item shown here must match what assemble_cost_summary
+        actually computed net_to_arrange from -- a blank/None here next
+        to a total that silently assumed zero would be a display lie."""
+        claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.estimated_additional_expenses.value == 0.0
+        assert (
+            breakdown.estimated_additional_expenses.value == summary.estimated_additional_expenses
+        )

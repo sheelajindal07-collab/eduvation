@@ -111,6 +111,32 @@ class ProgrammeCostBreakdown:
     potential_assistance_not_yet_awarded: FieldValue
 
 
+def _estimated_additional_expenses_hint(
+    claims_by_field: dict[str, Claim],
+    sources_by_id: dict[str, Source],
+    *,
+    as_of: date,
+) -> float | None:
+    """The numeric value of the "estimated_additional_expenses_hint"
+    claim, run through the same field_value_for() published/synthetic/
+    freshness checks every other field gets — not a raw dict lookup.
+    A hint claim still stuck in draft, or backed by a synthetic source,
+    must never leak its value into a real cost figure just because this
+    field is presentation-labelled TrustLabel.estimate downstream; that
+    would let an unapproved number reach a published result, which
+    CLAUDE.md's maker-checker rule forbids for every field, not just the
+    ones that read as "facts". Returns None when there is no usable
+    hint (no claim, unpublished, or synthetic) — the caller decides what
+    "no hint" means for its own output.
+    """
+    hint = field_value_for(
+        "estimated_additional_expenses_hint", claims_by_field, sources_by_id, as_of=as_of
+    )
+    if isinstance(hint.value, int | float) and not isinstance(hint.value, bool):
+        return float(hint.value)
+    return None
+
+
 def assemble_cost_breakdown(
     claims_by_field: dict[str, Claim],
     sources_by_id: dict[str, Source],
@@ -125,9 +151,15 @@ def assemble_cost_breakdown(
     it is computed elsewhere from stated assumptions, never backed by a
     single Claim, so it is assembled directly as a TrustLabel.estimate
     FieldValue rather than looked up.
+
+    No usable hint claim -> 0.0 ("assume nothing extra"), the same
+    default assemble_cost_summary uses for net_to_arrange below — so the
+    line item shown here always matches what the total was actually
+    computed from, instead of showing a blank next to a total that
+    silently assumed zero.
     """
-    estimate_hint = claims_by_field.get("estimated_additional_expenses_hint")
-    estimate_value = estimate_hint.value if estimate_hint else None
+    hint_value = _estimated_additional_expenses_hint(claims_by_field, sources_by_id, as_of=as_of)
+    estimate_value = hint_value if hint_value is not None else 0.0
 
     return ProgrammeCostBreakdown(
         verified_charges=field_value_for(
@@ -181,13 +213,10 @@ def assemble_cost_summary(
     if estimated_additional_expenses_override is not None:
         estimated_additional_expenses = estimated_additional_expenses_override
     else:
-        hint = claims_by_field.get("estimated_additional_expenses_hint")
-        hint_value = hint.value if hint else None
-        estimated_additional_expenses = (
-            float(hint_value)
-            if isinstance(hint_value, int | float) and not isinstance(hint_value, bool)
-            else 0.0
+        hint_value = _estimated_additional_expenses_hint(
+            claims_by_field, sources_by_id, as_of=as_of
         )
+        estimated_additional_expenses = hint_value if hint_value is not None else 0.0
 
     potential = field_value_for(
         "potential_assistance_not_yet_awarded", claims_by_field, sources_by_id, as_of=as_of
