@@ -24,6 +24,7 @@ after signing up.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
@@ -31,6 +32,8 @@ from pydantic import BaseModel, EmailStr
 from supabase import Client
 
 from app.db import get_anon_client
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -84,9 +87,19 @@ def _migrate_pending_plan(
     NULL, which never equals `auth.uid()` (caught by actually running
     this against the live project: the first version of this function
     omitted it and every call failed RLS, silently, exactly because of
-    the try/except below — a good reminder that "fails safe" and "fails
+    the except below — a good reminder that "fails safe" and "fails
     silently wrong" can look identical from the caller's side without a
-    live test)."""
+    live test).
+
+    **The failure is logged, not just swallowed** (security-review
+    finding, 2026-09-19): the bug above would have been invisible in
+    production with no log line at all — this exception path is the
+    only place it could ever have surfaced. `notes` and
+    `estimated_additional_expenses` are deliberately excluded from the
+    log (student-supplied free text/figures; CLAUDE.md "no student data
+    to development agents" and docs/SECURITY.md "no personal data in
+    logs" — `user_id` and `pathway_id` are opaque ids already used
+    throughout this schema's own RLS policies, not personal data)."""
     client.postgrest.auth(access_token)
     try:
         result = (
@@ -101,7 +114,14 @@ def _migrate_pending_plan(
             )
             .execute()
         )
-    except Exception:  # noqa: BLE001 — deliberately swallowed, see docstring
+    except Exception:
+        logger.warning(
+            "Guest->account plan migration failed for user_id=%s pathway_id=%s "
+            "(account creation still succeeds; client should retry via POST /plans)",
+            user_id,
+            plan.pathway_id,
+            exc_info=True,
+        )
         return None
     rows = cast("list[dict[str, Any]]", result.data)
     return rows[0]["id"] if rows else None

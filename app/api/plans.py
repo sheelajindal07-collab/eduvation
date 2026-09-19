@@ -11,15 +11,37 @@ the other routes in this codebase.
 
 from __future__ import annotations
 
+import uuid as uuid_module
 from datetime import datetime
 from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException
+from postgrest.exceptions import APIError
 from pydantic import BaseModel
 
 from app.api.deps import AuthedSession, require_auth
 
 router = APIRouter(prefix="/plans", tags=["plans"])
+
+# Postgres error codes this router distinguishes, rather than collapsing
+# every failure into one generic message (security-review finding,
+# 2026-09-19: a nonexistent pathway_id and a malformed UUID were both
+# previously mislabelled as "already saved").
+_UNIQUE_VIOLATION = "23505"
+_FOREIGN_KEY_VIOLATION = "23503"
+_INVALID_UUID_SYNTAX = "22P02"
+
+
+def _require_valid_uuid(value: str, *, field_name: str = "plan_id") -> None:
+    """Reject a malformed id before it ever reaches a query — without
+    this, PATCH/DELETE /plans/<not-a-uuid> fell through to an unhandled
+    500 instead of a clean 422 (security-review finding, 2026-09-19)."""
+    try:
+        uuid_module.UUID(value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"{field_name!r} is not a valid id."
+        ) from exc
 
 
 class SavePlanRequest(BaseModel):
@@ -56,6 +78,7 @@ def _current_user_id(session: AuthedSession) -> str:
 
 @router.post("", response_model=PlanOut, status_code=201)
 def save_plan(request: SavePlanRequest, session: AuthedSession = Depends(require_auth)) -> PlanOut:
+    _require_valid_uuid(request.pathway_id, field_name="pathway_id")
     student_id = _current_user_id(session)
     try:
         result = (
@@ -70,12 +93,20 @@ def save_plan(request: SavePlanRequest, session: AuthedSession = Depends(require
             )
             .execute()
         )
-    except Exception as exc:
-        # Most likely the (student_id, pathway_id) unique constraint —
-        # this pathway is already saved. A clean 409, not a raw 500.
-        raise HTTPException(
-            status_code=409, detail="This pathway is already in your saved plans."
-        ) from exc
+    except APIError as exc:
+        # Distinguished, not collapsed into one message (security-review
+        # finding, 2026-09-19): a genuine duplicate, a pathway that
+        # doesn't exist, and (belt-and-braces alongside the explicit
+        # check above) a malformed id are three different problems.
+        if exc.code == _UNIQUE_VIOLATION:
+            raise HTTPException(
+                status_code=409, detail="This pathway is already in your saved plans."
+            ) from exc
+        if exc.code == _FOREIGN_KEY_VIOLATION:
+            raise HTTPException(status_code=404, detail="Pathway not found.") from exc
+        if exc.code == _INVALID_UUID_SYNTAX:
+            raise HTTPException(status_code=422, detail="Invalid pathway_id.") from exc
+        raise HTTPException(status_code=400, detail="Could not save this plan.") from exc
     row = cast("dict[str, Any]", result.data[0])
     return PlanOut.model_validate(row)
 
@@ -93,6 +124,7 @@ def update_plan(
     request: UpdatePlanRequest,
     session: AuthedSession = Depends(require_auth),
 ) -> PlanOut:
+    _require_valid_uuid(plan_id)
     updates = {k: v for k, v in request.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="Nothing to update.")
@@ -109,6 +141,7 @@ def update_plan(
 
 @router.delete("/{plan_id}", status_code=204)
 def delete_plan(plan_id: str, session: AuthedSession = Depends(require_auth)) -> None:
+    _require_valid_uuid(plan_id)
     result = session.client.table("saved_plans").delete().eq("id", plan_id).execute()
     rows = cast("list[dict[str, Any]]", result.data)
     if not rows:
