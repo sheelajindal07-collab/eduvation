@@ -1,29 +1,36 @@
 # Status
 
-**Milestone:** M0 complete (BCI-001); M1 data foundation **verified live**
-(BCI-002, in progress). **Commit:** see `git log -1` on `main`. **Repo:**
+**Milestone:** M0 complete (BCI-001); **M1 first vertical slice DONE**
+(BCI-002). **Commit:** see `git log -1` on `main`. **Repo:**
 [github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
 CI green.
 
 ## What works right now — for real, verified this session
-`make lint`, `make typecheck`, `make test-unit` all pass, on GitHub Actions
-too (not just locally — caught and fixed a real packaging bug that only
-showed up on a clean CI install). The FastAPI app boots and serves
-`/healthz`/`/docs` live. **The real Supabase project (Mumbai,
-`ap-south-1`) has the schema applied, and `make test-db` passes 9/9
-against it** — guest, student A, student B and reviewer access are each
-independently verified by RLS, not mocked. Re-verified after the owner
-rotated the two keys pasted in chat earlier: still 9/9. 27 tests total
-(18 unit + 9 live DB), all green.
+`GET /careers` and `GET /compare` are live and working against the real
+Mumbai Supabase project — not mocked, not synthetic-only. A student can
+genuinely: see published careers, compare two or three pathways, and get
+correctly trust-labelled fields (verified vs. estimate vs. not-available)
+sourced from real database rows. Proven end-to-end by seeding a claim
+against a real official source and watching the API return the right
+label. Just as important, the negative case is proven too: a draft
+claim's value never reaches a guest response, even though the row exists
+— tested directly, not assumed.
+
+**31 tests passing** (18 unit + 13 live DB), lint/typecheck clean, on
+GitHub Actions too. Along the way, caught and fixed: a packaging bug
+that only appeared on a clean install (not locally), a ruff false
+positive on FastAPI's own idiom, and two real mypy type gaps.
 
 ## Blockers
-None. Engineering can continue freely — the database is live and tested,
-the repo is on GitHub with passing CI.
+None. The core M1 slice from the DPR's own spec (Annex E.3: "published
+career record → explore → compare two options") is genuinely built and
+verified.
 
 ## Next task
-**BCI-002 — M1 first vertical slice**: wire the actual `/explore` and
-`/compare` API routes to the (now real) database via `app/db/client.py`,
-using the comparison-assembly logic already built. See `tasks/BCI-002.md`.
+Design/UI round (Annex D.3 usability round 1) before adding more
+engines, or start on the eligibility/cost rule engines (M2 scope,
+`app/rules/`) — steering committee's call. See `tasks/BCI-002.md` for
+full detail on what shipped.
 
 ## Infrastructure
 | Thing | Status |

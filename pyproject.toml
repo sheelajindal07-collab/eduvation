@@ -29,7 +29,10 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-ignore = []
+# B008: FastAPI's Depends()/Query()/Header() *must* be called in argument
+# defaults — that's the framework's own dependency-injection idiom, not
+# the mutable-default-argument bug this rule exists to catch.
+ignore = ["B008"]
 
 [tool.mypy]
 python_version = "3.11"

@@ -1,12 +1,13 @@
 """BCION Lite — FastAPI application factory.
 
-M0 scope only: the smallest runnable shell plus a health endpoint. The
-first real vertical slice (explore -> compare on synthetic fixtures) lands
-at M1 — see STATUS.md and tasks/BCI-002.md.
+M1: the first real vertical slice — explore -> compare, backed by the
+live Supabase project — is wired in. See STATUS.md and tasks/BCI-002.md.
 """
 
 from fastapi import FastAPI
 
+from app.api.compare import router as compare_router
+from app.api.explore import router as explore_router
 from app.api.health import router as health_router
 from app.core.config import get_settings
 
@@ -20,6 +21,8 @@ def create_app() -> FastAPI:
         docs_url="/docs" if settings.app_env != "production" else None,
     )
     app.include_router(health_router)
+    app.include_router(explore_router)
+    app.include_router(compare_router)
     return app
 
 
