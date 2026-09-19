@@ -1,8 +1,8 @@
 # Status
 
 **Milestone:** M0 (BCI-001), M1 (BCI-002), M2 (BCI-003) all DONE. **M3
-first slice shipped** (BCI-004: sign-in + saved plans). **Commit:** see
-`git log -1` on `main`. **Repo:**
+sign-in + saved plans + guest→account migration DONE** (BCI-004).
+**Commit:** see `git log -1` on `main`. **Repo:**
 [github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
 verified healthy, talking to the real database).
@@ -15,34 +15,45 @@ verified healthy, talking to the real database).
   dynamically from a pathway's own published claims.
 - `POST /timeline` — stateless Career Life Span Calculator.
 - `POST /auth/sign-up`, `POST /auth/sign-in` — real Supabase Auth,
-  proven to actually authenticate against RLS (not just well-formed).
-- `POST/GET/PATCH/DELETE /plans` — save/list/edit/delete a plan, **fully
-  verified live**: owner applied `0002_saved_plans.sql`, all 7 tests
-  re-run and pass for real, including student B provably unable to see
-  or edit student A's saved plan through the actual API.
+  proven to actually authenticate against RLS. Sign-up optionally
+  accepts a `pending_plan` and saves it as the new account's first plan
+  in the same request — the guest→account migration.
+- `POST/GET/PATCH/DELETE /plans` — save/list/edit/delete a plan, fully
+  verified live, including student B provably unable to see or edit
+  student A's plan through the real API.
 - Deployed on your Oracle VM alongside `hisab`/`lekha`/`attendance-app`,
   nothing else touched.
 
-**126 tests passing, zero skipped** (92 unit + 34 live DB), lint/
+**132 tests passing, zero skipped** (92 unit + 40 live DB), lint/
 typecheck clean, CI green on every push this session.
 
 ## Blockers
-None.
+None. **M3's engineering scope is complete.**
 
-## Also this session: a real security bug found and fixed
-`app/db/client.py`'s database client was a shared singleton — under
-real concurrent traffic, one user's access token could have leaked onto
-another user's request, or a guest could have inherited a signed-in
-user's identity. Found while building the auth work, fixed immediately,
-regression-tested, deployed. Nothing in current public/production use
-was exposed (the app isn't publicly reachable yet). Full details in
-`docs/DECISIONS.md`.
+## Two real bugs found and fixed this session (not assumed away)
+1. **Security**: the database client was a shared singleton — under
+   real concurrent traffic, one user's access token could have leaked
+   onto another user's request. Found while building the auth work,
+   fixed, regression-tested. A concurrent session's independent security
+   review then found and fixed a follow-on connection-leak issue in the
+   same area. Nothing in production was exposed (app isn't public yet).
+2. The guest→account plan migration silently failed every single call
+   at first — an insert that forgot to set `student_id` was correctly
+   rejected by RLS, but the function's own "never fail sign-up over a
+   bad plan" design meant that failure was invisible until a live test
+   actually checked the row got created. Fixed by passing the user id
+   through explicitly.
+
+Full details on both in `docs/DECISIONS.md`.
 
 ## Next task
-Rest of M3 (guest→account plan migration, then a deliberate, separate
-decision on full consent/safeguarding for real minor accounts — see
-`tasks/BCI-004.md`), or M4/M5 — your call once M3's first slice is
-verified.
+Only genuinely open M3 item: **full consent/safeguarding review before
+real minor accounts are enabled** — this is deliberately a human
+decision, not something any commit should do as a side effect
+(docs/SECURITY.md). A concurrent session flagged wanting to be looped in
+on that specifically. Otherwise: M4 (mock tests, teacher dashboard) or
+M5 (bounded AI) are the next milestones, or a content/design pass — your
+call.
 
 ## Infrastructure
 | Thing | Status |
@@ -57,18 +68,24 @@ verified.
    VM, send a domain/subdomain and I'll add an nginx site.
 2. **Pilot state** — still assumed Gujarat, confirm or correct.
 3. **Named content reviewers**, **Gemini model** — not blocking.
+4. **Consent/safeguarding review** — needs your (or a designated
+   reviewer's) eyes before real minor accounts can be enabled. Not
+   urgent — nothing currently allows a real account of any age to do
+   anything unsafe; this gate matters before that changes.
 
 ## Not claimed
 No e2e test, no live AI call, no public exposure of the deployed app
-yet, no guest→account plan migration yet (next slice of M3). No real
-content exists — every test uses clearly-labelled synthetic fixtures.
+yet. No real content exists — every test uses clearly-labelled synthetic
+fixtures; nothing has been published as a verified fact for an actual
+student to see.
 
 ## Concurrent sessions — multiple sessions worked this repo today
 This session shared the repo with at least one other active Claude
 session for a significant stretch (same machine, same working
-directory). Coordination happened via direct cross-session messaging:
-file-touch lists exchanged before editing, commits kept separate when
-both sides had uncommitted work, a real circular-import bug caught and
-fixed collaboratively. See `docs/DECISIONS.md` for the full log. If
-you're running multiple sessions on purpose, this worked cleanly; if
-not, worth knowing.
+directory). Coordination happened via direct cross-session messaging
+throughout: file-touch lists exchanged before editing, commits kept
+separate when both sides had uncommitted work, a circular-import bug and
+later a resource-leak bug each caught and fixed collaboratively, a
+second independent security-review pass run on request. See
+`docs/DECISIONS.md` for the full log. If you're running multiple
+sessions on purpose, this worked cleanly; if not, worth knowing.
