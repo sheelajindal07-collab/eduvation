@@ -5,6 +5,29 @@ never deleted.
 
 ---
 
+## 2026-09-19 — Reservation/quota engine: out of scope for Lite
+**Decision:** No reservation/quota engine (state-quota, category-wise
+seat-reservation percentages) is built for BCION Lite. `docs/rules/`
+stays at the three engines the Lite Build Pack §6 rules contract
+actually names: eligibility, cost, timeline.
+**Reason:** `docs/ARCHITECTURE.md`'s directory comment for `app/rules/`
+lists "eligibility, cost, timeline, reservation" — but that comment
+describes the *national* DPR's full decision-engine set
+(`docs/BCION-DPR-v1.1.md`), not a commitment Lite's own build pack made.
+Lite Build Pack §6 ("Data and rules contracts") only specifies
+eligibility, timeline and cost; reservation/domicile rules in the
+national DPR carry state-specific legal review and quota complexity
+(see `docs/BCION-DPR-v1.1.md`'s reservation/domicile risk entries) that
+is explicitly national-platform scope, not Phase −2 pilot scope
+(CLAUDE.md: "a technical spike and measurement instrument, not the
+national platform"). Building it now risked scope creep with no product
+owner sign-off.
+**Owner confirmed:** leave it out of Lite; revisit only if a future
+national-platform phase needs it.
+**Owner action needed:** none. If this changes, update this entry and
+`docs/ARCHITECTURE.md`'s `app/rules/` comment together so they stop
+disagreeing.
+
 ## 2026-09-19 — DPR annex structure reconciled with the online v1.2 doc;
 ## new `docs/BCION-Lite-Build-Pack.md` is now Lite's operating spec
 **Decision/event log:** The living Claude Doc ("BCION — DPR and White Paper
