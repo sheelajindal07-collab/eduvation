@@ -16,21 +16,18 @@ verified healthy, talking to the real database).
 - `POST /timeline` — stateless Career Life Span Calculator.
 - `POST /auth/sign-up`, `POST /auth/sign-in` — real Supabase Auth,
   proven to actually authenticate against RLS (not just well-formed).
-- `POST/GET/PATCH/DELETE /plans` — save/list/edit/delete a plan. **Code
-  complete, lint/typecheck/CI clean — but the 7 live tests for this one
-  are currently skipping**, not passing: migration `0002_saved_plans.sql`
-  hasn't been applied to the project yet. See "Needs your input" below —
-  this is the one real thing blocking full verification right now.
+- `POST/GET/PATCH/DELETE /plans` — save/list/edit/delete a plan, **fully
+  verified live**: owner applied `0002_saved_plans.sql`, all 7 tests
+  re-run and pass for real, including student B provably unable to see
+  or edit student A's saved plan through the actual API.
 - Deployed on your Oracle VM alongside `hisab`/`lekha`/`attendance-app`,
   nothing else touched.
 
-**119 tests passing, 7 honestly skipped** (92 unit + 27 live DB + 7
-skipped), lint/typecheck clean, CI green on every push this session.
+**126 tests passing, zero skipped** (92 unit + 34 live DB), lint/
+typecheck clean, CI green on every push this session.
 
 ## Blockers
-One real one: `db/migrations/0002_saved_plans.sql` needs applying before
-the saved-plans feature is actually verified end to end (code is
-written and passes every check that doesn't need that table).
+None.
 
 ## Also this session: a real security bug found and fixed
 `app/db/client.py`'s database client was a shared singleton — under
@@ -50,20 +47,16 @@ verified.
 ## Infrastructure
 | Thing | Status |
 | --- | --- |
-| Supabase | **Live.** Mumbai (`ap-south-1`). Schema: `0001` applied and verified; **`0002` written, not yet applied.** |
+| Supabase | **Live.** Mumbai (`ap-south-1`). Schema `0001` and `0002` both applied and verified. |
 | GitHub | **Live.** `sheelajindal07-collab/eduvation`, CI green. |
 | Oracle hosting | **Live.** `eduvation.service` on `moulding-app-a1`, port 8010 (localhost only — no public domain/nginx site yet). |
 | AI provider | Gemini, owner-confirmed. Not used before M5. |
 
-## Needs your input
-1. **Apply `db/migrations/0002_saved_plans.sql`** — same process as
-   `0001` (SQL Editor, paste, Run — see `db/migrations/README.md`). No
-   new secrets needed. This is the one thing between "code complete"
-   and "verified" for saved plans.
-2. **Public domain** — if you want the app reachable from outside the
+## Needs your input — none blocking
+1. **Public domain** — if you want the app reachable from outside the
    VM, send a domain/subdomain and I'll add an nginx site.
-3. **Pilot state** — still assumed Gujarat, confirm or correct.
-4. **Named content reviewers**, **Gemini model** — not blocking.
+2. **Pilot state** — still assumed Gujarat, confirm or correct.
+3. **Named content reviewers**, **Gemini model** — not blocking.
 
 ## Not claimed
 No e2e test, no live AI call, no public exposure of the deployed app
