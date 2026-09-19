@@ -10,6 +10,7 @@ from app.api.compare import router as compare_router
 from app.api.eligibility import router as eligibility_router
 from app.api.explore import router as explore_router
 from app.api.health import router as health_router
+from app.api.timeline import router as timeline_router
 from app.core.config import get_settings
 
 
@@ -25,6 +26,7 @@ def create_app() -> FastAPI:
     app.include_router(explore_router)
     app.include_router(compare_router)
     app.include_router(eligibility_router)
+    app.include_router(timeline_router)
     return app
 
 
