@@ -18,7 +18,13 @@ class Settings(BaseSettings):
     provisioned — see docs/DECISIONS.md.
     """
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # frozen=True (data-security-reviewer finding, 2026-09-19): this
+    # instance is process-wide cached (see get_settings below), which is
+    # only safe because nothing mutates it. Freezing makes that an
+    # enforced invariant instead of a convention — any future code path
+    # that tried `settings.x = ...` fails loudly instead of silently
+    # corrupting the shared singleton for every subsequent request.
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", frozen=True)
 
     app_env: str = Field(default="development")
     app_secret_key: str = Field(default="dev-insecure-key-change-me")

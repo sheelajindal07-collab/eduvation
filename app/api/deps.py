@@ -1,7 +1,24 @@
-"""Shared FastAPI dependencies for route handlers."""
+"""Shared FastAPI dependencies for route handlers.
+
+Both dependencies below are `yield`-based, not plain return, so FastAPI
+runs the `finally` cleanup after the response is sent (data-security-
+reviewer finding, 2026-09-19): `app/db/client.py`'s fix for the
+client-sharing bug makes every call construct a genuinely fresh,
+unshared `Client` — correct for cross-user isolation, but each one owns
+its own `httpx.Client` connection pool that nothing was closing. A
+`supabase.Client` has no `.close()` of its own; the actual handle is
+`client.postgrest.aclose()` (a synchronous method despite the name —
+postgrest-py's sync client mirrors the async one's method names), which
+closes the underlying `httpx.Client`/socket pool. Without this, every
+DB-touching request leaked one connection-pool object, relying on
+refcounting GC (which never proactively closes sockets) to reclaim it —
+fine at pilot scale today, but exactly the kind of thing that degrades
+under sustained load or a small VPS's file-descriptor limit.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from fastapi import Header, HTTPException
@@ -19,7 +36,7 @@ def _bearer_token(authorization: str | None) -> str | None:
     return None
 
 
-def get_db_client(authorization: str | None = Header(default=None)) -> Client:
+def get_db_client(authorization: str | None = Header(default=None)) -> Iterator[Client]:
     """Guest (anon-key) client by default; a signed-in user's RLS-scoped
     client when a valid `Authorization: Bearer <token>` header is present.
 
@@ -27,9 +44,11 @@ def get_db_client(authorization: str | None = Header(default=None)) -> Client:
     into request-handling code at all (docs/SECURITY.md).
     """
     token = _bearer_token(authorization)
-    if token:
-        return get_user_scoped_client(token)
-    return get_anon_client()
+    client = get_user_scoped_client(token) if token else get_anon_client()
+    try:
+        yield client
+    finally:
+        client.postgrest.aclose()
 
 
 @dataclass(frozen=True)
@@ -46,11 +65,15 @@ class AuthedSession:
     access_token: str
 
 
-def require_auth(authorization: str | None = Header(default=None)) -> AuthedSession:
+def require_auth(authorization: str | None = Header(default=None)) -> Iterator[AuthedSession]:
     """For routes where guest access doesn't make sense at all (a guest
     has no plans to save) — 401s cleanly rather than silently falling
     back to anon and returning confusing empty results."""
     token = _bearer_token(authorization)
     if not token:
         raise HTTPException(status_code=401, detail="Sign in required.")
-    return AuthedSession(client=get_user_scoped_client(token), access_token=token)
+    client = get_user_scoped_client(token)
+    try:
+        yield AuthedSession(client=client, access_token=token)
+    finally:
+        client.postgrest.aclose()

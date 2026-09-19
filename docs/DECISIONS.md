@@ -5,6 +5,53 @@ never deleted.
 
 ---
 
+## 2026-09-19 — Supabase client-sharing fix: security-reviewed, two follow-up
+## fixes applied
+**Event:** `app/db/client.py`'s `get_anon_client()` was `@lru_cache`d, so
+every request — guest and authenticated alike — shared one `Client`
+object; `get_user_scoped_client()` mutated *that same shared object's*
+postgrest auth header on every call. Under real concurrent requests this
+is a genuine cross-user data-leak vector: one request's auth token could
+be overwritten by another's before the first request's query executed,
+or a guest request could silently inherit a previous request's
+authenticated token instead of anonymous/RLS-restricted access. Found
+and fixed same-day (commit `95b70f0`) while starting M3's auth work;
+affected every route already shipped (compare, eligibility), not just
+the new sign-in work that surfaced it.
+**Fix:** every call to `get_anon_client()` / `get_user_scoped_client()`
+now constructs a genuinely fresh, unshared `Client`. No caching.
+**Independently reviewed** by this repo's `data-security-reviewer`
+agent, invoked by a concurrent session specifically because CLAUDE.md's
+non-negotiable requires cross-user access to be tested on every
+auth/RLS change. The review verified the fix live against the real
+Supabase project (header inspection via httpx event hooks, plus a
+200-call/50-thread concurrency stress test against the actual client
+functions — zero cross-contamination) and confirmed no remaining
+cross-user leak path. It also surfaced two real follow-up issues, both
+fixed same-day:
+1. **Unclosed `httpx.Client` per request** — a fresh, unshared client is
+   correct for isolation but nothing was closing the underlying
+   connection pool afterward, relying on GC (which never proactively
+   closes sockets). `app/api/deps.py`'s `get_db_client` and
+   `require_auth` are now `yield`-based FastAPI dependencies that call
+   `client.postgrest.aclose()` in a `finally` block after the response.
+2. **Test coverage gap** — `tests/db/test_client_isolation.py` originally
+   only asserted `a is not b` (distinct objects), which would still pass
+   if some future change reintroduced sharing one level down (e.g. a
+   shared mutable headers dict). Strengthened to assert the actual
+   `Authorization` header value each client carries, plus a
+   `ThreadPoolExecutor`-based concurrent smoke test.
+A third finding — `Settings` (`app/core/config.py`) is cached but wasn't
+`frozen=True`, so its safety rested on convention (nothing mutates it)
+rather than enforcement — is now fixed: `frozen=True` added, so any
+future mutation attempt fails loudly instead of silently corrupting the
+process-wide cached instance.
+**Not a finding, pre-existing and already self-disclosed**: the
+maker-checker gap in `db/migrations/0001_init.sql` (author-cannot-
+approve-own-claim) remains explicitly deferred to M4, unrelated to this
+fix.
+**Owner action needed:** none.
+
 ## 2026-09-19 — Reservation/quota engine: out of scope for Lite
 **Decision:** No reservation/quota engine (state-quota, category-wise
 seat-reservation percentages) is built for BCION Lite. `docs/rules/`
