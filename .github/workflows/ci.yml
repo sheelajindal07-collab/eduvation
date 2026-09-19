@@ -1,0 +1,45 @@
+name: CI
+
+# BCION Lite CI skeleton (M0). Runs lint, typecheck and unit tests on every
+# push/PR — no production secrets are available to this workflow (see
+# docs/ARCHITECTURE.md "Deployment flow" and docs/DECISIONS.md). test-db
+# and test-e2e stay commented out until a staging Postgres / UI exist
+# (Annex F milestones M1+); enabling them early would just fail red for
+# lack of a target, which is noise, not signal.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-typecheck-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check app tests
+
+      - name: Typecheck (mypy)
+        run: mypy app
+
+      - name: Unit tests (pytest)
+        run: pytest tests/unit -v
+
+      # - name: DB/RLS policy tests
+      #   run: make test-db
+      #   # Needs a staging Supabase/Postgres target — wire up at M1
+      #   # (docs/ARCHITECTURE.md, Annex E.3).
+
+      # - name: E2E tests (Playwright)
+      #   run: make test-e2e
+      #   # Needs a UI to drive — wire up after M1's first vertical slice.
