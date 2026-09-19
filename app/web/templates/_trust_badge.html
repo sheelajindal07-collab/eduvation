@@ -1,0 +1,49 @@
+{# docs/UI.md "Trust labels (per field)": exactly these five, "with text +
+   icon, never colour alone" (Visual direction). The glyph lives here, in
+   markup, not as a CSS ::before someone could strip without noticing the
+   accessibility property it was carrying. #}
+{% macro trust_badge(label) %}
+  {% if label == "checked_against_official_source" %}
+    <span class="trust-badge trust-badge--checked_against_official_source">
+      <span aria-hidden="true">&#10003;</span> Checked against official source
+    </span>
+  {% elif label == "institution_reported" %}
+    <span class="trust-badge trust-badge--institution_reported">
+      <span aria-hidden="true">&#8505;</span> Institution-reported
+    </span>
+  {% elif label == "estimate" %}
+    <span class="trust-badge trust-badge--estimate">
+      <span aria-hidden="true">&#8776;</span> Estimate
+    </span>
+  {% elif label == "needs_rechecking" %}
+    <span class="trust-badge trust-badge--needs_rechecking">
+      <span aria-hidden="true">&#9888;</span> Needs rechecking
+    </span>
+  {% else %}
+    <span class="trust-badge trust-badge--not_available">
+      <span aria-hidden="true">&mdash;</span> Not available
+    </span>
+  {% endif %}
+{% endmacro %}
+
+{% macro field_value(fv) %}
+  {# fv is a FieldValueOut-shaped dict/object: value, label, source_url,
+     verification_date. Never renders `value` when the label is
+     not_available -- app.planning.comparison already guarantees that
+     case's value is None, this is defence in depth so a template typo
+     can't accidentally leak it either. #}
+  <div>
+    {% if fv.label != "not_available" and fv.value is not none %}
+      <p class="text-charcoal font-medium">{{ fv.value }}</p>
+    {% endif %}
+    {{ trust_badge(fv.label) }}
+    {% if fv.source_url %}
+      <p class="text-xs text-neutral mt-1">
+        <a href="{{ fv.source_url }}" class="underline hover:text-accent" target="_blank" rel="noopener">
+          Official source
+        </a>
+        {% if fv.verification_date %} &middot; verified {{ fv.verification_date }}{% endif %}
+      </p>
+    {% endif %}
+  </div>
+{% endmacro %}

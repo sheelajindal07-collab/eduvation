@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Explore careers &mdash; BCION Lite{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-2">Explore</h1>
+  <p class="text-neutral mb-6">
+    Pick 2 or 3 pathways below, then compare them side by side.
+  </p>
+
+  {% if not careers_with_pathways %}
+    <div class="alert alert--neutral">
+      <span aria-hidden="true">&#8505;</span>
+      <span>No careers published yet. Check back soon.</span>
+    </div>
+  {% else %}
+    <form action="/compare/view" method="get" id="compare-form">
+      <div class="space-y-6">
+        {% for entry in careers_with_pathways %}
+          <section class="card">
+            <h2 class="text-lg font-semibold text-charcoal mb-3">{{ entry.career.name }}</h2>
+            {% if not entry.pathways %}
+              <p class="text-sm text-neutral">No pathways published for this career yet.</p>
+            {% else %}
+              <ul class="space-y-2">
+                {% for pathway in entry.pathways %}
+                  <li class="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      name="pathway_id"
+                      value="{{ pathway.id }}"
+                      id="pathway-{{ pathway.id }}"
+                      class="mt-1 h-4 w-4 rounded border-charcoal/30 text-accent focus:ring-accent compare-checkbox"
+                    />
+                    <label for="pathway-{{ pathway.id }}" class="text-sm">
+                      <span class="font-medium text-charcoal">{{ pathway.name }}</span>
+                      <span class="block text-neutral">{{ pathway.description }}</span>
+                    </label>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+          </section>
+        {% endfor %}
+      </div>
+
+      <div class="mt-6 flex items-center gap-4">
+        <button type="submit" class="btn-primary">Compare selected pathways</button>
+        <p class="text-sm text-neutral" id="selection-count">Pick 2 or 3 to compare.</p>
+      </div>
+    </form>
+
+    {# Progressive enhancement only: the form above already works with
+       plain GET + checkboxes and no JavaScript at all (docs/UI.md "Weak
+       connection: lightweight content" -- the core journey must not
+       depend on a script loading). This just caps the selection at 3
+       and gives a live count; without it, /compare/view itself still
+       rejects anything outside 2-3 with a clear message. #}
+    <script>
+      (function () {
+        var MAX = 3;
+        var boxes = document.querySelectorAll(".compare-checkbox");
+        var countEl = document.getElementById("selection-count");
+        function update() {
+          var checked = document.querySelectorAll(".compare-checkbox:checked");
+          countEl.textContent = checked.length + " of " + MAX + " selected (pick 2 or 3).";
+          boxes.forEach(function (box) {
+            box.disabled = checked.length >= MAX && !box.checked;
+          });
+        }
+        boxes.forEach(function (box) {
+          box.addEventListener("change", update);
+        });
+      })();
+    </script>
+  {% endif %}
+{% endblock %}

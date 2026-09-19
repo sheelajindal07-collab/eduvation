@@ -9,6 +9,7 @@ too). This route does the I/O; comparison.py stays pure and unit-tested.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, cast
 
@@ -20,10 +21,12 @@ from app.api.deps import get_db_client
 from app.data.models import Claim, ClaimStatus, Source, SourceType
 from app.planning.comparison import (
     FieldValue,
+    ProgrammeCostBreakdown,
     assemble_cost_breakdown,
     assemble_cost_summary,
     field_value_for,
 )
+from app.rules.cost import CostSummary
 
 router = APIRouter(tags=["compare"])
 
@@ -108,6 +111,82 @@ def _row_to_source(row: dict[str, Any]) -> Source:
     )
 
 
+@dataclass(frozen=True)
+class PathwayComparisonData:
+    """The fully-assembled comparison for one pathway, before any
+    presentation-layer choice about JSON vs HTML. This dataclass — not
+    the JSON route below — is where "fetch claims, assemble trust
+    labels, compute cost" actually happens, so app/web/pages.py's HTML
+    rendering and this route's JSON response are guaranteed to show the
+    exact same numbers, computed exactly once, by exactly the same code
+    path. Duplicating this fetch-and-assemble logic for a second
+    presentation layer would mean two chances to get the safety-critical
+    trust-labelling wrong instead of one."""
+
+    pathway_id: str
+    fields: dict[str, FieldValue]
+    cost_breakdown: ProgrammeCostBreakdown
+    cost_summary: CostSummary
+
+
+def assemble_comparisons(
+    db: Client,
+    pathway_ids: list[str],
+    *,
+    as_of: date,
+    estimated_additional_expenses_override: float | None = None,
+) -> list[PathwayComparisonData]:
+    """Fetch every claim/source for `pathway_ids` in two queries total
+    (not one per pathway) and assemble each pathway's comparison data.
+    Callers: `compare_pathways` below (JSON) and
+    `app/web/pages.py`'s compare page (HTML) — see `PathwayComparisonData`
+    for why this is a single shared function rather than two."""
+    claims_result = (
+        db.table("claims")
+        .select("*")
+        .eq("entity_type", "Pathway")
+        .in_("entity_id", pathway_ids)
+        .execute()
+    )
+    # postgrest-py types .data as a broad JSON union; every row returned
+    # by our own schema is, at runtime, a flat object — cast once here
+    # rather than fighting the broad type at every access below.
+    claim_rows = cast("list[dict[str, Any]]", claims_result.data)
+
+    source_ids = {row["source_id"] for row in claim_rows}
+    sources_by_id: dict[str, Source] = {}
+    if source_ids:
+        sources_result = db.table("sources").select("*").in_("id", list(source_ids)).execute()
+        source_rows = cast("list[dict[str, Any]]", sources_result.data)
+        sources_by_id = {row["id"]: _row_to_source(row) for row in source_rows}
+
+    results: list[PathwayComparisonData] = []
+    for pid in pathway_ids:
+        claims_by_field = {
+            row["field"]: _row_to_claim(row) for row in claim_rows if row["entity_id"] == pid
+        }
+        fields = {
+            field: field_value_for(field, claims_by_field, sources_by_id, as_of=as_of)
+            for field in COMPARISON_FIELDS
+        }
+        cost_breakdown = assemble_cost_breakdown(claims_by_field, sources_by_id, as_of=as_of)
+        cost_summary = assemble_cost_summary(
+            claims_by_field,
+            sources_by_id,
+            as_of=as_of,
+            estimated_additional_expenses_override=estimated_additional_expenses_override,
+        )
+        results.append(
+            PathwayComparisonData(
+                pathway_id=pid,
+                fields=fields,
+                cost_breakdown=cost_breakdown,
+                cost_summary=cost_summary,
+            )
+        )
+    return results
+
+
 @router.get("/compare", response_model=CompareResponse)
 def compare_pathways(
     pathway_id: list[str] = Query(..., alias="pathway_id"),
@@ -131,58 +210,33 @@ def compare_pathways(
             detail=f"Compare needs {MIN_PATHWAYS} or {MAX_PATHWAYS} pathway_id values.",
         )
 
-    claims_result = (
-        db.table("claims")
-        .select("*")
-        .eq("entity_type", "Pathway")
-        .in_("entity_id", pathway_id)
-        .execute()
-    )
-    # postgrest-py types .data as a broad JSON union; every row returned
-    # by our own schema is, at runtime, a flat object — cast once here
-    # rather than fighting the broad type at every access below.
-    claim_rows = cast("list[dict[str, Any]]", claims_result.data)
-
-    source_ids = {row["source_id"] for row in claim_rows}
-    sources_by_id: dict[str, Source] = {}
-    if source_ids:
-        sources_result = db.table("sources").select("*").in_("id", list(source_ids)).execute()
-        source_rows = cast("list[dict[str, Any]]", sources_result.data)
-        sources_by_id = {row["id"]: _row_to_source(row) for row in source_rows}
-
     as_of = datetime.now(tz=UTC).date()
-    pathways_out: list[PathwayComparisonOut] = []
-    for pid in pathway_id:
-        claims_by_field = {
-            row["field"]: _row_to_claim(row) for row in claim_rows if row["entity_id"] == pid
-        }
-        fields_out = {
-            field: FieldValueOut.from_field_value(
-                field_value_for(field, claims_by_field, sources_by_id, as_of=as_of)
-            )
-            for field in COMPARISON_FIELDS
-        }
-        cost = assemble_cost_breakdown(claims_by_field, sources_by_id, as_of=as_of)
-        cost_summary = assemble_cost_summary(
-            claims_by_field,
-            sources_by_id,
-            as_of=as_of,
-            estimated_additional_expenses_override=estimated_additional_expenses,
-        )
-        pathways_out.append(
+    comparisons = assemble_comparisons(
+        db,
+        pathway_id,
+        as_of=as_of,
+        estimated_additional_expenses_override=estimated_additional_expenses,
+    )
+    return CompareResponse(
+        pathways=[
             PathwayComparisonOut(
-                pathway_id=pid,
-                fields=fields_out,
+                pathway_id=c.pathway_id,
+                fields={
+                    field: FieldValueOut.from_field_value(fv) for field, fv in c.fields.items()
+                },
                 cost=CostBreakdownOut(
-                    verified_charges=FieldValueOut.from_field_value(cost.verified_charges),
+                    verified_charges=FieldValueOut.from_field_value(
+                        c.cost_breakdown.verified_charges
+                    ),
                     estimated_additional_expenses=FieldValueOut.from_field_value(
-                        cost.estimated_additional_expenses
+                        c.cost_breakdown.estimated_additional_expenses
                     ),
                     potential_assistance_not_yet_awarded=FieldValueOut.from_field_value(
-                        cost.potential_assistance_not_yet_awarded
+                        c.cost_breakdown.potential_assistance_not_yet_awarded
                     ),
-                    net_to_arrange=cost_summary.net_to_arrange,
+                    net_to_arrange=c.cost_summary.net_to_arrange,
                 ),
             )
-        )
-    return CompareResponse(pathways=pathways_out)
+            for c in comparisons
+        ]
+    )

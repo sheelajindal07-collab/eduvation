@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}BCION Lite{% endblock %}</title>
+  <!-- docs/UI.md "No web-font download in the text-only / 2G mode": one
+       small compiled stylesheet, no external font/script requests. -->
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body class="min-h-screen flex flex-col">
+  <header class="border-b border-charcoal/10 bg-white">
+    <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+      <a href="/explore" class="text-lg font-semibold text-charcoal">BCION Lite</a>
+      <p class="text-sm text-neutral hidden sm:block">A career-decision pilot &mdash; not a national platform</p>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-5xl mx-auto w-full px-4 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="border-t border-charcoal/10 py-6">
+    <p class="max-w-5xl mx-auto px-4 text-xs text-neutral">
+      Synthetic pilot data unless a fact shows a source and verification date above.
+      BCION Lite is a technical spike, not the national platform.
+    </p>
+  </footer>
+</body>
+</html>

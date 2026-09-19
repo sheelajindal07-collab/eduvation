@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* docs/UI.md "Visual direction": "Brief functional motion, respects
+   prefers-reduced-motion." Global, not per-component, so no future
+   template can forget it. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-warm-white text-charcoal font-sans;
+  }
+}
+
+@layer components {
+  /* docs/UI.md "Trust labels (per field — replaces any whole-record
+     badge)": exactly these five, each shown "with text + icon, never
+     colour alone" (Visual direction) — the icon glyph lives in the
+     template (trust_badge.html), never encoded as a CSS-only ::before
+     someone could accidentally strip; these classes only ever set
+     color/shape, never the only signal. */
+  .trust-badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium;
+  }
+  .trust-badge--checked_against_official_source {
+    @apply bg-positive-bg text-positive;
+  }
+  .trust-badge--institution_reported {
+    @apply bg-accent/10 text-accent-dark;
+  }
+  .trust-badge--estimate {
+    @apply bg-neutral-bg text-neutral italic;
+  }
+  .trust-badge--needs_rechecking {
+    @apply bg-caution-bg text-caution;
+  }
+  .trust-badge--not_available {
+    @apply bg-neutral-bg text-neutral border border-dashed border-neutral;
+  }
+
+  .card {
+    @apply bg-white rounded-lg shadow-sm border border-neutral/20 p-5;
+  }
+
+  /* docs/UI.md "Generous spacing, short sections, one primary action per
+     screen" -- one visually distinct primary button style, everything
+     else secondary, on purpose (not a component library with five
+     button variants nobody chose deliberately). */
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-md bg-accent px-4 py-2.5
+           text-white font-medium hover:bg-accent-dark transition-colors
+           focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-md border border-charcoal/20
+           px-4 py-2.5 text-charcoal font-medium hover:bg-charcoal/5 transition-colors
+           focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2;
+  }
+
+  /* docs/UI.md "Difficult states": alerts get an icon + text, colour is
+     never the only signal here either. */
+  .alert {
+    @apply rounded-md border p-4 text-sm flex items-start gap-2;
+  }
+  .alert--caution {
+    @apply bg-caution-bg border-caution/30 text-caution;
+  }
+  .alert--neutral {
+    @apply bg-neutral-bg border-neutral/30 text-charcoal;
+  }
+}

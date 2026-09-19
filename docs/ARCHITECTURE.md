@@ -8,7 +8,7 @@ propose Next.js/Vercel without a recorded decision.
 | Layer | Choice | Note |
 | --- | --- | --- |
 | Application | FastAPI monolith (Python), modules: data / rules / planning / ai / api / db / core | One codebase, one deployment |
-| Front end | Server-rendered templates or a light PWA served by the same app | No separate front-end framework |
+| Front end | Server-rendered templates (Jinja2) or a light PWA served by the same app; Tailwind CSS compiled via `make css`/npm | Node/npm is a dev-time build tool only (same tier as ruff/mypy) — the compiled `app/static/css/app.css` is checked in, nothing at runtime needs Node. No separate front-end framework |
 | DB / Auth / Storage | Supabase (Mumbai): Postgres, Auth, Storage, RLS | App connects as a restricted role, never the owner role |
 | Background worker | One process reading a Postgres jobs table (leases, bounded retries, idempotency keys) | No Redis, no broker |
 | Workflow glue | n8n, off the request path | Reviewer notices, review-due reminders, scheduled source-allowlist checks only |
@@ -33,6 +33,10 @@ app/
   planning/          — plan/save-next-actions logic, comparison assembly
   ai/                — provider adapter, retrieval, citation binding, prompt templates
   api/               — HTTP routes (explore, compare, plan, saved, admin/publishing)
+  web/               — server-rendered HTML pages (Jinja2 templates, Tailwind-built CSS
+                        in app/static/) -- the actual clickable journey; distinct paths
+                        from api/'s JSON routes, calling the same assembly functions
+  static/            — compiled CSS + any other static assets served directly
 tests/
   unit/, e2e/, fixtures/   — fixtures are clearly labelled synthetic, never published as facts
 ```

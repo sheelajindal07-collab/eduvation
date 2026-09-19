@@ -3,7 +3,9 @@
 **Milestone:** M0 (BCI-001), M1 (BCI-002), M2 (BCI-003) all DONE. **M3
 sign-in + saved plans + guest→account migration DONE** (BCI-004). **M4
 maker-checker enforcement + publishing-console API built, awaiting
-migration** (BCI-005). **Commit:** see `git log -1` on `main`. **Repo:**
+migration** (BCI-005). **First real UI shipped** — Explore → Compare,
+the first screens anyone could actually click through (BCI-006).
+**Commit:** see `git log -1` on `main`. **Repo:**
 [github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
 verified healthy, talking to the real database).
@@ -24,6 +26,16 @@ verified healthy, talking to the real database).
   student A's plan through the real API.
 - Deployed on your Oracle VM alongside `hisab`/`lekha`/`attendance-app`,
   nothing else touched.
+- **`GET /explore`, `GET /compare/view` — an actual UI, for the first
+  time.** Every route before this was JSON-only; nobody could click
+  through any of it. Real Tailwind-styled pages: pick 2-3 pathways on
+  Explore (works with zero JavaScript — a plain HTML form), see them
+  compared with trust-labelled fields and the four cost figures kept
+  visually distinct, closing with docs/UI.md's exact required prompt.
+  Verified live by hand and with 6 permanent tests
+  (`tests/db/test_web_pages.py`). `ux-qa-reviewer` — unusable until now,
+  its own trigger condition never having been met — is being invoked
+  right after this update lands.
 - **Maker-checker, enforced at the database, plus the publishing console
   API on top of it** — neither existed before this session:
   `db/migrations/0003_maker_checker.sql` (a claim must always be
@@ -36,9 +48,11 @@ verified healthy, talking to the real database).
   route in `claims.py` 403s/400s until then, and its 12 tests correctly
   skip rather than pretend to pass.
 
-**163 tests total** (138 passing + 25 correctly skipping pending the
-0003 migration — verified with `pytest --collect-only`), lint/typecheck
-clean, CI green on every push this session.
+**207 tests total** (182 passing + 25 correctly skipping pending the
+0003 migration — verified with `pytest --collect-only`; the jump from
+163 includes a concurrent session's edge-case test additions plus this
+UI slice's 6), lint/typecheck clean, CI green on every push this
+session.
 
 ## Blockers
 None on engineering. **One real blocker on judgment, below.**
@@ -88,6 +102,20 @@ verbatim).
    saved_plans, delete cross-user) were correct but had no permanent
    regression test — 6 new tests added, all passing
    (`tests/db/test_api_plans.py`).
+5. **Fixed** (commit `1d92af3`): `app/planning/comparison.py`'s cost
+   assembly read `estimated_additional_expenses_hint` straight out of
+   the claims dict for both the displayed breakdown and
+   `net_to_arrange`'s arithmetic — the one field on the whole comparison
+   screen that skipped `field_value_for()`'s published/synthetic-source
+   checks. A draft or synthetic-sourced hint could have leaked into a
+   real total. Found by a background UX-review agent, independently
+   re-verified, fixed with a shared `_estimated_additional_expenses_hint()`
+   helper both call sites now use. Also fixed the adjacent display
+   inconsistency the same review flagged: the breakdown used to show
+   blank/`None` for "no hint" while the total below it silently assumed
+   ₹0 for the same case — the breakdown now shows 0.0 too, so the line
+   item always matches what the total was computed from. 6 new
+   regression tests in `tests/unit/test_comparison.py`.
 
 Full details on all of these in `docs/DECISIONS.md`.
 
@@ -98,9 +126,10 @@ now** — everything else is normal backlog. Once that's resolved: apply
 `scripts/apply_migrations.py`) so `app/api/claims.py` actually goes live
 and can be verified for real (right now every one of its tests is a
 skip, not a pass — don't treat M4 as proven until that's rerun green).
-After that: a reviewer-facing UI for the publishing console (the API
-exists, nothing shows it to a human yet), M5 (bounded AI), or a
-content/design pass — your call.
+After that: more UI screens (quick start, timeline/cost calculator, a
+reviewer console for the publishing API — see `tasks/BCI-006.md` for the
+full "not done yet" list, including that Playwright e2e still isn't
+wired), M5 (bounded AI), or a content/design pass — your call.
 
 ## Infrastructure
 | Thing | Status |
@@ -120,6 +149,30 @@ content/design pass — your call.
    Editor, or `scripts/apply_migrations.py` if `DATABASE_URL` is set).
 4. **Pilot state** — still assumed Gujarat, confirm or correct.
 5. **Named content reviewers**, **Gemini model** — not blocking.
+
+## Content drafts — NEET (UG) added (2026-09-19)
+`docs/content-drafts/neet-ug-eligibility.md` — draft research only, same
+rules as the GUJCET draft: unverified, unpublished, nothing inserted into
+the database. Single source: NTA's official NEET (UG)-2026 Information
+Bulletin (124-page text PDF, read in full-text; page refs in the draft).
+NMC's own site was unreachable this session, so the underlying GMER-2023
+regulation was not read directly. Three things worth knowing before
+anyone builds a NEET pathway on it:
+1. **The bulletin has no Class 12 marks floor and no upper age limit.**
+   The widely repeated "50% PCB" / "age 25" figures are not in it — the
+   draft publishes no claim for either rather than guessing. (The
+   `maximum_age(25)` in `tests/unit/test_eligibility.py`'s NEET-style
+   fixture is synthetic and fine as an engine test, but must never be
+   copied into content.)
+2. **Two rules-engine gaps would give students wrong answers** if NEET
+   claims were published as-is: minimum age is "17 by 31 Dec of the exam
+   year" (a DOB cutoff — today's integer-age check would wrongly reject a
+   16-year-old who qualifies), and subjects are "Biology **or**
+   Biotechnology" (`required_subjects` is all-of only). No code changed
+   this session; both need a decision first.
+3. **It's the 2026 cycle, already sat (03 May 2026).** The 2027 bulletin
+   wasn't out; DOB cutoff and fees are 2026-only.
+No tests run this session — docs-only change, no code touched.
 
 ## Not claimed
 No e2e test, no live AI call, no public exposure of the deployed app

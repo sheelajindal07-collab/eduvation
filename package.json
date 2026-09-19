@@ -1,0 +1,13 @@
+{
+  "name": "bcion-lite-styles",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tailwind build for BCION Lite's server-rendered templates (docs/ARCHITECTURE.md: 'Server-rendered templates ... served by the same app -- No separate front-end framework'). Node/npm is a DEV-TIME build tool only, same tier as ruff/mypy -- the compiled output (app/static/css/app.css) is checked in and served as a plain static file; nothing at runtime or in production requires Node.",
+  "scripts": {
+    "build:css": "tailwindcss -i ./app/web/styles/input.css -o ./app/static/css/app.css --minify",
+    "watch:css": "tailwindcss -i ./app/web/styles/input.css -o ./app/static/css/app.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0"
+  }
+}

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% from "_trust_badge.html" import field_value %}
+{% block title %}Compare pathways &mdash; BCION Lite{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-6">Compare</h1>
+
+  {% if error %}
+    <div class="alert alert--caution mb-6">
+      <span aria-hidden="true">&#9888;</span>
+      <span>{{ error }} <a href="/explore" class="underline">Back to explore</a>.</span>
+    </div>
+  {% else %}
+    {# docs/UI.md "Comparison screen": "Desktop: side-by-side columns.
+       Mobile: stacked sections ... never a sideways-scrolling table." A
+       responsive grid gives both from one markup, no separate mobile
+       template. #}
+    <div class="grid gap-6" style="grid-template-columns: repeat({{ comparisons|length }}, minmax(0, 1fr));">
+      {% for c in comparisons %}
+        <section class="card">
+          <h2 class="text-lg font-semibold text-charcoal mb-4">
+            {{ pathway_names.get(c.pathway_id, c.pathway_id) }}
+          </h2>
+
+          <div class="space-y-4">
+            <div>
+              <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
+                Entry requirements
+              </h3>
+              {{ field_value(c.fields["entry_requirements"]) }}
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
+                Main stages
+              </h3>
+              {{ field_value(c.fields["main_stages"]) }}
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
+                Time
+              </h3>
+              {{ field_value(c.fields["time_range"]) }}
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
+                Location
+              </h3>
+              {{ field_value(c.fields["location"]) }}
+            </div>
+
+            {# docs/UI.md "Timeline & cost": "Three separate amounts,
+               always: verified charges, estimated additional expenses,
+               potential assistance not yet awarded" -- never merged into
+               one figure, and net_to_arrange is a fourth, clearly
+               labelled number, not a replacement for the three. #}
+            <div class="border-t border-charcoal/10 pt-4">
+              <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-2">
+                Cost
+              </h3>
+              <div class="space-y-3">
+                <div>
+                  <p class="text-xs text-neutral mb-1">Verified charges</p>
+                  {{ field_value(c.cost_breakdown.verified_charges) }}
+                </div>
+                <div>
+                  <p class="text-xs text-neutral mb-1">Estimated additional expenses</p>
+                  {{ field_value(c.cost_breakdown.estimated_additional_expenses) }}
+                </div>
+                <div>
+                  <p class="text-xs text-neutral mb-1">Potential assistance (not yet awarded)</p>
+                  {{ field_value(c.cost_breakdown.potential_assistance_not_yet_awarded) }}
+                </div>
+                <div class="bg-neutral-bg rounded-md p-3">
+                  <p class="text-xs text-neutral mb-1">What you'd need to arrange</p>
+                  {% if c.cost_summary.net_to_arrange is not none %}
+                    <p class="text-lg font-semibold text-charcoal">
+                      &#8377;{{ "{:,.0f}".format(c.cost_summary.net_to_arrange) }}
+                    </p>
+                    <p class="text-xs text-neutral mt-1">
+                      Verified charges + estimated extras, minus confirmed assistance only.
+                      Potential assistance above is never subtracted here.
+                    </p>
+                  {% else %}
+                    <span class="trust-badge trust-badge--not_available">
+                      <span aria-hidden="true">&mdash;</span> Not available yet
+                    </span>
+                    <p class="text-xs text-neutral mt-1">
+                      Verified charges aren't published for this pathway yet.
+                    </p>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+
+    <p class="mt-8 text-center text-charcoal font-medium">
+      Which option would you like to investigate further?
+    </p>
+    <p class="mt-2 text-center">
+      <a href="/explore" class="text-accent underline">Back to explore</a>
+    </p>
+  {% endif %}
+{% endblock %}
