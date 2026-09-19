@@ -43,6 +43,16 @@ exclude = ["tests/"]
 testpaths = ["tests/unit"]
 asyncio_mode = "auto"
 
+[tool.setuptools.packages.find]
+# Only `app` is an installable/importable Python package. Without this,
+# setuptools' flat-layout auto-discovery sees db/ (migrations) as a
+# second top-level "package" candidate and refuses to guess — caught by
+# CI on the first real push, not locally (the editable install had only
+# ever been run once, before db/ existed). scripts/ and tests/ are run
+# in place (via `python scripts/...` / pytest), never imported as an
+# installed package, so they're deliberately left out too.
+include = ["app*"]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
