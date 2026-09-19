@@ -1,15 +1,17 @@
 """BCION Lite — FastAPI application factory.
 
-M1: the first real vertical slice — explore -> compare, backed by the
-live Supabase project — is wired in. See STATUS.md and tasks/BCI-002.md.
+M3: sign-in is wired in (tasks/BCI-004.md). See STATUS.md for the full
+list of what's live.
 """
 
 from fastapi import FastAPI
 
+from app.api.auth import router as auth_router
 from app.api.compare import router as compare_router
 from app.api.eligibility import router as eligibility_router
 from app.api.explore import router as explore_router
 from app.api.health import router as health_router
+from app.api.plans import router as plans_router
 from app.api.timeline import router as timeline_router
 from app.core.config import get_settings
 
@@ -27,6 +29,8 @@ def create_app() -> FastAPI:
     app.include_router(compare_router)
     app.include_router(eligibility_router)
     app.include_router(timeline_router)
+    app.include_router(auth_router)
+    app.include_router(plans_router)
     return app
 
 

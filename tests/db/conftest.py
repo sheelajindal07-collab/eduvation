@@ -48,20 +48,47 @@ _SKIP_REASON = (
 )
 
 
+def _saved_plans_table_exists() -> bool:
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().table("saved_plans").select("id").limit(1).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_PLANS_SKIP_REASON = (
+    "saved_plans table not found — db/migrations/0002_saved_plans.sql "
+    "not yet applied to this project. See db/migrations/README.md."
+)
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Skip every test collected under tests/db/ when unconfigured.
 
-    A bare module-level `pytestmark` in this conftest.py does NOT apply to
-    sibling test modules (that only works inside a test file itself) — so
-    without this hook, tests/db/test_rls.py would try to run for real and
-    fail with connection errors instead of skipping cleanly. Verified by
-    running `pytest tests/db` before and after adding this hook.
+    A bare module-level `pytestmark` in a test file does NOT apply to
+    sibling test modules, and a hook function defined INSIDE a test_*.py
+    file is never picked up by pytest at all — hook implementations are
+    only discovered in conftest.py files and registered plugins (caught
+    for real: a first attempt defined this per-file in
+    test_api_plans.py, and it silently did nothing; verified by running
+    the suite before and after moving it here). So this conftest.py is
+    the only place either skip can actually live.
     """
-    if get_settings().db_configured and _service_role_configured():
+    if not (get_settings().db_configured and _service_role_configured()):
+        skip_marker = pytest.mark.skip(reason=_SKIP_REASON)
+        for item in items:
+            item.add_marker(skip_marker)
         return
-    skip_marker = pytest.mark.skip(reason=_SKIP_REASON)
-    for item in items:
-        item.add_marker(skip_marker)
+
+    # A narrower, additional skip: test_api_plans.py needs a second
+    # migration (0002) beyond what the check above already confirms.
+    if not _saved_plans_table_exists():
+        plans_skip = pytest.mark.skip(reason=_PLANS_SKIP_REASON)
+        for item in items:
+            if "test_api_plans.py" in str(item.fspath):
+                item.add_marker(plans_skip)
 
 
 @pytest.fixture(scope="module")
