@@ -1,59 +1,61 @@
 # Status
 
-**Milestone:** M0 complete (BCI-001); **M1 first vertical slice DONE**
-(BCI-002). **Commit:** see `git log -1` on `main`. **Repo:**
+**Milestone:** M0 complete (BCI-001); M1 first vertical slice DONE
+(BCI-002); **M2 eligibility engine DONE** (BCI-003). **Commit:** see
+`git log -1` on `main`. **Repo:**
 [github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
-CI green.
+CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
+verified healthy, talking to the real database).
 
 ## What works right now — for real, verified this session
-`GET /careers` and `GET /compare` are live and working against the real
-Mumbai Supabase project — not mocked, not synthetic-only. A student can
-genuinely: see published careers, compare two or three pathways, and get
-correctly trust-labelled fields (verified vs. estimate vs. not-available)
-sourced from real database rows. Proven end-to-end by seeding a claim
-against a real official source and watching the API return the right
-label. Just as important, the negative case is proven too: a draft
-claim's value never reaches a guest response, even though the row exists
-— tested directly, not assumed.
+- `GET /careers` and `GET /compare` — live against the real Mumbai
+  Supabase project. Proven end-to-end: a claim published against a real
+  official source returns the correct trust label; a draft claim's
+  value never reaches a guest response even though the row exists.
+- `app/rules/eligibility.py` — the three-outcome eligibility engine
+  (meets / does_not_meet / insufficient_information), with the core
+  safety property tested explicitly: an unknown input never becomes a
+  rejection, and a definite failure is never masked by an unrelated
+  unknown when several criteria combine.
+- Deployed and running on your Oracle VM alongside your other apps
+  (`hisab`, `lekha`, `attendance-app`), same systemd/nginx conventions,
+  nothing else touched.
 
-**31 tests passing** (18 unit + 13 live DB), lint/typecheck clean, on
-GitHub Actions too. Along the way, caught and fixed: a packaging bug
-that only appeared on a clean install (not locally), a ruff false
-positive on FastAPI's own idiom, and two real mypy type gaps.
+**57 tests passing** (44 unit + 13 live DB), lint/typecheck clean, on
+GitHub Actions too.
 
 ## Blockers
-None. The core M1 slice from the DPR's own spec (Lite Build Pack §9:
-"published career record → explore → compare two options") is genuinely
-built and verified.
+None.
 
 ## Next task
-Design/UI round (Lite Build Pack §9 usability round 1) before adding more
-engines, or start on the eligibility/cost rule engines (M2 scope,
-`app/rules/`) — steering committee's call. See `tasks/BCI-002.md` for
-full detail on what shipped.
+Cost engine, timeline engine, or a design/UI usability round — steering
+committee's call. See `tasks/BCI-003.md` for exact remaining scope.
 
 ## Infrastructure
 | Thing | Status |
 | --- | --- |
-| Supabase | **Live.** Mumbai (`ap-south-1`), schema applied, RLS verified by 9 passing tests, keys rotated after being pasted in chat. |
-| GitHub | **Live.** `sheelajindal07-collab/eduvation`, pushed via a collaborator invite accepted for this machine's account, CI green. |
-| Oracle hosting | Confirmed ready; specifics gathered at the deployment milestone (M6). |
-| AI provider | Gemini, owner-confirmed. Not used before M5 — no key needed yet. |
+| Supabase | **Live.** Mumbai (`ap-south-1`), schema applied, RLS verified. |
+| GitHub | **Live.** `sheelajindal07-collab/eduvation`, CI green. |
+| Oracle hosting | **Live.** `eduvation.service` on `moulding-app-a1`, port 8010 (localhost only — no public domain/nginx site yet). |
+| AI provider | Gemini, owner-confirmed. Not used before M5. |
 
-## Needs your input (tracked in full in `docs/DECISIONS.md`) — none blocking
-1. **`DATABASE_URL` in your `.env`** (optional, for automated future
-   migrations) — Project Settings → Database → Connection string → URI.
-2. **Pilot state** — still assumed Gujarat (Lite Build Pack §2, "if
-   confirmed").
-3. **Named content reviewers** — who verifies real programme
-   records/exam rules/scholarships (Lite Build Pack §12)? Not blocking
-   engineering.
-4. **Gemini model** — flash vs pro can wait until M5.
-5. **Stack confirmation** — silence keeps FastAPI/Supabase/VPS.
+## Needs your input — none blocking
+1. **Public domain for the deployed app** — if you want `/compare` etc.
+   reachable from outside the VM, give me a domain/subdomain and I'll
+   add an nginx site (same pattern as your other apps).
+2. **Pilot state** — still assumed Gujarat, confirm or correct.
+3. **Named content reviewers** — not blocking engineering.
+4. **Gemini model** — can wait until M5.
 
 ## Not claimed
-No e2e test, no live AI call, no deployment has happened yet. `make
-test-e2e` and `make build` are still placeholder targets until M1's UI
-and a hosting decision respectively give them something real to run
-against. `scripts/apply_migrations.py` is written and passes lint/
-typecheck but has not actually been run (no `DATABASE_URL` yet).
+No e2e test, no live AI call. The deployed app is reachable only from
+inside the VM (`127.0.0.1:8010`) — not yet exposed publicly.
+`scripts/apply_migrations.py` is written but not yet run (no
+`DATABASE_URL` in `.env` yet — optional).
+
+## Concurrent sessions note
+Two other Claude sessions were active on this same repo during this
+session (one did a documentation restructuring, coordinated via direct
+messaging before merging — see `docs/DECISIONS.md`). If you're running
+multiple sessions on purpose, that coordination worked cleanly; if not,
+worth knowing it's happening.
