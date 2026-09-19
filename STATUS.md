@@ -61,13 +61,24 @@ verified healthy, talking to the real database).
 
 **213 tests total** (188 passing + 25 correctly skipping pending the
 0003 migration — verified live this session, not just collected),
-lint/typecheck clean, CI green on every push this session. One test
-(`test_sign_up_new_email_succeeds_or_requires_confirmation`) has now
-flaked twice under the full suite's combined load, passing both times in
-isolation — plausibly Supabase Auth rate-limiting real sign-ups across
-this repo's growing test count in one run. Second occurrence means it's
-a real pattern now, not a one-off; worth a proper fix (retry/backoff, or
-spacing out sign-up-heavy tests), not just another note.
+lint/typecheck clean, CI green on every push this session.
+
+**Fixed** (commit `1919c4d`): the flaky `test_sign_up_new_email_
+succeeds_or_requires_confirmation` above — root cause found, not
+papered over with a retry. `app/api/auth.py`'s sign-up handler caught
+every Supabase Auth error as a bare `Exception` and flattened it to a
+plain 400, discarding the structured status Supabase's own
+`AuthApiError` carries. The test then had to guess whether a 400 was
+"the known rate-limit case" by string-matching "rate limit" in the
+free-text message — fragile, since Supabase has more than one
+rate-limit error code (`over_email_send_rate_limit`,
+`over_request_rate_limit`, confirmed live by inspecting
+`supabase_auth.errors`) and nothing guarantees every variant's message
+contains that exact substring. Fixed by propagating Supabase's real
+`exc.status` (429 for a rate limit, confirmed against the actual
+project, which is currently saturated from this session's own testing)
+instead of hardcoding 400; the three affected tests now check
+`status_code == 429` directly. Full suite rerun clean after the fix.
 
 ## Open findings from the background UX review, not yet fixed
 A read-only `ux-qa-reviewer` pass this session (separate from the two
