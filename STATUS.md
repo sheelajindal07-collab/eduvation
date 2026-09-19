@@ -1,19 +1,24 @@
 # Status
 
 **Milestone:** M0 complete (BCI-001); M1 data foundation **verified live**
-(BCI-002, in progress). **Commit:** see `git log -1` on `main`.
+(BCI-002, in progress). **Commit:** see `git log -1` on `main`. **Repo:**
+[github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
+CI green.
 
 ## What works right now — for real, verified this session
-`make lint`, `make typecheck`, `make test-unit` all pass. The FastAPI app
-boots and serves `/healthz`/`/docs` live. **The real Supabase project
-(Mumbai, `ap-south-1`) has the schema applied, and `make test-db` passes
-9/9 against it** — guest, student A, student B and reviewer access are
-each independently verified by RLS, not mocked. That's 27 tests total (18
-unit + 9 live DB), all green. `app/planning/comparison.py` implements the
-full trust-label rules from `docs/DATA.md` with 12 dedicated tests.
+`make lint`, `make typecheck`, `make test-unit` all pass, on GitHub Actions
+too (not just locally — caught and fixed a real packaging bug that only
+showed up on a clean CI install). The FastAPI app boots and serves
+`/healthz`/`/docs` live. **The real Supabase project (Mumbai,
+`ap-south-1`) has the schema applied, and `make test-db` passes 9/9
+against it** — guest, student A, student B and reviewer access are each
+independently verified by RLS, not mocked. Re-verified after the owner
+rotated the two keys pasted in chat earlier: still 9/9. 27 tests total
+(18 unit + 9 live DB), all green.
 
 ## Blockers
-None. Engineering can continue freely — the database is live and tested.
+None. Engineering can continue freely — the database is live and tested,
+the repo is on GitHub with passing CI.
 
 ## Next task
 **BCI-002 — M1 first vertical slice**: wire the actual `/explore` and
@@ -23,27 +28,19 @@ using the comparison-assembly logic already built. See `tasks/BCI-002.md`.
 ## Infrastructure
 | Thing | Status |
 | --- | --- |
-| Supabase | **Live.** Mumbai (`ap-south-1`), schema applied, RLS verified by 9 passing tests. `DATABASE_URL` not yet in `.env` — needed for `scripts/apply_migrations.py` to apply *future* migrations without the dashboard. |
-| GitHub | Owner creating a repo on their own account (not this machine's `maheshjin-bot`). Not yet connected. |
+| Supabase | **Live.** Mumbai (`ap-south-1`), schema applied, RLS verified by 9 passing tests, keys rotated after being pasted in chat. |
+| GitHub | **Live.** `sheelajindal07-collab/eduvation`, pushed via a collaborator invite accepted for this machine's account, CI green. |
 | Oracle hosting | Confirmed ready; specifics gathered at the deployment milestone (M6). |
 | AI provider | Gemini, owner-confirmed. Not used before M5 — no key needed yet. |
 
-**Two secrets were pasted into chat during setup** (a JWT secret, then a
-service-role key) — owner was asked to rotate both in the Supabase
-dashboard as a precaution; neither was written to any file by me.
-
-## Needs your input (tracked in full in `docs/DECISIONS.md`)
-1. **GitHub repo URL** — once created, send it + confirm push credentials
-   work locally.
-2. **`DATABASE_URL` in your `.env`** (optional, for automated future
+## Needs your input (tracked in full in `docs/DECISIONS.md`) — none blocking
+1. **`DATABASE_URL` in your `.env`** (optional, for automated future
    migrations) — Project Settings → Database → Connection string → URI.
-   See `db/migrations/README.md` for the one-time bootstrap note (0001
-   was applied manually, before this script existed).
-3. **Pilot state** — still assumed Gujarat (Annex C.2, "if confirmed").
-4. **Named content reviewers** — who verifies real programme
+2. **Pilot state** — still assumed Gujarat (Annex C.2, "if confirmed").
+3. **Named content reviewers** — who verifies real programme
    records/exam rules/scholarships (Annex C.3)? Not blocking engineering.
-5. **Gemini model** — flash vs pro can wait until M5.
-6. **Stack confirmation** — silence keeps FastAPI/Supabase/VPS.
+4. **Gemini model** — flash vs pro can wait until M5.
+5. **Stack confirmation** — silence keeps FastAPI/Supabase/VPS.
 
 ## Not claimed
 No e2e test, no live AI call, no deployment has happened yet. `make

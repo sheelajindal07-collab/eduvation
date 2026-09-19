@@ -5,6 +5,23 @@ never deleted.
 
 ---
 
+## 2026-09-19 — GitHub repo connected; two exposed secrets rotated
+**Decision/event log:** Owner gave the repo URL
+(`github.com/sheelajindal07-collab/eduvation`); this machine's account
+(`maheshjin-bot`) had no access, so the owner sent a collaborator invite,
+which was found and accepted via `gh api` (not the web UI), then all
+commits were pushed. First CI run failed on a real, previously-unseen bug
+(`setuptools` flat-layout package discovery choked on `db/` existing
+alongside `app/` — never triggered locally since the editable install
+had only run once, before `db/` existed); fixed with an explicit
+`[tool.setuptools.packages.find]`, reproduced and re-verified the fix
+locally before pushing, CI green on the next run. Owner then confirmed
+rotating the two secrets pasted in chat earlier (JWT secret, service-role
+key) — re-ran `make test-db` afterward and all 9 tests still pass,
+confirming the new values are correctly in the owner's local `.env`.
+**Status:** Done. Repo live with passing CI; no known exposed secrets
+remain live.
+
 ## 2026-09-19 — Supabase project: "project education" (Singapore) not used;
 ## a fresh Mumbai (ap-south-1) project will be created instead
 **Decision:** The owner showed an existing Supabase project, "project
