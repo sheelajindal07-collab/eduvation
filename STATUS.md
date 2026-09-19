@@ -33,9 +33,10 @@ verified healthy, talking to the real database).
   you to run it via the SQL Editor before it's live; 12 tests are written
   and correctly skip until then.
 
-**157 tests total** (145 passing + 12 correctly skipping pending the
-0003 migration), lint/typecheck clean, CI green on every push this
-session.
+**150 tests total** (138 passing + 12 correctly skipping pending the
+0003 migration — verified with `pytest --collect-only`, since the 157
+figure quoted earlier this session didn't match a direct run), lint/
+typecheck clean, CI green on every push this session.
 
 ## Blockers
 None on engineering. **One real blocker on judgment, below.**

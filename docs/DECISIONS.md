@@ -5,6 +5,95 @@ never deleted.
 
 ---
 
+## 2026-09-19 — M3 auth surface security-reviewed: one flagged gate, three
+## bugs fixed
+**Event:** A full read-only security review of M3's sign-in/saved-plans/
+guest-migration surface (`app/api/auth.py`, `app/api/plans.py`,
+`app/api/deps.py`, `db/migrations/0002_saved_plans.sql`), run against the
+live Supabase project — header/response inspection, live probes beyond
+the committed test suite (spoofed `student_id` insert, cross-user
+delete, reviewer-vs-plan access), not a static read of the diff.
+**Verified correct, no findings**: the full guest/student A/student
+B/reviewer access matrix on `saved_plans`; the `saved_plans_own_row` RLS
+policy genuinely matches `student_profiles`'s pattern with no reviewer
+override; the guest→account pending-plan migration fix is correct end to
+end and no client-suppliable field can attribute a plan to a different
+student; `require_auth` coverage is complete across `plans.py`; the
+`client.postgrest.aclose()` cleanup introduces no use-after-close bug.
+**Findings, ranked:**
+1. **CRITICAL, flagged not fixed — a human decision, not code.**
+   `POST /auth/sign-up` has no age or consent gate at all: no birth-year
+   field, no consent flag, nothing that disables a real minor's account.
+   BCION Lite's primary user population is Class 8–12 students, i.e.
+   minors. CLAUDE.md's non-negotiable ("real minor accounts stay
+   disabled until the consent and safeguarding workflow is reviewed by a
+   person") is not yet met, and this is not hypothetical — it's live
+   code, already deployed to the Oracle VM. **Mitigating factor**: the
+   VM is not yet publicly reachable, so today's actual exposure is
+   limited to whoever already has VM access. **This is now recorded as a
+   hard blocker on the pending "public domain" request** (see STATUS.md)
+   — do not expose this publicly until resolved, whether via a real
+   consent flow or an interim gate (e.g. invite-only sign-up for the
+   pilot cohort). Both sessions working this repo flagged this to the
+   owner independently and in parallel, on purpose — this is exactly the
+   class of decision CLAUDE.md reserves for a person, not an agent.
+2. High: the guest→account migration's deliberate "never fail sign-up
+   over a bad plan" exception-swallow logs nothing anywhere. The exact
+   failure it was designed to survive (a bad insert) already happened
+   once this session and was only caught by hand-running a live test —
+   a recurrence in production would be invisible. Not yet fixed.
+3. Medium: `save_plan`'s catch-all mislabelled a nonexistent
+   `pathway_id` (a foreign-key violation) and a malformed UUID as
+   "already saved" (409) — only the genuine duplicate case matched that
+   message. Fix owner: whichever session gets there first; check
+   `git log` before assuming.
+4. Medium: `PATCH`/`DELETE /plans/<malformed-id>` crashed to an
+   unhandled 500 instead of a clean 404/422 — no UUID validation on the
+   path parameter. Same fix-owner note as above.
+5. Low/informational: a measured ~100–130ms timing gap between
+   wrong-password and nonexistent-email on sign-in, plausibly from
+   Supabase Auth's own bcrypt-only-if-the-account-exists behavior (not
+   this repo's code). Not a mandatory fix at pilot scale; noted for
+   awareness given the student population.
+6. Low, test-coverage gap: no delete-cross-user or reviewer-vs-
+   `saved_plans` test existed in the committed suite, despite both being
+   correct when probed live. Recommended as permanent regression tests.
+**Owner action needed:** decide on the consent-gate question (finding 1)
+before agreeing to any public-domain/nginx request.
+
+## 2026-09-19 — Maker-checker enforced server-side (M4 first slice,
+## BCI-005): migration written, not yet applied
+**Decision/event:** `db/migrations/0003_maker_checker.sql` closes the
+exact gap `0001_init.sql`'s own comment flagged at M1: a claim can no
+longer be inserted directly as `published` (must always start `draft`),
+the author of a claim can never approve their own (`reviewed_by` must be
+set and distinct from `created_by`, enforced by a trigger — RLS's
+`using`/`with check` alone can't compare OLD vs NEW rows the way the
+transition/immutability rules need), and a `published` claim's recorded
+content is frozen — the only legal move is to `superseded`, paired with
+a brand-new claim for the correction, never an in-place edit of a fact
+already shown to a student as verified. `service_role` is exempt,
+mirroring exactly what RLS already grants that role, so every existing
+test fixture across the repo that seeds pre-published claims directly
+keeps working unchanged. 12 new live tests
+(`tests/db/test_maker_checker.py`) prove the full state machine;
+correctly skip until the migration is applied.
+**Reason:** CLAUDE.md's first non-negotiable: "Unapproved facts never
+reach public results (maker-checker, enforced server-side, not by a
+button)." This has been a documented, unenforced gap since M1.
+**Known limitation, not fixed here:** `created_by`/`reviewed_by` are not
+yet forced to equal the authenticated caller at the database level
+(`created_by = auth.uid()`) — the publishing-console API that will
+actually set these fields doesn't exist yet, so hardening this now would
+be premature and untestable against real usage. Tracked in
+`tasks/BCI-005.md` for whoever builds that API next.
+**Owner action needed:** apply `db/migrations/0003_maker_checker.sql`
+via the SQL Editor or `scripts/apply_migrations.py`, same process as
+`0002`. Deliberately not applied by any agent — schema changes go
+through the owner's own project only, never an agent's management-API
+access (this session's Supabase MCP tool was available and was not used
+for this, on purpose).
+
 ## 2026-09-19 — Supabase client-sharing fix: security-reviewed, two follow-up
 ## fixes applied
 **Event:** `app/db/client.py`'s `get_anon_client()` was `@lru_cache`d, so

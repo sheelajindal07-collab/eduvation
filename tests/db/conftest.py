@@ -64,6 +64,27 @@ _PLANS_SKIP_REASON = (
 )
 
 
+def _maker_checker_migration_applied() -> bool:
+    """0003 adds no new table (only a trigger + a tightened policy on the
+    existing `claims` table), so there's nothing to `select` the way
+    `_saved_plans_table_exists` does. `maker_checker_schema_version()` is
+    a tiny marker function the migration itself creates purely so this
+    check has something to call."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("maker_checker_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_MAKER_CHECKER_SKIP_REASON = (
+    "db/migrations/0003_maker_checker.sql not yet applied to this "
+    "project. See db/migrations/README.md."
+)
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Skip every test collected under tests/db/ when unconfigured.
 
@@ -89,6 +110,13 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         for item in items:
             if "test_api_plans.py" in str(item.fspath):
                 item.add_marker(plans_skip)
+
+    # Same pattern, for 0003_maker_checker.sql.
+    if not _maker_checker_migration_applied():
+        maker_checker_skip = pytest.mark.skip(reason=_MAKER_CHECKER_SKIP_REASON)
+        for item in items:
+            if "test_maker_checker.py" in str(item.fspath):
+                item.add_marker(maker_checker_skip)
 
 
 @pytest.fixture(scope="module")
