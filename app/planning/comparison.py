@@ -72,13 +72,24 @@ class FieldValue:
     """One field on the comparison screen: a value plus its trust label
     and, when available, the evidence to show alongside it (docs/UI.md:
     "source authority, applicable cycle, verification date, official
-    link, Report an issue" — the link/date live here; the rest is
-    assembled by the caller from the Source/claim it already has)."""
+    link, Report an issue" — the link/date/authority live here; the rest
+    is assembled by the caller from the Source/claim it already has).
+
+    `source_authority` was added after ux-qa-reviewer's first pass on the
+    Compare screen (2026-09-19) found the HTML layer had nowhere to get
+    the source's actual name from, so every evidence link rendered the
+    same generic "Official source" text regardless of whether the field
+    was actually `checked_against_official_source`,
+    `institution_reported`, or `needs_rechecking` — three trust labels
+    that exist specifically to be told apart, contradicted on the same
+    line by identical link text. Additive field, existing callers
+    unaffected."""
 
     value: str | int | float | bool | None
     label: TrustLabel
     source_url: str | None = None
     verification_date: date | None = None
+    source_authority: str | None = None
 
 
 def field_value_for(
@@ -98,6 +109,9 @@ def field_value_for(
         label=label,
         source_url=source.official_url if (source and label != TrustLabel.not_available) else None,
         verification_date=claim.verification_date if claim else None,
+        source_authority=(
+            source.authority_name if (source and label != TrustLabel.not_available) else None
+        ),
     )
 
 

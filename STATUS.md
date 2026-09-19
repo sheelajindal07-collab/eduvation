@@ -27,15 +27,26 @@ verified healthy, talking to the real database).
 - Deployed on your Oracle VM alongside `hisab`/`lekha`/`attendance-app`,
   nothing else touched.
 - **`GET /explore`, `GET /compare/view` — an actual UI, for the first
-  time.** Every route before this was JSON-only; nobody could click
-  through any of it. Real Tailwind-styled pages: pick 2-3 pathways on
-  Explore (works with zero JavaScript — a plain HTML form), see them
-  compared with trust-labelled fields and the four cost figures kept
-  visually distinct, closing with docs/UI.md's exact required prompt.
-  Verified live by hand and with 6 permanent tests
-  (`tests/db/test_web_pages.py`). `ux-qa-reviewer` — unusable until now,
-  its own trigger condition never having been met — is being invoked
-  right after this update lands.
+  time, now reviewed and fixed.** Every route before this was JSON-only;
+  nobody could click through any of it. Real Tailwind-styled pages: pick
+  2-3 pathways on Explore (works with zero JavaScript — a plain HTML
+  form), see them compared with trust-labelled fields and the four cost
+  figures kept visually distinct, closing with docs/UI.md's exact
+  required prompt. `ux-qa-reviewer` — unusable until now, its own
+  trigger condition never having been met in this project — walked every
+  scenario live (0/1/2/4 pathways, malformed/nonexistent ids,
+  zero-claims pathways, an XSS probe) and found real issues, all fixed
+  same session: a malformed `pathway_id` crashed to a bare 500 with no
+  way back (very plausible given this product's WhatsApp-shared-link
+  reality); every evidence link said "Official source" regardless of the
+  actual trust label, directly contradicting the badge next to it for
+  institution-reported/stale fields; the comparison grid never actually
+  stacked on mobile despite a comment claiming it did; field order
+  didn't match docs/UI.md; money figures were inconsistently formatted;
+  a color-contrast pair measured just under WCAG AA; checkbox tap
+  targets were 16px against ~44px guidance. No XSS found (Jinja
+  autoescaping confirmed on); the zero-JS claim confirmed genuinely true.
+  9 new regression tests plus the original 6, all live.
 - **Maker-checker, enforced at the database, plus the publishing console
   API on top of it** — neither existed before this session:
   `db/migrations/0003_maker_checker.sql` (a claim must always be
@@ -48,9 +59,15 @@ verified healthy, talking to the real database).
   route in `claims.py` 403s/400s until then, and its 12 tests correctly
   skip rather than pretend to pass.
 
-**209 tests total** (184 passing + 25 correctly skipping pending the
+**213 tests total** (188 passing + 25 correctly skipping pending the
 0003 migration — verified live this session, not just collected),
-lint/typecheck clean, CI green on every push this session.
+lint/typecheck clean, CI green on every push this session. One test
+(`test_sign_up_new_email_succeeds_or_requires_confirmation`) has now
+flaked twice under the full suite's combined load, passing both times in
+isolation — plausibly Supabase Auth rate-limiting real sign-ups across
+this repo's growing test count in one run. Second occurrence means it's
+a real pattern now, not a one-off; worth a proper fix (retry/backoff, or
+spacing out sign-up-heavy tests), not just another note.
 
 ## Open findings from the background UX review, not yet fixed
 A read-only `ux-qa-reviewer` pass this session (separate from the two
@@ -203,14 +220,24 @@ wired), M5 (bounded AI), or a content/design pass — your call.
 4. **Pilot state** — still assumed Gujarat, confirm or correct.
 5. **Named content reviewers**, **Gemini model** — not blocking.
 
-## Content drafts — NEET (UG) added (2026-09-19)
+## Content drafts — NEET (UG) added and cross-checked (2026-09-19)
 `docs/content-drafts/neet-ug-eligibility.md` — draft research only, same
 rules as the GUJCET draft: unverified, unpublished, nothing inserted into
-the database. Single source: NTA's official NEET (UG)-2026 Information
-Bulletin (124-page text PDF, read in full-text; page refs in the draft).
-NMC's own site was unreachable this session, so the underlying GMER-2023
-regulation was not read directly. Three things worth knowing before
-anyone builds a NEET pathway on it:
+the database. Two independent official sources now, not one: NTA's
+official NEET (UG)-2026 Information Bulletin (124-page text PDF), plus a
+same-session follow-up that reached NMC's own site (retrying past the
+earlier redirect/404) and read the actual primary law it's based on —
+**Graduate Medical Education Regulations, 2023** and its 16.06.2023
+Corrigendum, both official Gazette of India notifications, full text.
+Age and required-subjects are now confirmed by both documents, verbatim,
+independently. Worth knowing the regulation's original text said the age
+cutoff was 31 **January**, corrected to 31 **December** three months
+later by the corrigendum — the version now in force matches the
+bulletin. The regulation's own silence on a Class-12 marks floor,
+domicile and exam-attempt limits strengthens (not just repeats) those
+three "not found" conclusions from the bulletin alone. Full corroboration
+log in the draft's own "Corroboration done this session" section. Three
+things worth knowing before anyone builds a NEET pathway on it:
 1. **The bulletin has no Class 12 marks floor and no upper age limit.**
    The widely repeated "50% PCB" / "age 25" figures are not in it — the
    draft publishes no claim for either rather than guessing. (The

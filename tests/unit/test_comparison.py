@@ -133,6 +133,35 @@ def test_field_value_for_missing_field_is_not_available() -> None:
     assert result.value is None
 
 
+def test_field_value_for_carries_source_authority_when_available() -> None:
+    """Added for ux-qa-reviewer, 2026-09-19: the HTML comparison page had
+    no way to name which source it was linking to, so every evidence
+    link showed the same generic text regardless of trust label."""
+    claim = _claim(ClaimStatus.published, OFFICIAL_SOURCE.id, TODAY)
+    result = field_value_for(
+        "verified_charges",
+        {"verified_charges": claim},
+        {OFFICIAL_SOURCE.id: OFFICIAL_SOURCE},
+        as_of=TODAY,
+    )
+    assert result.source_authority == OFFICIAL_SOURCE.authority_name
+
+
+def test_field_value_for_hides_source_authority_when_not_available() -> None:
+    """Same "never leak evidence for an unpublished fact" rule that
+    already applies to value/source_url must apply to the new field too
+    -- an unpublished claim's source name is not something a student
+    should see attached to a "not available" badge."""
+    claim = _claim(ClaimStatus.draft, OFFICIAL_SOURCE.id, TODAY)
+    result = field_value_for(
+        "verified_charges",
+        {"verified_charges": claim},
+        {OFFICIAL_SOURCE.id: OFFICIAL_SOURCE},
+        as_of=TODAY,
+    )
+    assert result.source_authority is None
+
+
 def test_cost_breakdown_keeps_three_amounts_separate() -> None:
     """The core UI/data rule: verified, estimated and potential must
     never be merged into one number (docs/UI.md, docs/DATA.md)."""

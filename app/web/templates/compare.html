@@ -11,16 +11,29 @@
     </div>
   {% else %}
     {# docs/UI.md "Comparison screen": "Desktop: side-by-side columns.
-       Mobile: stacked sections ... never a sideways-scrolling table." A
-       responsive grid gives both from one markup, no separate mobile
-       template. #}
-    <div class="grid gap-6" style="grid-template-columns: repeat({{ comparisons|length }}, minmax(0, 1fr));">
+       Mobile: stacked sections ... never a sideways-scrolling table."
+       ux-qa-reviewer finding, 2026-09-19: the previous version set
+       grid-template-columns via an inline style with no responsive
+       override at all, so 2-3 columns crammed into strips on a phone
+       instead of stacking -- not literally the banned sideways-scroll,
+       but failing the same requirement by a different mechanism.
+       Literal class names here (not interpolated) because Tailwind's
+       content scanner needs to see the exact strings to keep them. #}
+    <div class="grid grid-cols-1 gap-6 {{ 'md:grid-cols-3' if comparisons|length == 3 else 'md:grid-cols-2' }}">
       {% for c in comparisons %}
         <section class="card">
           <h2 class="text-lg font-semibold text-charcoal mb-4">
-            {{ pathway_names.get(c.pathway_id, c.pathway_id) }}
+            {{ pathway_names.get(c.pathway_id, "This pathway") }}
           </h2>
 
+          {# docs/UI.md's field order for this screen: entry requirements
+             -> main stages -> time -> total cost -> funding -> location
+             -> work realities -> alternatives -> evidence. Funding
+             (confirmed vs potential, beyond what's in Cost below), work
+             realities and alternatives have no data source yet
+             (app/api/compare.py's own COMPARISON_FIELDS comment) --
+             skipped rather than faked; location was previously rendered
+             BEFORE cost, which this fixes (ux-qa-reviewer finding). #}
           <div class="space-y-4">
             <div>
               <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
@@ -40,12 +53,6 @@
               </h3>
               {{ field_value(c.fields["time_range"]) }}
             </div>
-            <div>
-              <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
-                Location
-              </h3>
-              {{ field_value(c.fields["location"]) }}
-            </div>
 
             {# docs/UI.md "Timeline & cost": "Three separate amounts,
                always: verified charges, estimated additional expenses,
@@ -59,15 +66,21 @@
               <div class="space-y-3">
                 <div>
                   <p class="text-xs text-neutral mb-1">Verified charges</p>
-                  {{ field_value(c.cost_breakdown.verified_charges) }}
+                  {{ field_value(c.cost_breakdown.verified_charges, money=true) }}
                 </div>
                 <div>
                   <p class="text-xs text-neutral mb-1">Estimated additional expenses</p>
-                  {{ field_value(c.cost_breakdown.estimated_additional_expenses) }}
+                  {{ field_value(c.cost_breakdown.estimated_additional_expenses, money=true) }}
+                  {% if c.cost_breakdown.estimated_additional_expenses.value == 0 %}
+                    <p class="text-xs text-neutral mt-1">
+                      No estimate has been entered for this pathway yet -- this is not a
+                      claim that there are no extra costs.
+                    </p>
+                  {% endif %}
                 </div>
                 <div>
                   <p class="text-xs text-neutral mb-1">Potential assistance (not yet awarded)</p>
-                  {{ field_value(c.cost_breakdown.potential_assistance_not_yet_awarded) }}
+                  {{ field_value(c.cost_breakdown.potential_assistance_not_yet_awarded, money=true) }}
                 </div>
                 <div class="bg-neutral-bg rounded-md p-3">
                   <p class="text-xs text-neutral mb-1">What you'd need to arrange</p>
@@ -89,6 +102,13 @@
                   {% endif %}
                 </div>
               </div>
+            </div>
+
+            <div>
+              <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
+                Location
+              </h3>
+              {{ field_value(c.fields["location"]) }}
             </div>
           </div>
         </section>

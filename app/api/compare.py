@@ -46,6 +46,9 @@ class FieldValueOut(BaseModel):
     label: str
     source_url: str | None = None
     verification_date: date | None = None
+    source_authority: str | None = None
+    """Additive field (ux-qa-reviewer finding, 2026-09-19) — existing
+    JSON consumers unaffected, a new optional key."""
 
     @classmethod
     def from_field_value(cls, fv: FieldValue) -> FieldValueOut:
@@ -54,6 +57,7 @@ class FieldValueOut(BaseModel):
             label=fv.label.value,
             source_url=fv.source_url,
             verification_date=fv.verification_date,
+            source_authority=fv.source_authority,
         )
 
 

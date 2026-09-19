@@ -13,6 +13,7 @@ module and `app/api/compare.py`'s JSON route call it.
 
 from __future__ import annotations
 
+import uuid as uuid_module
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -58,18 +59,31 @@ def explore_page(request: Request, db: Client = Depends(get_db_client)) -> Any:
     )
 
 
+def _looks_like_a_uuid(value: str) -> bool:
+    try:
+        uuid_module.UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
 @router.get("/compare/view")
 def compare_page(
     request: Request,
     pathway_id: list[str] = Query(default=[]),
     db: Client = Depends(get_db_client),
 ) -> Any:
-    """docs/UI.md "Comparison screen". A missing/wrong pathway_id count
-    renders a friendly in-page message with a way back to Explore
-    (docs/UI.md "difficult states": explain, don't just error) rather
-    than the JSON API's plain 400 — a human clicked into this page, they
-    didn't send a malformed request on purpose."""
-    if not (MIN_PATHWAYS <= len(pathway_id) <= MAX_PATHWAYS):
+    """docs/UI.md "Comparison screen". A missing/wrong pathway_id count,
+    OR a malformed id (ux-qa-reviewer finding, 2026-09-19: a truncated or
+    garbled shared link -- very plausible for this product, sent over
+    WhatsApp -- used to reach Postgres raw and crash to a bare 500 with
+    no way back), renders the same friendly in-page message with a link
+    to Explore (docs/UI.md "difficult states": explain, don't just
+    error) rather than either the JSON API's plain 400 or an unhandled
+    crash — a human clicked into this page, they didn't send a malformed
+    request on purpose."""
+    invalid_shape = not all(_looks_like_a_uuid(pid) for pid in pathway_id)
+    if invalid_shape or not (MIN_PATHWAYS <= len(pathway_id) <= MAX_PATHWAYS):
         return templates.TemplateResponse(
             request,
             "compare.html",

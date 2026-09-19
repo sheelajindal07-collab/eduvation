@@ -20,19 +20,31 @@
             {% if not entry.pathways %}
               <p class="text-sm text-neutral">No pathways published for this career yet.</p>
             {% else %}
-              <ul class="space-y-2">
+              <ul class="space-y-1">
+                {# ux-qa-reviewer finding, 2026-09-19: the checkbox's own
+                   hit target was 16x16px, well under the ~44px guidance
+                   -- the whole row is now one <label>, so clicking
+                   anywhere in its padding (not just the tiny box itself)
+                   toggles it, and min-h-11 (44px) makes that a real
+                   guarantee, not just "probably tall enough" from two
+                   lines of text. #}
                 {% for pathway in entry.pathways %}
-                  <li class="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      name="pathway_id"
-                      value="{{ pathway.id }}"
-                      id="pathway-{{ pathway.id }}"
-                      class="mt-1 h-4 w-4 rounded border-charcoal/30 text-accent focus:ring-accent compare-checkbox"
-                    />
-                    <label for="pathway-{{ pathway.id }}" class="text-sm">
-                      <span class="font-medium text-charcoal">{{ pathway.name }}</span>
-                      <span class="block text-neutral">{{ pathway.description }}</span>
+                  <li>
+                    <label
+                      for="pathway-{{ pathway.id }}"
+                      class="flex items-start gap-3 -mx-2 px-2 py-2 min-h-11 rounded-md hover:bg-charcoal/5 cursor-pointer text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        name="pathway_id"
+                        value="{{ pathway.id }}"
+                        id="pathway-{{ pathway.id }}"
+                        class="mt-1 h-5 w-5 rounded border-charcoal/30 text-accent focus:ring-accent compare-checkbox"
+                      />
+                      <span>
+                        <span class="font-medium text-charcoal">{{ pathway.name }}</span>
+                        <span class="block text-neutral">{{ pathway.description }}</span>
+                      </span>
                     </label>
                   </li>
                 {% endfor %}

@@ -33,7 +33,11 @@ module.exports = {
           bg: "#FEE2E2",
         },
         neutral: {
-          DEFAULT: "#6B7280",
+          // ux-qa-reviewer finding, 2026-09-19: #6B7280 on the badge
+          // background (#F3F4F6) measured ~4.4:1, just under WCAG AA's
+          // 4.5:1 for normal-weight text -- worse on the italicised
+          // "Estimate" badge. Darkened to clear AA with margin.
+          DEFAULT: "#4B5563",
           bg: "#F3F4F6",
         },
       },

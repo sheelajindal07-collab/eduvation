@@ -121,6 +121,33 @@ class TestComparePage:
         assert "Pick 2 or 3 pathways" in response.text
         assert "Back to explore" in response.text
 
+    def test_malformed_pathway_id_shows_the_friendly_message_not_a_500(self) -> None:
+        """ux-qa-reviewer finding, 2026-09-19: a truncated/garbled shared
+        link (very plausible for this product -- sent over WhatsApp) used
+        to reach Postgres raw and crash to a bare, unstyled 500 with no
+        way back."""
+        response = client.get(
+            "/compare/view", params={"pathway_id": ["not-a-uuid", "also-bad"]}
+        )
+        assert response.status_code == 200
+        assert "Pick 2 or 3 pathways" in response.text
+
+    def test_nonexistent_pathway_id_gives_a_friendly_heading_not_the_raw_uuid(
+        self, two_pathways: dict[str, Any]
+    ) -> None:
+        response = client.get(
+            "/compare/view",
+            params={
+                "pathway_id": [
+                    two_pathways["pathway_a"]["id"],
+                    "00000000-0000-0000-0000-000000000000",
+                ]
+            },
+        )
+        assert response.status_code == 200
+        assert "This pathway" in response.text
+        assert "00000000-0000-0000-0000-000000000000" not in response.text
+
     def test_compare_shows_both_pathway_names_and_trust_labels(
         self, two_pathways: dict[str, Any]
     ) -> None:
@@ -156,3 +183,59 @@ class TestComparePage:
             },
         )
         assert "Which option would you like to investigate further?" in response.text
+
+    def test_evidence_link_names_the_actual_source_and_varies_by_trust_label(
+        self, admin_client: Client, two_pathways: dict[str, Any]
+    ) -> None:
+        """ux-qa-reviewer finding, 2026-09-19: the evidence link used to
+        say "Official source" for every field regardless of its actual
+        trust label -- an institution-reported or needs-rechecking field
+        showed a badge saying "not independently confirmed"/"overdue"
+        directly next to a link claiming to be official, contradicting
+        the badge on the same line."""
+        institution_source = (
+            admin_client.table("sources")
+            .insert(
+                {
+                    "authority_name": "Some College (web UI test)",
+                    "official_url": "https://example.invalid/institution-web-test",
+                    "source_type": "institution_self_declared",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": two_pathways["pathway_b"]["id"],
+                    "field": "location",
+                    "value": "Ahmedabad",
+                    "source_id": institution_source["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": "test-fixture-reviewer",
+                    "status": "published",
+                    "review_due_date": "2099-01-01",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get(
+                "/compare/view",
+                params={
+                    "pathway_id": [
+                        two_pathways["pathway_a"]["id"],
+                        two_pathways["pathway_b"]["id"],
+                    ]
+                },
+            )
+            assert response.status_code == 200
+            assert "Some College (web UI test)" in response.text
+            assert "(institution-reported)" in response.text
+        finally:
+            admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+            admin_client.table("sources").delete().eq("id", institution_source["id"]).execute()

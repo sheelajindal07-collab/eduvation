@@ -26,21 +26,41 @@
   {% endif %}
 {% endmacro %}
 
-{% macro field_value(fv) %}
+{% macro field_value(fv, money=false) %}
   {# fv is a FieldValueOut-shaped dict/object: value, label, source_url,
-     verification_date. Never renders `value` when the label is
-     not_available -- app.planning.comparison already guarantees that
-     case's value is None, this is defence in depth so a template typo
-     can't accidentally leak it either. #}
+     verification_date, source_authority. Never renders `value` when the
+     label is not_available -- app.planning.comparison already
+     guarantees that case's value is None, this is defence in depth so a
+     template typo can't accidentally leak it either.
+
+     `money=true` (ux-qa-reviewer finding, 2026-09-19: verified_charges
+     rendered as bare "125000", the estimate line as "30000.0" with a
+     trailing ".0" that read like a display bug, while only
+     net_to_arrange got real currency formatting -- inconsistency that
+     undercuts "explain verified-cost vs estimate" for the reader) formats
+     a numeric value with a rupee sign and thousands separator, same
+     "{:,.0f}" shape net_to_arrange already used. #}
   <div>
     {% if fv.label != "not_available" and fv.value is not none %}
-      <p class="text-charcoal font-medium">{{ fv.value }}</p>
+      {% if money %}
+        <p class="text-charcoal font-medium">&#8377;{{ "{:,.0f}".format(fv.value) }}</p>
+      {% else %}
+        <p class="text-charcoal font-medium">{{ fv.value }}</p>
+      {% endif %}
     {% endif %}
     {{ trust_badge(fv.label) }}
     {% if fv.source_url %}
+      {# ux-qa-reviewer finding, 2026-09-19: this used to say "Official
+         source" for every label, including institution_reported and
+         needs_rechecking -- directly contradicting the badge shown one
+         line above it. Link text now names the actual authority and
+         matches what the badge already says, instead of overriding it. #}
       <p class="text-xs text-neutral mt-1">
         <a href="{{ fv.source_url }}" class="underline hover:text-accent" target="_blank" rel="noopener">
-          Official source
+          {{ fv.source_authority or "Source" }}
+          {%- if fv.label == "institution_reported" %} (institution-reported){% endif -%}
+          {%- if fv.label == "needs_rechecking" %} (recheck due){% endif -%}
+          <span class="sr-only"> (opens in a new tab)</span>
         </a>
         {% if fv.verification_date %} &middot; verified {{ fv.verification_date }}{% endif %}
       </p>
