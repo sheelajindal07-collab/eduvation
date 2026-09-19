@@ -18,7 +18,12 @@ from supabase import Client
 
 from app.api.deps import get_db_client
 from app.data.models import Claim, ClaimStatus, Source, SourceType
-from app.planning.comparison import FieldValue, assemble_cost_breakdown, field_value_for
+from app.planning.comparison import (
+    FieldValue,
+    assemble_cost_breakdown,
+    assemble_cost_summary,
+    field_value_for,
+)
 
 router = APIRouter(tags=["compare"])
 
@@ -53,6 +58,17 @@ class CostBreakdownOut(BaseModel):
     verified_charges: FieldValueOut
     estimated_additional_expenses: FieldValueOut
     potential_assistance_not_yet_awarded: FieldValueOut
+    net_to_arrange: float | None = None
+    """What the student needs to actually arrange: verified charges +
+    estimated extras - CONFIRMED assistance only (app/rules/cost.py).
+    `None` when verified_charges itself is not yet available -- never a
+    confident-looking figure that's actually missing its main input.
+    There is no confirmed_assistance source in this slice yet (that is
+    student-specific award data, out of scope before M3's sign-in and
+    consent work), so today this is verified + estimate with nothing
+    subtracted; potential_assistance_not_yet_awarded, shown above, is
+    never part of this number (Lite Build Pack §6: "an unawarded
+    scholarship is never subtracted")."""
 
 
 class PathwayComparisonOut(BaseModel):
@@ -95,6 +111,16 @@ def _row_to_source(row: dict[str, Any]) -> Source:
 @router.get("/compare", response_model=CompareResponse)
 def compare_pathways(
     pathway_id: list[str] = Query(..., alias="pathway_id"),
+    estimated_additional_expenses: float | None = Query(
+        default=None,
+        description=(
+            "Assumption override for this request only (Lite Build Pack §6/"
+            "docs/UI.md 'assumption editing') -- never persisted, never a "
+            "Claim. Applied to every pathway in this comparison. Omit to "
+            "use each pathway's estimated_additional_expenses_hint claim, "
+            "or 0.0 if it has none."
+        ),
+    ),
     db: Client = Depends(get_db_client),
 ) -> CompareResponse:
     """`?pathway_id=<id>&pathway_id=<id>` (2 or 3 of them) — docs/UI.md:
@@ -137,6 +163,12 @@ def compare_pathways(
             for field in COMPARISON_FIELDS
         }
         cost = assemble_cost_breakdown(claims_by_field, sources_by_id, as_of=as_of)
+        cost_summary = assemble_cost_summary(
+            claims_by_field,
+            sources_by_id,
+            as_of=as_of,
+            estimated_additional_expenses_override=estimated_additional_expenses,
+        )
         pathways_out.append(
             PathwayComparisonOut(
                 pathway_id=pid,
@@ -149,6 +181,7 @@ def compare_pathways(
                     potential_assistance_not_yet_awarded=FieldValueOut.from_field_value(
                         cost.potential_assistance_not_yet_awarded
                     ),
+                    net_to_arrange=cost_summary.net_to_arrange,
                 ),
             )
         )

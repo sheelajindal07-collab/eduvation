@@ -204,3 +204,91 @@ class TestComparePathways:
             admin_client.table("claims").delete().eq("id", published_claim["id"]).execute()
             admin_client.table("pathways").delete().eq("id", other_pathway["id"]).execute()
             admin_client.table("sources").delete().eq("id", official_source["id"]).execute()
+
+    def test_net_to_arrange_is_computed_live_and_assumption_is_editable(
+        self, admin_client: Client, seeded_pathway: dict[str, Any]
+    ) -> None:
+        """End-to-end proof that GET /compare returns app/rules/cost.py's
+        real net_to_arrange, not just the raw verified_charges figure --
+        and that the ?estimated_additional_expenses override (Lite Build
+        Pack §6 "assumption editing") changes it for this request only,
+        without writing anything to the database."""
+        official_source = (
+            admin_client.table("sources")
+            .insert(
+                {
+                    "authority_name": "API TEST OFFICIAL SOURCE (net_to_arrange)",
+                    "official_url": "https://example.invalid/official-test-source-2",
+                    "source_type": "official",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        other_pathway = (
+            admin_client.table("pathways")
+            .insert(
+                {
+                    "career_id": seeded_pathway["career"]["id"],
+                    "name": "fourth API test pathway (SYNTHETIC)",
+                    "description": "Seeded by tests/db/test_api_explore_compare.py",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        published_claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": other_pathway["id"],
+                    "field": "verified_charges",
+                    "value": 100000,
+                    "source_id": official_source["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": "test-fixture-reviewer",
+                    "status": "published",
+                    "review_due_date": "2099-01-01",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            params = {
+                "pathway_id": [seeded_pathway["pathway"]["id"], other_pathway["id"]],
+            }
+
+            no_override = client.get("/compare", params=params)
+            assert no_override.status_code == 200
+            target = next(
+                p for p in no_override.json()["pathways"] if p["pathway_id"] == other_pathway["id"]
+            )
+            # No hint, no override -> assume zero extra, not unknown.
+            assert target["cost"]["net_to_arrange"] == 100000
+
+            with_override = client.get(
+                "/compare", params={**params, "estimated_additional_expenses": 25000}
+            )
+            assert with_override.status_code == 200
+            target = next(
+                p
+                for p in with_override.json()["pathways"]
+                if p["pathway_id"] == other_pathway["id"]
+            )
+            assert target["cost"]["net_to_arrange"] == 125000
+
+            # The other pathway in the same request has no published
+            # verified_charges claim at all -- its net must stay unknown,
+            # proving the override doesn't paper over a missing figure.
+            unpublished = next(
+                p
+                for p in with_override.json()["pathways"]
+                if p["pathway_id"] == seeded_pathway["pathway"]["id"]
+            )
+            assert unpublished["cost"]["net_to_arrange"] is None
+        finally:
+            admin_client.table("claims").delete().eq("id", published_claim["id"]).execute()
+            admin_client.table("pathways").delete().eq("id", other_pathway["id"]).execute()
+            admin_client.table("sources").delete().eq("id", official_source["id"]).execute()

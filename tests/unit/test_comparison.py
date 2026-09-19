@@ -9,6 +9,7 @@ from app.data.models import Claim, ClaimStatus, Source, SourceType, TrustLabel
 from app.planning.comparison import (
     DEFAULT_FRESHNESS_SLA_DAYS,
     assemble_cost_breakdown,
+    assemble_cost_summary,
     field_value_for,
     trust_label_for_claim,
 )
@@ -174,3 +175,118 @@ def test_cost_breakdown_keeps_three_amounts_separate() -> None:
     assert breakdown.estimated_additional_expenses.label == TrustLabel.estimate
     # Three distinct fields, never summed into one:
     assert breakdown.verified_charges.value != breakdown.potential_assistance_not_yet_awarded.value
+
+
+def _field_claim(
+    field: str,
+    value: str | int | float | bool | None,
+    *,
+    status: ClaimStatus = ClaimStatus.published,
+    source_id: str = OFFICIAL_SOURCE.id,
+    verification_date: date = TODAY,
+) -> Claim:
+    return Claim(
+        id=f"claim-{field}",
+        entity_type="Programme",
+        entity_id="prog-1",
+        field=field,
+        value=value,
+        source_id=source_id,
+        verification_date=verification_date,
+        verifier="test-reviewer",
+        status=status,
+        review_due_date=date(2099, 1, 1),
+    )
+
+
+SOURCES_BY_ID = {OFFICIAL_SOURCE.id: OFFICIAL_SOURCE}
+
+
+class TestAssembleCostSummary:
+    """`assemble_cost_summary` wires app/rules/cost.py's real arithmetic
+    (net_to_arrange, "unawarded never subtracted") into the live claims
+    already used for `assemble_cost_breakdown` -- these tests pin down
+    that the wiring itself is correct, not the underlying engine (already
+    covered by tests/unit/test_cost.py)."""
+
+    def test_verified_charges_with_no_hint_or_override_nets_to_verified_alone(self) -> None:
+        claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.verified_charges.total == 100000
+        assert summary.net_to_arrange == 100000
+
+    def test_missing_verified_charges_gives_none_net_not_a_guess(self) -> None:
+        """The core safety property, now proven at the wiring layer too:
+        a draft (not yet published) claim must never surface as a
+        confident net figure."""
+        claims_by_field = {
+            "verified_charges": _field_claim(
+                "verified_charges", 100000, status=ClaimStatus.draft
+            )
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.verified_charges.total is None
+        assert summary.net_to_arrange is None
+
+    def test_estimate_hint_is_used_when_no_override_given(self) -> None:
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "estimated_additional_expenses_hint": _field_claim(
+                "estimated_additional_expenses_hint", 15000
+            ),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.estimated_additional_expenses == 15000
+        assert summary.net_to_arrange == 115000
+
+    def test_override_replaces_the_hint_for_this_request_only(self) -> None:
+        """The "assumption editing" mechanic (Lite Build Pack §6,
+        docs/UI.md): a caller-supplied value wins over the published
+        hint, without touching any Claim."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "estimated_additional_expenses_hint": _field_claim(
+                "estimated_additional_expenses_hint", 15000
+            ),
+        }
+        summary = assemble_cost_summary(
+            claims_by_field,
+            SOURCES_BY_ID,
+            as_of=TODAY,
+            estimated_additional_expenses_override=30000,
+        )
+        assert summary.estimated_additional_expenses == 30000
+        assert summary.net_to_arrange == 130000
+
+    def test_no_hint_and_no_override_assumes_zero_extra_not_unknown(self) -> None:
+        claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.estimated_additional_expenses == 0.0
+        assert summary.net_to_arrange == 100000
+
+    def test_potential_assistance_is_visible_but_never_reduces_net_to_arrange(self) -> None:
+        """The single most important property here, carried over from
+        test_cost.py: an unawarded scholarship must never look like money
+        already in hand."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "potential_assistance_not_yet_awarded": _field_claim(
+                "potential_assistance_not_yet_awarded", 50000
+            ),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.potential_assistance_total == 50000
+        assert summary.net_to_arrange == 100000  # unchanged by the potential amount
+
+    def test_no_potential_assistance_claim_gives_an_empty_list_not_a_zero_item(self) -> None:
+        claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.potential_assistance == ()
+
+    def test_confirmed_assistance_is_always_empty_in_this_slice(self) -> None:
+        """No source of student-specific award data exists before M3's
+        sign-in/consent work -- documented here so the gap is visible
+        and tested, not just implied by the absence of a parameter."""
+        claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.confirmed_assistance == ()

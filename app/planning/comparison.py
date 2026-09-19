@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from app.data.models import Claim, ClaimStatus, Source, SourceType, TrustLabel
+from app.rules.cost import AssistanceItem, CostSummary, FeeComponent, compute_cost_summary
 
 # Tier-1-ish default freshness SLA for Lite, in days (docs/DATA.md S11
 # scales this per tier; Lite uses one conservative default until the
@@ -136,4 +137,70 @@ def assemble_cost_breakdown(
         potential_assistance_not_yet_awarded=field_value_for(
             "potential_assistance_not_yet_awarded", claims_by_field, sources_by_id, as_of=as_of
         ),
+    )
+
+
+def assemble_cost_summary(
+    claims_by_field: dict[str, Claim],
+    sources_by_id: dict[str, Source],
+    *,
+    as_of: date,
+    estimated_additional_expenses_override: float | None = None,
+) -> CostSummary:
+    """Run `app/rules/cost.py`'s real arithmetic (including `net_to_arrange`)
+    over the same claims `assemble_cost_breakdown` already displays.
+
+    This is intentionally the conservative first wiring, not a schema
+    change: `verified_charges` stays the single already-verified claim a
+    content reviewer publishes (docs/DATA.md "Cost engine") rather than
+    switching content authoring over to itemised fee components — that's
+    a content-workflow decision for a future task, not this one. Here it
+    is simply passed through `sum_verified_charges` as a one-component
+    list so the SAME "missing -> None, never a partial sum" guarantee
+    `cost.py` already proves applies to the live figure too.
+
+    `estimated_additional_expenses_override` is the "assumption editing"
+    Build Pack §6/docs/UI.md call for: a caller-supplied value (never
+    persisted, never a Claim) that replaces the `estimated_additional_expenses_hint`
+    claim for this one request. Falls back to that hint, then to 0.0 —
+    an omitted assumption is "assume nothing extra", not "unknown"; the
+    student can always edit it in the UI.
+
+    `potential_assistance_not_yet_awarded` becomes at most one
+    `AssistanceItem` — omitted entirely (not zero) when the claim is
+    `not_available`, since "no known potential assistance" and "assumed
+    zero potential assistance" are different facts. There is no
+    `confirmed_assistance` source yet (that is student-specific award
+    data, which does not exist before the M3 sign-in/consent work), so
+    it is always empty here — `net_to_arrange` correctly reduces to
+    verified + estimate with nothing confirmed subtracted.
+    """
+    verified = field_value_for("verified_charges", claims_by_field, sources_by_id, as_of=as_of)
+    fee_components = [FeeComponent(name="Verified charges", field_value=verified)]
+
+    if estimated_additional_expenses_override is not None:
+        estimated_additional_expenses = estimated_additional_expenses_override
+    else:
+        hint = claims_by_field.get("estimated_additional_expenses_hint")
+        hint_value = hint.value if hint else None
+        estimated_additional_expenses = (
+            float(hint_value)
+            if isinstance(hint_value, int | float) and not isinstance(hint_value, bool)
+            else 0.0
+        )
+
+    potential = field_value_for(
+        "potential_assistance_not_yet_awarded", claims_by_field, sources_by_id, as_of=as_of
+    )
+    potential_assistance = (
+        [AssistanceItem(name="Potential assistance", amount=float(potential.value))]
+        if isinstance(potential.value, int | float) and not isinstance(potential.value, bool)
+        else []
+    )
+
+    return compute_cost_summary(
+        fee_components=fee_components,
+        estimated_additional_expenses=estimated_additional_expenses,
+        confirmed_assistance=[],
+        potential_assistance=potential_assistance,
     )

@@ -12,6 +12,15 @@ verified healthy, talking to the real database).
   Supabase project. Proven end-to-end: a claim published against a real
   official source returns the correct trust label; a draft claim's
   value never reaches a guest response even though the row exists.
+- `GET /compare` now returns a real computed `net_to_arrange`, not just
+  the raw verified-charges figure — wired to `app/rules/cost.py` via
+  `app/planning/comparison.py::assemble_cost_summary()`. "Assumption
+  editing" (Lite Build Pack §6) is live too:
+  `?estimated_additional_expenses=<value>` overrides the estimate for
+  that one request, never persisted. Proven live: a pathway with no
+  published `verified_charges` claim still returns `net_to_arrange:
+  null` even when the override is present — the override never papers
+  over a genuinely missing figure.
 - `app/rules/eligibility.py` — the three-outcome eligibility engine
   (meets / does_not_meet / insufficient_information), with the core
   safety property tested explicitly: an unknown input never becomes a
@@ -35,16 +44,28 @@ verified healthy, talking to the real database).
   (`hisab`, `lekha`, `attendance-app`), same systemd/nginx conventions,
   nothing else touched.
 
-**88 tests passing** (75 unit + 13 live DB), lint/typecheck clean, on
-GitHub Actions too.
+**92 tests passing** (83 unit + 18 live DB — 5 of the live-DB tests
+belong to a concurrent session's in-progress eligibility endpoint, see
+"Concurrent sessions" below), lint/typecheck clean, on GitHub Actions too.
+
+Also fixed this session: a real circular import between
+`app/planning/comparison.py` and `app/rules/cost.py` (comparison.py now
+calls into cost.py; cost.py already imported one type from
+comparison.py) — deferred under `TYPE_CHECKING`, verified with
+`python -c "import app.main"` plus the full suite. A concurrent session
+caught the same bug independently and flagged it before seeing this fix
+land; both sessions confirmed the fix in real time.
 
 ## Blockers
 None.
 
 ## Next task
-A reservation/quota engine, wiring eligibility+cost+timeline into an
-actual API route, or a design/UI usability round — steering committee's
-call. See `tasks/BCI-003.md` for exact remaining scope.
+Wiring `app/rules/timeline.py` into an API route, a reservation/quota
+engine, itemised fee components (a content-workflow decision, not
+engineering), or a design/UI usability round — steering committee's
+call. See `tasks/BCI-003.md` for exact remaining scope. (Eligibility
+wiring may already be done by the time you read this — check
+`app/api/eligibility.py`.)
 
 ## Infrastructure
 | Thing | Status |
@@ -69,8 +90,15 @@ inside the VM (`127.0.0.1:8010`) — not yet exposed publicly.
 `DATABASE_URL` in `.env` yet — optional).
 
 ## Concurrent sessions note
-Two other Claude sessions were active on this same repo during this
-session (one did a documentation restructuring, coordinated via direct
-messaging before merging — see `docs/DECISIONS.md`). If you're running
-multiple sessions on purpose, that coordination worked cleanly; if not,
-worth knowing it's happening.
+Multiple other Claude sessions have been active on this same repo across
+this and earlier sessions today (a documentation restructuring, the
+eligibility/cost engines, and — as of this update — an in-progress
+eligibility API endpoint (`app/api/eligibility.py`,
+`tests/db/test_api_eligibility.py`, not yet committed) built by a
+session running in parallel with this one). Coordination happened live
+via direct cross-session messaging this time (a real circular-import bug
+was caught independently by both sessions within moments of each other
+and confirmed fixed before either committed). If you're running multiple
+sessions on purpose, this is working; if not, worth knowing it's
+happening — check `git log` and `git status` before starting a new
+session's task to see what's in flight.

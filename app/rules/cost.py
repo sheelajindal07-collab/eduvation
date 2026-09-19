@@ -22,9 +22,18 @@ this engine is that they never collapse into one number:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from app.data.models import TrustLabel
-from app.planning.comparison import FieldValue
+
+if TYPE_CHECKING:
+    # Deferred: app.planning.comparison now imports this module too
+    # (assemble_cost_summary, added when the cost engine was wired into
+    # GET /compare), so a top-level import here would be circular.
+    # FieldValue is used only as a type annotation below, and
+    # `from __future__ import annotations` means annotations are never
+    # evaluated at runtime, so this guard is enough.
+    from app.planning.comparison import FieldValue
 
 
 @dataclass(frozen=True)
