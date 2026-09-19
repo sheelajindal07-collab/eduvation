@@ -1,8 +1,8 @@
 # Status
 
 **Milestone:** M0 complete (BCI-001); M1 first vertical slice DONE
-(BCI-002); **M2 eligibility engine DONE** (BCI-003). **Commit:** see
-`git log -1` on `main`. **Repo:**
+(BCI-002); **M2 eligibility + cost engines DONE** (BCI-003). **Commit:**
+see `git log -1` on `main`. **Repo:**
 [github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
 verified healthy, talking to the real database).
@@ -17,18 +17,25 @@ verified healthy, talking to the real database).
   safety property tested explicitly: an unknown input never becomes a
   rejection, and a definite failure is never masked by an unrelated
   unknown when several criteria combine.
+- `app/rules/cost.py` — four cost amounts that never merge: verified
+  charges (summed from fee-component claims, `None` if any is missing —
+  never a silently-partial total), estimated extras, confirmed
+  assistance (the only thing that reduces what a student owes), and
+  potential assistance (shown, but **never subtracted** — an unawarded
+  scholarship must never look like money in hand).
 - Deployed and running on your Oracle VM alongside your other apps
   (`hisab`, `lekha`, `attendance-app`), same systemd/nginx conventions,
   nothing else touched.
 
-**57 tests passing** (44 unit + 13 live DB), lint/typecheck clean, on
+**67 tests passing** (54 unit + 13 live DB), lint/typecheck clean, on
 GitHub Actions too.
 
 ## Blockers
 None.
 
 ## Next task
-Cost engine, timeline engine, or a design/UI usability round — steering
+Timeline engine, a reservation/quota engine, wiring eligibility+cost
+into an actual API route, or a design/UI usability round — steering
 committee's call. See `tasks/BCI-003.md` for exact remaining scope.
 
 ## Infrastructure
