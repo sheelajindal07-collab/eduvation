@@ -26,3 +26,25 @@ Needs `SUPABASE_URL` set to a real project with this migration applied.
 See `tests/db/` — currently skips with a clear reason if unconfigured,
 so `make test-db` never silently reports green for a check that didn't
 run.
+
+## Applying automatically (`scripts/apply_migrations.py`)
+Once you've added `DATABASE_URL` to your local `.env` (Project Settings
+→ Database → Connection string → URI; fill in the password yourself —
+never share it in chat), new migrations can be applied without the
+dashboard:
+```
+python scripts/apply_migrations.py            # applies anything pending
+python scripts/apply_migrations.py --dry-run  # shows what would run, does nothing
+```
+It tracks what's been applied in a `_schema_migrations` table so it's
+safe to run repeatedly. This connects directly to Postgres (via
+`psycopg`) — no Supabase management API, no MCP tool, nothing that could
+reach any project other than the one `DATABASE_URL` points at.
+
+**One-time bootstrap note:** `0001_init.sql` was applied manually via the
+SQL Editor before this script existed. The first time `DATABASE_URL` is
+available, that gets recorded in `_schema_migrations` as already-applied
+(without re-running it) before the script is used normally — otherwise it
+would try to re-run `0001_init.sql` and fail on "table already exists."
+This is a one-off; every migration after `0001` goes through the script
+normally.

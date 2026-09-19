@@ -29,6 +29,40 @@ put `SUPABASE_URL=https://bvacroguuhgqufelascd.supabase.co` plus the
 anon/publishable key and JWT secret (Project Settings → API Keys) into
 your own local `.env` — keys never shared in chat.
 
+## 2026-09-19 — Migrations applied via a direct script, not the dashboard
+## or the MCP tool, going forward
+**Decision:** Owner applied `0001_init.sql` manually via the SQL Editor
+once, confirmed working (all 9 RLS tests pass live), then said not to
+require that manual step again. Since the Supabase MCP tool and any
+equivalent management-API route are both off-limits (per the earlier
+"Infrastructure accounts" entry), the alternative is a direct Postgres
+connection: `scripts/apply_migrations.py`, using `psycopg` and a
+`DATABASE_URL` the owner puts in their own `.env` — never in chat, never
+committed. It tracks applied migrations in a `_schema_migrations` table
+so re-running is safe. This is fully auditable (it's ~80 lines, read
+top to bottom) and touches only the one database `DATABASE_URL` points
+at — categorically different from a broad management-API/MCP capability.
+**Status:** Script written, lint/typecheck clean. Not yet run (no
+`DATABASE_URL` in `.env` yet) — `0001_init.sql`'s effects already exist
+in the database (applied manually), so the first real run needs to
+record that fact in `_schema_migrations` rather than re-apply it (see
+`db/migrations/README.md` "One-time bootstrap note").
+**Owner action needed:** add `DATABASE_URL` to your local `.env`
+(Project Settings → Database → Connection string → URI, password filled
+in yourself) whenever you're ready for me to apply future migrations
+directly instead of using the SQL Editor.
+
+## 2026-09-19 — AI provider naming fixed: Gemini, not a stale Anthropic
+## field name left over from the original (superseded) assumption
+**Decision:** `app/core/config.py`'s `anthropic_api_key` field and
+`ai_provider` default were still "anthropic" even though the Gemini
+decision (above) was recorded the same day — an inconsistency between
+the docs and the code. Renamed to `gemini_api_key` / default `"gemini"`;
+`.env.example` and `app/ai/__init__.py`'s docstring updated to match.
+Caught while fixing `tests/unit/test_health.py` (below), not something
+the owner had to flag separately.
+**Status:** Done. No behaviour change (M0–M4 make no AI calls either way).
+
 ## 2026-09-19 — GitHub: owner will create the repo on their own account
 **Decision:** The owner is on a GitHub account different from this
 machine's authenticated `gh` CLI (`maheshjin-bot`) and has no repo yet.

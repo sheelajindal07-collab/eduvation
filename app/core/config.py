@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     supabase_publishable_key: str | None = Field(default=None)
     supabase_jwt_secret: str | None = Field(default=None)
 
-    ai_provider: str = Field(default="anthropic")
-    anthropic_api_key: str | None = Field(default=None)
+    ai_provider: str = Field(default="gemini")  # docs/DECISIONS.md, owner-confirmed 2026-09-19
+    gemini_api_key: str | None = Field(default=None)
     ai_monthly_spend_cap_inr: int = Field(default=5000)
     ai_request_timeout_seconds: int = Field(default=15)
 
@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     @property
     def ai_configured(self) -> bool:
         """Whether the AI provider adapter can make live calls."""
-        return bool(self.anthropic_api_key)
+        return bool(self.gemini_api_key)
 
 
 @lru_cache
