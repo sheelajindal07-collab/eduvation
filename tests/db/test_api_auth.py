@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -152,3 +153,148 @@ class TestSignUp:
             assert "rate limit" in response.json()["detail"].lower()
         else:
             assert response.status_code == 202
+
+
+@pytest.fixture
+def seeded_pathway_for_migration(admin_client: Client) -> Iterator[dict[str, Any]]:
+    career = (
+        admin_client.table("careers")
+        .insert({"name": "Migration test career (SYNTHETIC)"})
+        .execute()
+        .data[0]
+    )
+    pathway = (
+        admin_client.table("pathways")
+        .insert(
+            {
+                "career_id": career["id"],
+                "name": "Migration test pathway (SYNTHETIC)",
+                "description": "Seeded by tests/db/test_api_auth.py",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    yield {"career": career, "pathway": pathway}
+    admin_client.table("pathways").delete().eq("id", pathway["id"]).execute()
+    admin_client.table("careers").delete().eq("id", career["id"]).execute()
+
+
+class TestGuestToAccountPlanMigration:
+    """Tests app.api.auth._migrate_pending_plan directly against an
+    already-confirmed, already-signed-in user (via POST /auth/sign-in,
+    which sends no email) rather than through POST /auth/sign-up itself
+    — sign-up's own email-sending path has a real, already-observed rate
+    limit (see TestSignUp above), and re-triggering it here would make
+    this test flaky for a reason that has nothing to do with the
+    migration logic being tested. The one true end-to-end path (sign-up
+    WITH a pending_plan, in a single request) is covered separately
+    below, tolerant of the same rate limit as TestSignUp's tests."""
+
+    def test_migrate_pending_plan_creates_a_real_row(
+        self,
+        admin_client: Client,
+        registered_user: dict[str, str],
+        seeded_pathway_for_migration: dict[str, Any],
+    ) -> None:
+        from app.api.auth import PendingPlan, _migrate_pending_plan
+        from app.db import get_anon_client
+
+        sign_in = client.post(
+            "/auth/sign-in",
+            json={"email": registered_user["email"], "password": registered_user["password"]},
+        )
+        assert sign_in.status_code == 200
+        access_token = sign_in.json()["access_token"]
+
+        fresh_client = get_anon_client()
+        try:
+            plan_id = _migrate_pending_plan(
+                fresh_client,
+                access_token,
+                registered_user["user_id"],
+                PendingPlan(
+                    pathway_id=seeded_pathway_for_migration["pathway"]["id"],
+                    estimated_additional_expenses=8000,
+                    notes="Migrated from a guest session",
+                ),
+            )
+        finally:
+            fresh_client.postgrest.aclose()
+
+        assert plan_id is not None
+        row = admin_client.table("saved_plans").select("*").eq("id", plan_id).execute().data[0]
+        assert row["student_id"] == registered_user["user_id"]
+        assert row["pathway_id"] == seeded_pathway_for_migration["pathway"]["id"]
+        assert row["notes"] == "Migrated from a guest session"
+        admin_client.table("saved_plans").delete().eq("id", plan_id).execute()
+
+    def test_migrate_pending_plan_for_nonexistent_pathway_returns_none_not_an_exception(
+        self, registered_user: dict[str, str]
+    ) -> None:
+        """The core resilience property: a bad pending_plan must never
+        raise up through sign-up and fail account creation."""
+        import uuid as uuid_module
+
+        from app.api.auth import PendingPlan, _migrate_pending_plan
+        from app.db import get_anon_client
+
+        sign_in = client.post(
+            "/auth/sign-in",
+            json={"email": registered_user["email"], "password": registered_user["password"]},
+        )
+        access_token = sign_in.json()["access_token"]
+
+        fresh_client = get_anon_client()
+        try:
+            plan_id = _migrate_pending_plan(
+                fresh_client,
+                access_token,
+                registered_user["user_id"],
+                PendingPlan(pathway_id=str(uuid_module.uuid4())),  # does not exist
+            )
+        finally:
+            fresh_client.postgrest.aclose()
+        assert plan_id is None
+
+
+class TestSignUpWithPendingPlan:
+    """The full end-to-end path: one real sign-up call that includes a
+    pending_plan. Tolerant of the same email-sending rate limit as
+    TestSignUp — this test's job is proving the wiring, and
+    TestGuestToAccountPlanMigration above already proves the migration
+    logic itself reliably without that dependency."""
+
+    def test_sign_up_with_pending_plan_migrates_it_in_one_request(
+        self, admin_client: Client, seeded_pathway_for_migration: dict[str, Any]
+    ) -> None:
+        email = f"bcion-migrationtest-{uuid.uuid4().hex[:12]}@example.com"
+        response = client.post(
+            "/auth/sign-up",
+            json={
+                "email": email,
+                "password": "correct-horse-battery-staple-3",
+                "pending_plan": {
+                    "pathway_id": seeded_pathway_for_migration["pathway"]["id"],
+                    "notes": "From the sign-up flow itself",
+                },
+            },
+        )
+        if response.status_code == 400:
+            assert "rate limit" in response.json()["detail"].lower()
+            return
+        if response.status_code == 202:
+            # Email confirmation required by this project's settings —
+            # migration can't happen without a session; already covered
+            # by the direct-function tests above.
+            users = admin_client.auth.admin.list_users()
+            match = next((u for u in users if u.email == email), None)
+            if match:
+                admin_client.auth.admin.delete_user(match.id)
+            return
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["migrated_plan_id"] is not None
+        admin_client.table("saved_plans").delete().eq("id", body["migrated_plan_id"]).execute()
+        admin_client.auth.admin.delete_user(body["user_id"])

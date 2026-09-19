@@ -10,21 +10,47 @@ side effect of shipping sign-up.
 
 Each call gets a fresh client (app/db/client.py) — never shared, never
 cached, per the concurrency fix in docs/DECISIONS.md.
+
+**Guest -> account plan migration** (Lite Build Pack §6, docs/UI.md
+"Account creation migrates it"): there is no server-side guest session
+to migrate FROM — a guest's in-progress plan lives only in the client
+(docs/DECISIONS.md's guest-session design: nothing persisted server-side
+for an anonymous visitor). So "migration" here means sign-up optionally
+accepts the one plan the client already has in hand and saves it as the
+new account's first plan, in the same request — never a separate
+round-trip that could be dropped if the client navigates away right
+after signing up.
 """
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
+from supabase import Client
 
 from app.db import get_anon_client
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+class PendingPlan(BaseModel):
+    """The one plan a guest was looking at right before signing up —
+    supplied by the client, which is the only place it existed until
+    now. Same shape as app.api.plans.SavePlanRequest, kept as a separate
+    model rather than imported to avoid coupling auth.py to plans.py for
+    what is otherwise an unrelated route."""
+
+    pathway_id: str
+    estimated_additional_expenses: float | None = None
+    notes: str | None = None
+
+
 class SignUpRequest(BaseModel):
     email: EmailStr
     password: str
+    pending_plan: PendingPlan | None = None
 
 
 class SignInRequest(BaseModel):
@@ -35,42 +61,113 @@ class SignInRequest(BaseModel):
 class AuthResponse(BaseModel):
     access_token: str
     user_id: str
+    migrated_plan_id: str | None = None
+    """Set when `pending_plan` was supplied and successfully saved.
+    `None` with no error raised means either no pending_plan was sent,
+    or saving it failed non-fatally — sign-up itself never fails because
+    of a plan-save problem (see the handler)."""
+
+
+def _migrate_pending_plan(
+    client: Client, access_token: str, user_id: str, plan: PendingPlan
+) -> str | None:
+    """Best-effort: save the client's one pending plan as the new
+    account's first saved plan. Failure here (e.g. the pathway_id
+    doesn't exist, or — unlikely on a brand-new account — a duplicate)
+    must never fail the sign-up itself; the account is the important
+    part, and the client still has the plan's data locally to retry via
+    POST /plans if this doesn't succeed.
+
+    `user_id` must be passed explicitly and set on the insert — RLS's
+    `saved_plans_own_row` policy checks `auth.uid() = student_id` via
+    `WITH CHECK`, and an insert that omits `student_id` sends it as
+    NULL, which never equals `auth.uid()` (caught by actually running
+    this against the live project: the first version of this function
+    omitted it and every call failed RLS, silently, exactly because of
+    the try/except below — a good reminder that "fails safe" and "fails
+    silently wrong" can look identical from the caller's side without a
+    live test)."""
+    client.postgrest.auth(access_token)
+    try:
+        result = (
+            client.table("saved_plans")
+            .insert(
+                {
+                    "student_id": user_id,
+                    "pathway_id": plan.pathway_id,
+                    "estimated_additional_expenses": plan.estimated_additional_expenses,
+                    "notes": plan.notes,
+                }
+            )
+            .execute()
+        )
+    except Exception:  # noqa: BLE001 — deliberately swallowed, see docstring
+        return None
+    rows = cast("list[dict[str, Any]]", result.data)
+    return rows[0]["id"] if rows else None
 
 
 @router.post("/sign-up", response_model=AuthResponse, status_code=201)
 def sign_up(request: SignUpRequest) -> AuthResponse:
     client = get_anon_client()
     try:
-        result = client.auth.sign_up({"email": request.email, "password": request.password})
-    except Exception as exc:
-        # Supabase Auth errors (weak password, email already registered,
-        # ...) surface as their own exception types we don't need to
-        # enumerate here — the message itself is safe to relay, it's
-        # already user-facing text from the auth provider.
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        try:
+            result = client.auth.sign_up({"email": request.email, "password": request.password})
+        except Exception as exc:
+            # Supabase Auth errors (weak password, email already
+            # registered, ...) surface as their own exception types we
+            # don't need to enumerate here — the message itself is safe
+            # to relay, it's already user-facing text from the provider.
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if result.session is None or result.user is None:
-        # Email confirmation is required by the project's Auth settings
-        # — not an error, just no session yet.
-        raise HTTPException(
-            status_code=202,
-            detail="Account created. Check your email to confirm before signing in.",
+        if result.session is None or result.user is None:
+            # Email confirmation is required by the project's Auth
+            # settings — not an error, just no session yet. A
+            # pending_plan can't be migrated without a session; the
+            # client keeps holding it and retries via POST /plans once
+            # the user has confirmed and signed in.
+            raise HTTPException(
+                status_code=202,
+                detail="Account created. Check your email to confirm before signing in.",
+            )
+
+        migrated_plan_id = None
+        if request.pending_plan is not None:
+            migrated_plan_id = _migrate_pending_plan(
+                client, result.session.access_token, result.user.id, request.pending_plan
+            )
+
+        return AuthResponse(
+            access_token=result.session.access_token,
+            user_id=result.user.id,
+            migrated_plan_id=migrated_plan_id,
         )
-    return AuthResponse(access_token=result.session.access_token, user_id=result.user.id)
+    finally:
+        # Every get_anon_client()/get_user_scoped_client() call returns a
+        # fresh, unshared client (docs/DECISIONS.md's concurrency fix) —
+        # each one owns its own httpx connection pool that nothing else
+        # closes (data-security-reviewer finding applied here too, see
+        # app/api/deps.py's identical pattern for the yield-dependency
+        # routes; this route doesn't go through a FastAPI dependency, so
+        # it needs its own explicit close).
+        client.postgrest.aclose()
 
 
 @router.post("/sign-in", response_model=AuthResponse)
 def sign_in(request: SignInRequest) -> AuthResponse:
     client = get_anon_client()
     try:
-        result = client.auth.sign_in_with_password(
-            {"email": request.email, "password": request.password}
-        )
-    except Exception as exc:
-        # Never distinguish "no such email" from "wrong password" in the
-        # response — that distinction is an account-enumeration leak.
-        raise HTTPException(status_code=401, detail="Invalid email or password.") from exc
+        try:
+            result = client.auth.sign_in_with_password(
+                {"email": request.email, "password": request.password}
+            )
+        except Exception as exc:
+            # Never distinguish "no such email" from "wrong password" —
+            # that distinction is an account-enumeration leak.
+            raise HTTPException(status_code=401, detail="Invalid email or password.") from exc
 
-    if result.session is None or result.user is None:
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
-    return AuthResponse(access_token=result.session.access_token, user_id=result.user.id)
+        if result.session is None or result.user is None:
+            raise HTTPException(status_code=401, detail="Invalid email or password.")
+        return AuthResponse(access_token=result.session.access_token, user_id=result.user.id)
+    finally:
+        client.postgrest.aclose()
