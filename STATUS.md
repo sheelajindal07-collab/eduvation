@@ -33,13 +33,15 @@ this project again** per your instruction. Schema work proceeds as plain
 SQL migration files in the repo for you to apply yourself.
 
 ## Needs your input (tracked in full in `docs/DECISIONS.md`)
-1. **GitHub repo** — give a URL (existing empty repo on your account) or
-   say "create one" + which account, so I can add a remote and push.
-2. **Supabase project URL** — once you've created a project on your own
-   account (region: Mumbai/`ap-south-1` recommended, matching
-   `docs/SECURITY.md`'s residency table), give me the project URL (not
-   secret) so docs can reference it; put the actual keys straight into
-   your own local `.env` — never paste secret values into chat.
+1. **GitHub repo** — you're creating one yourself on your own account.
+   Send me the URL + confirm push credentials are set up locally.
+2. **Supabase project URL** — you're creating a fresh project in
+   `ap-south-1` (Mumbai) — `project education` (Singapore) is not being
+   used. Once created, send me the URL (not secret); put the actual keys
+   into your own local `.env` — never paste secret values into chat. Then
+   apply `db/migrations/0001_init.sql` via the SQL editor (see
+   `db/migrations/README.md`) and `make test-db` should go from 9 skipped
+   to 9 passing.
 3. **Pilot state** — still assumed Gujarat (Annex C.2, "if confirmed").
    Confirm or name another state before the content track writes real
    admission-rule content.

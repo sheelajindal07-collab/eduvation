@@ -5,6 +5,36 @@ never deleted.
 
 ---
 
+## 2026-09-19 — Supabase project: "project education" (Singapore) not used;
+## a fresh Mumbai (ap-south-1) project will be created instead
+**Decision:** The owner showed an existing Supabase project, "project
+education" (org "education", free tier, `ap-southeast-1` / Singapore,
+ref visible as `auxdtzizsdjjgmksaiur` — unverified transcription from a
+screenshot; re-confirm before relying on it for anything). Given the
+choice between keeping it or creating a fresh India-region project, the
+owner chose to create a new one in `ap-south-1` (Mumbai), matching
+`docs/SECURITY.md`'s residency table. `project education` is **not**
+used for BCION Lite and was not touched.
+**Status:** Waiting on the owner to create the new project and share its
+URL (not secret) — see `STATUS.md`. `db/migrations/0001_init.sql` and
+`app/db/client.py` need no changes either way; only `.env` values differ.
+**Owner action needed:** create the project, give me its URL; put the
+actual keys straight into your own local `.env`.
+
+## 2026-09-19 — GitHub: owner will create the repo on their own account
+**Decision:** The owner is on a GitHub account different from this
+machine's authenticated `gh` CLI (`maheshjin-bot`) and has no repo yet.
+They'll create one themselves (private, e.g. `bcion-lite`) and set up
+push credentials for that account on this machine (e.g. a personal
+access token via `gh auth login` or a credential-manager entry) — I will
+not use the `maheshjin-bot` session for this project.
+**Status:** Waiting on the repo URL + local credentials being ready.
+**Owner action needed:** create the repo, tell me the URL, and confirm
+push access works locally (or say if you'd like help setting up the
+credential once the repo exists).
+
+---
+
 ## 2026-09-19 — Infrastructure accounts: owner-provided, separate from this
 ## machine's connected tools; MCP/CLI management tools not used for them
 **Decision:** The owner confirmed Supabase, GitHub, Oracle hosting and a
