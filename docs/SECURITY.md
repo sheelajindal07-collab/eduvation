@@ -1,6 +1,7 @@
 # Security & privacy — BCION Lite
 
-Source: `docs/BCION-DPR-v1.1.md` Annex C.2, Annex E.1/E.6, Annex F.2.
+Source: `docs/BCION-Lite-Build-Pack.md` §3 (Decisions — Residency), §4
+(Stack), §8 (Data-flow map).
 
 ## Access model
 - Application connects to Postgres as a **restricted role**, never the

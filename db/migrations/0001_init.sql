@@ -125,7 +125,7 @@ $$;
 -- Row-level security
 -- ============================================================
 -- The application connects as a restricted role and passes the signed-in
--- user's access token on every request (docs/SECURITY.md, Annex F.2) —
+-- user's access token on every request (docs/SECURITY.md, Lite Build Pack §4) —
 -- these policies are what actually enforces access, not application code.
 
 alter table sources           enable row level security;

@@ -2,11 +2,12 @@
 
 ## Mission
 Build BCION Lite: a 10–100 user career-decision pilot for Indian students
-(Class 8–12), specified in Annexes C–F of `docs/BCION-DPR-v1.1.md`. One
-journey: explore → compare three pathways → calculate time and cost → see
-requirements → save next actions. This is Phase −2 of the national BCION DPR
-— a technical spike and measurement instrument, not the national platform.
-Read the DPR annexes before proposing anything the annexes already decided.
+(Class 8–12), specified in `docs/BCION-Lite-Build-Pack.md` (the DPR's own
+Annex E points here). One journey: explore → compare three pathways →
+calculate time and cost → see requirements → save next actions. This is
+Phase −2 of the national BCION DPR — a technical spike and measurement
+instrument, not the national platform. Read the build pack (and the DPR's
+Annex D assumptions register) before proposing anything already decided.
 
 ## Non-negotiables
 - AI never invents facts. It explains and personalises over retrieved,
@@ -55,7 +56,9 @@ for Python + ruff + mypy · GitHub Actions with a protected prod environment.
   evidence > anything else (including this file, if stale).
 
 ## Links
-- Full spec: `docs/BCION-DPR-v1.1.md` (Annexes C, D, E, F govern this repo)
+- Lite's own plan (governs this repo day to day): `docs/BCION-Lite-Build-Pack.md`
+- National context: `docs/BCION-DPR-v1.1.md` (Annex A state variant, Annex B
+  change log, Annex C glossary, Annex D assumptions register)
 - `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/UI.md`, `docs/DATA.md`,
   `docs/SECURITY.md`, `docs/DECISIONS.md`, `STATUS.md`
 - Task cards: `tasks/BCI-xxx.md`

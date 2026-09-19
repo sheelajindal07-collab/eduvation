@@ -1,5 +1,5 @@
 # BCION Lite — verified commands (docs/ARCHITECTURE.md, CLAUDE.md)
-# Substitutions per Annex F.3: pnpm scripts -> make targets.
+# Substitutions per Lite Build Pack §10: pnpm scripts -> make targets.
 
 .PHONY: dev lint typecheck test-unit test-e2e test-db build install
 

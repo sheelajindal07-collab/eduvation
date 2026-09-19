@@ -1,6 +1,6 @@
 """AI provider adapter, retrieval, and server-owned citation binding.
 
-Built at M5 ("bounded AI", Annex E.3) — grounded explanation over retrieved,
+Built at M5 ("bounded AI", Lite Build Pack §9) — grounded explanation over retrieved,
 published Claims only; no model call before then. Provider is Gemini by
 default (docs/DECISIONS.md, owner-confirmed, swappable via the adapter).
 Non-negotiables:

@@ -1,7 +1,8 @@
 # Product scope — BCION Lite
 
-Source: `docs/BCION-DPR-v1.1.md`, Annex C.3 and Annex D.2. This file is the
-scoped summary; the annex is authoritative on conflict.
+Source: `docs/BCION-Lite-Build-Pack.md`, §2 (Scope) and §5 (Interface
+brief). This file is the scoped summary; the build pack is authoritative on
+conflict.
 
 ## Objective
 Within five minutes a student understands their options and knows their
@@ -52,7 +53,7 @@ dashboard) · Teacher (session guide + printable prompts + referral route,
 no analytics at 100-user scale) · Support staff (authorised case summary
 only, never a model-generated label) · Reviewer/editor (publishing console).
 
-## Success measures (feed Annex C.4 / DPR Section 29)
+## Success measures (feed Lite Build Pack §13 / DPR Section 29)
 - Share of interactions served without a model call (target: Tier 0 dominant)
 - Support/escalation requests per 100 users per month
 - Editor hours per verified programme record and per exam rule

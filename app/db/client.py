@@ -1,6 +1,6 @@
 """Supabase client factory — RLS-aware, restricted role only.
 
-Non-negotiable (docs/SECURITY.md, Annex F.2): the application never
+Non-negotiable (docs/SECURITY.md, Lite Build Pack §4): the application never
 connects as the Supabase owner/service role for a user-facing request.
 Every request-scoped client carries the *signed-in user's own access
 token*, so Postgres row-level security is what actually enforces access —

@@ -4,7 +4,7 @@ name: CI
 # push/PR — no production secrets are available to this workflow (see
 # docs/ARCHITECTURE.md "Deployment flow" and docs/DECISIONS.md). test-db
 # and test-e2e stay commented out until a staging Postgres / UI exist
-# (Annex F milestones M1+); enabling them early would just fail red for
+# (Lite Build Pack §9 milestones M1+); enabling them early would just fail red for
 # lack of a target, which is noise, not signal.
 
 on:

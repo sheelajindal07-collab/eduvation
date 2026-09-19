@@ -22,12 +22,12 @@ that only appeared on a clean install (not locally), a ruff false
 positive on FastAPI's own idiom, and two real mypy type gaps.
 
 ## Blockers
-None. The core M1 slice from the DPR's own spec (Annex E.3: "published
-career record → explore → compare two options") is genuinely built and
-verified.
+None. The core M1 slice from the DPR's own spec (Lite Build Pack §9:
+"published career record → explore → compare two options") is genuinely
+built and verified.
 
 ## Next task
-Design/UI round (Annex D.3 usability round 1) before adding more
+Design/UI round (Lite Build Pack §9 usability round 1) before adding more
 engines, or start on the eligibility/cost rule engines (M2 scope,
 `app/rules/`) — steering committee's call. See `tasks/BCI-002.md` for
 full detail on what shipped.
@@ -43,9 +43,11 @@ full detail on what shipped.
 ## Needs your input (tracked in full in `docs/DECISIONS.md`) — none blocking
 1. **`DATABASE_URL` in your `.env`** (optional, for automated future
    migrations) — Project Settings → Database → Connection string → URI.
-2. **Pilot state** — still assumed Gujarat (Annex C.2, "if confirmed").
+2. **Pilot state** — still assumed Gujarat (Lite Build Pack §2, "if
+   confirmed").
 3. **Named content reviewers** — who verifies real programme
-   records/exam rules/scholarships (Annex C.3)? Not blocking engineering.
+   records/exam rules/scholarships (Lite Build Pack §12)? Not blocking
+   engineering.
 4. **Gemini model** — flash vs pro can wait until M5.
 5. **Stack confirmation** — silence keeps FastAPI/Supabase/VPS.
 

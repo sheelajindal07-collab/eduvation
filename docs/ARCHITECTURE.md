@@ -1,8 +1,8 @@
 # Architecture — BCION Lite
 
-Source: `docs/BCION-DPR-v1.1.md`, Annex E.2 (stack resolution) and Annex C.3
-(stack table). Pinned; see `docs/DECISIONS.md` for the one condition that
-would flip it. Do not propose Next.js/Vercel without a recorded decision.
+Source: `docs/BCION-Lite-Build-Pack.md`, §4 (Stack). Pinned; see
+`docs/DECISIONS.md` for the one condition that would flip it. Do not
+propose Next.js/Vercel without a recorded decision.
 
 ## Stack
 | Layer | Choice | Note |
@@ -61,7 +61,7 @@ monitor. Schema changes are append-only migration files, never dashboard
 edits. No production credential lives in the everyday dev environment.
 
 ## Data residency
-See `docs/SECURITY.md` for the full data-flow map (Annex E.6). Mumbai
+See `docs/SECURITY.md` for the full data-flow map (Lite Build Pack §8). Mumbai
 database region does not by itself make the system India-only — logs,
 monitoring, email and model processing are separate flows with their own
 regions, tracked individually.

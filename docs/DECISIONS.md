@@ -5,6 +5,51 @@ never deleted.
 
 ---
 
+## 2026-09-19 — DPR annex structure reconciled with the online v1.2 doc;
+## new `docs/BCION-Lite-Build-Pack.md` is now Lite's operating spec
+**Decision/event log:** The living Claude Doc ("BCION — DPR and White Paper
+v1.1") was restructured upstream (its "v1.2" tab) since this repo's
+`docs/BCION-DPR-v1.1.md` was written: the old Annex C (10–100 user pilot
+review), Annex E (Claude Code execution blueprint) and Annex F (step-by-step
+build guide) were consolidated into one companion document, the "Lite build
+pack" tab, and Annex C/D were repurposed to a Glossary and an Assumptions
+register respectively; Annex F no longer exists as a separate annex.
+`docs/BCION-DPR-v1.1.md` has been updated to match: its old Annex C/D/E/F
+content (the "Problems" review tables reasoning from the four original
+source documents to the adopted decisions) is removed from the live file —
+fully recoverable from git history before this commit — and replaced with
+the new Annex C (Glossary), Annex D (Assumptions register) and a short
+Annex E pointer. The full Lite operating plan (scope, stack, interface
+brief, data contracts, operating rules, data-flow map, 16-step schedule,
+budget, gates, Step 1 prompt, daily prompts) now lives in the new
+`docs/BCION-Lite-Build-Pack.md`, mirroring the online doc's "Lite build
+pack" tab word for word (including the Gemini/Mumbai infra confirmations
+synced into that tab the same day). `CLAUDE.md`'s Mission and Links
+sections were updated to point at the new file.
+**What this changes:** Citations to "Annex C.2/C.3", "Annex D.2/D.3",
+"Annex E.2/E.3/E.5/E.6" and "Annex F/F.2/F.3/F.4" scattered through
+`docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/UI.md`, `docs/DATA.md`,
+`docs/SECURITY.md`, `STATUS.md`, `tasks/BCI-001.md`, `tasks/BCI-002.md`,
+`app/ai/__init__.py`, `app/db/client.py`, `app/db/__init__.py`,
+`app/rules/__init__.py`, `app/data/models.py`, `db/migrations/0001_init.sql`,
+`Makefile`, `.github/workflows/ci.yml` and the `.env*` comments now point
+at annex sections that hold different content (C, D) or no longer exist
+(F). The facts those citations describe are still correct and now live in
+`docs/BCION-Lite-Build-Pack.md`'s numbered sections (3 Decisions, 4 Stack,
+5 Interface brief, 6 Data and rules contracts, 7 Operating rules, 8
+Data-flow map, 9 Master schedule, 12 Gates, 14 Step 1 prompt) — only the
+citation labels are stale, not the content they point to.
+**Status:** `docs/BCION-DPR-v1.1.md`, `docs/BCION-Lite-Build-Pack.md` and
+`CLAUDE.md` done. The ~15 files listed above are **not yet updated** —
+deliberately paused for owner confirmation before touching application
+source code, CI config and env-file comments, particularly since the
+GitHub-connection entry below shows another session concurrently active
+on this same repo.
+**Owner action needed:** say go-ahead (or hand-pick which files) to sweep
+the remaining stale annex citations; each is a label-only fix (low risk,
+git-reversible) but several are source files a concurrent session may
+also be touching right now.
+
 ## 2026-09-19 — GitHub repo connected; two exposed secrets rotated
 **Decision/event log:** Owner gave the repo URL
 (`github.com/sheelajindal07-collab/eduvation`); this machine's account

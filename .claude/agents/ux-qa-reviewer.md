@@ -37,7 +37,7 @@ only (see `tests/fixtures/`, which are clearly labelled SYNTHETIC).
 - **Guest session behaviour**: no personal fields, 7-day expiry, "not
   saved to an account" messaging, no plan data in localStorage.
 
-## Task criteria (for a usability-round-style pass, per Annex D.3)
+## Task criteria (for a usability-round-style pass, per Lite Build Pack §12)
 Can a test user: find two plausible routes; explain the difference between
 verified cost and an estimate; locate an official source; save a next
 action; change a preference; and recognise uncertainty rather than treat

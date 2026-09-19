@@ -2,7 +2,7 @@
 
 Mirrors docs/DATA.md. These are the shapes the API and rules engines pass
 around; the actual persistence layer (Supabase tables + RLS policies) is
-built at M1 ("data foundation and RLS tests", see Annex F.4). Until then,
+built at M1 ("data foundation and RLS tests", see Lite Build Pack §9). Until then,
 these types are also used to define the synthetic fixtures under
 tests/fixtures/ — which must NEVER be treated as published claims.
 

@@ -1,7 +1,8 @@
 # Data — BCION Lite
 
-Source: `docs/BCION-DPR-v1.1.md` Annex C.2/C.3, Section 10 (national DPR),
-Annex D's trust labels. This is the authoritative claims model for Lite.
+Source: `docs/BCION-Lite-Build-Pack.md` §6 (data and rules contracts) and
+§5 (trust labels), plus DPR Section 10 (national data architecture). This
+is the authoritative claims model for Lite.
 
 ## Core principle
 A fact without provenance cannot be published. "Last fetched" is never

@@ -1,7 +1,7 @@
 # UI — BCION Lite
 
-Source: `docs/BCION-DPR-v1.1.md`, Annex D.2. Component set and tokens live
-here; Tailwind implements them.
+Source: `docs/BCION-Lite-Build-Pack.md`, §5 (Interface brief). Component
+set and tokens live here; Tailwind implements them.
 
 ## Visual direction
 Warm white background, deep charcoal text, one deep-blue accent, teal/green
@@ -85,7 +85,7 @@ source — the interface side of the public correction log (DPR §11).
 - **Institutions / coaching / lenders / employers:** no student-facing
   controls; corrections enter the review workflow.
 
-## Component set (frozen at Step 7 / M2, per Annex D.3)
+## Component set (frozen at Step 7 / M2, per Lite Build Pack §5)
 Cards, source labels, inputs, alerts, comparison sections, reminder opt-in,
 "what changed" list. Contextual "Ask BCION" entry points use canned prompts
 over retrieved records (fixed template — this is also the Tier-0/Tier-1

@@ -21,7 +21,7 @@ Evidence labels. Every number in this document carries one of six tags:
 | [UH] | Unvalidated hypothesis | Came from the simulated workshops; needs field validation |
 
 Sponsor assumption. No sponsor has been named. The base case in this DPR is a central anchor (Ministry of Education, Department of School Education and Literacy) with states as instance owners and existing state career-portal programmes as migration partners. If the real sponsor is a single state, Annex A gives the state-instance variant with its own scope and numbers. The sponsor question is the first Phase −1 decision and changes scale, governance and cost.
-Lite pilot. A 10–100 user software pilot ("BCION Lite") is reviewed and planned in Annex C, its interface brief is reviewed in Annex D, its Claude Code execution blueprint in Annex E, and the step-by-step build guide in Annex F. It is a proof of concept that precedes Phase −1. Its budget is thousands of rupees a month plus development time; the crore-level figures in this DPR describe a national organisation and do not apply to it.
+Lite pilot. The 10–100 user software pilot ("BCION Lite") has its own consolidated plan: `docs/BCION-Lite-Build-Pack.md`. It is a proof of concept that precedes Phase −1. Its budget is thousands of rupees a month plus development time; the crore-level figures in this DPR describe a national organisation and do not apply to it.
 Simulations. All consultations in Part 2 are simulated design workshops with fictional composite personas. They produce hypotheses, not evidence. Institutions appear only as roles.
 Rules move. References to the DPDP Act 2023 and Rules, NEP 2020, CERT-In directions, NSQF, NCO-2015, NSP, PM Vidyalaxmi and similar must be re-verified against the current official text before any commitment.
 What changed from v1.0 in one paragraph. The pilot is cut by roughly 80%. "Full coverage" is replaced by readiness-based coverage with published readiness levels. Five-year cost falls from ₹385–470 crore to ₹210–270 crore in the recommended scenario, because scale targets are cut, not because unit costs fell. Earned revenue is assumed at zero in the base case. A counsellor capacity model, a governance options analysis, a pre-approval phase and an incumbent analysis are added. The incumbent analysis matters most: state-level career portals already exist in more than a dozen states, and v1.0 did not mention them.
@@ -929,344 +929,90 @@ Decision rule. If a state sponsor is available now and a central sponsor is not,
 Sources opened for this version. Millennium Post, "A guiding light", 28 July 2021 (14 state portals, 21 million+ students, programme design); Careers360, 22 May 2020 (Maharashtra portal); Drishti IAS, 7 February 2019 (Rajasthan portal). All three are secondary reports; Phase −1 must obtain the current position from UNICEF India and the state education departments directly.
 End of document. This DPR is a consultation draft; all figures and legal references must be validated during Phases −1 and 0.
 
-# ANNEX C — BCION Lite: the 10–100 user software pilot
+# ANNEX C — Glossary
 
-The CTO plan makes the right call (one modular monolith, one database, one worker, one AI provider, no national infrastructure) and gets three things wrong: it has no outcome measure, its 6–8 week timeline covers the code but not the content, and it recommends a stack the builder does not run. Corrected plan in C.3.
-
-## C.1 Where Lite fits in this DPR
-
-Lite is Phase −2. It precedes the sponsor decision and produces what Phase 0 of the national plan asks for anyway: the technical spike (Tier-0 engines plus retrieval with server-controlled citations on a small verified dataset), a working demo for sponsor and state talks, the claims schema, and first measurements for the hypothesis table in Part 2. The crore-level figures in Sections 26–27 describe an organisation and its operations; they are irrelevant to Lite's budget, and Lite's budget says nothing about them. Neither invalidates the other.
-
-## C.2 Review of the CTO plan
-
-Accepted as written. Modular monolith; managed PostgreSQL plus a jobs table instead of a broker; no Kubernetes, Kafka, Elasticsearch, graph or vector database; three-outcome eligibility (meets, does not meet, insufficient information); the claims table with review-due date and superseded-claim ID; "last fetched" never displayed as "verified"; a changed source is not a changed rule; approvals bound to the exact draft version; server-rendered fact cards for dates, costs and eligibility; confirmed versus potential assistance kept separate in the cost calculator; SSRF controls on the fetcher; row-level security with a non-owner database role; the launch gates; no self-hosted GPU; no autonomous agent loops.
-Problems.
-| # | Problem | Consequence | Fix |
-| --- | --- | --- | --- |
-| 1 | No outcome measure; only technical acceptance targets | The pilot proves the software runs, not that BCION helps anyone | A five-item pre/post decision-quality instrument (C.4), administered at sign-up and at week 4 of use |
-| 2 | 6–8 weeks covers the code, not the content | 50–100 sourced programme records, rule functions with test cases for 5–10 exams, 10–20 scholarships, one state's admission rules and Hindi review are the long pole; the DPR's whole thesis is that data operations dominate | 12 weeks, content track from week 1, second reviewer from week 2 (C.3) |
-| 3 | Next.js + TypeScript for a builder who runs FastAPI, Supabase, n8n and the WhatsApp Cloud API | Learning a framework inside an 8-week pilot is the one avoidable risk | Use the existing stack (C.3 stack table) |
-| 4 | "No WhatsApp automation" | Students do not read email; deadline reminders are the one hook the workshops agreed on | One opt-in Cloud API template (deadline reminder), no inbound bot; the API is already in the toolkit |
-| 5 | Adult testers on synthetic profiles, minors "later" | The real user is a Class 10–12 student; consent and safeguarding are not scheduled | Consent and safeguarding workflow as a week-4 deliverable and a launch gate (C.3) |
-| 6 | Development cost absent | "Not a crore" reads as "free" | ₹8–18 lakh [CE] if a senior full-stack engineer is hired for 12 weeks plus editor and reviewer honoraria; if built in-house, the cost is the builder's time and should be stated as such |
-| 7 | Token budget assumes English | Hindi and Hinglish answers run 2–3× the tokens [PA] | Budget cost for 2,500–5,000 English-equivalent answers per month, not 2,000 |
-| 8 | Pilot state unnamed | Admission rules, CET and counselling cannot be sourced without one | Gujarat is the natural choice for a Surat-based builder: Gujarat board, GUJCET, ACPC (engineering and pharmacy), ACPUGMEC (medical), GCAS (general degree); verify current names and rules [OF] |
-| 9 | Keyword search with curated synonyms, no mention of Hinglish | "doctor banna hai" must find the medicine pathway | A small Hindi–Hinglish–English synonym table maintained by the editor |
-| 10 | Support queue "may be a simple staff queue" | Correct, but a distress message in that queue needs a rule | A keyword rule returns the national tele-mental-health helpline and flags a named staff member within 24 h; no counselling is promised |
-
-
-## C.3 Corrected Lite build plan
-
-Scope. 100 registered users, about 10 concurrently active, load-tested at 25 sessions. One journey: explore → compare three pathways → calculate time and cost → see requirements → save next actions. Seven screens plus an admin area, as in the CTO plan.
-| Coverage item | Lite ceiling | Chosen around |
-| --- | --- | --- |
-| Career families | 20–30 | What the first 100 users actually ask about |
-| Exams | 8–10: JEE Main, NEET-UG, GUJCET, CUET-UG, CLAT, NDA, SSC CGL, IBPS PO, GPSC Class 1–2, plus one on demand | Rule functions with test cases for each |
-| Programme records | 50–100 with sourced fees, seats and admission route | Government institutions in the pilot state first, plus NIRF top-50 nationally |
-| Scholarships | 10–20 | State schemes plus NSP and PM Vidyalaxmi |
-| Admission rules | One state, detailed | Gujarat, if confirmed |
-| Languages | English and Hindi; Hinglish accepted as input | Critical content reviewed in both |
-
-Left out. Mock tests, social features, native apps, inbound WhatsApp bot, voice, lender integrations, psychometric scoring, autonomous web research, counselling service.
-Stack, tailored to what already runs.
-| Component | Lite implementation | Note |
-| --- | --- | --- |
-| Application | FastAPI monolith with separate modules for data, rules, planning and AI | Same codebase, one deployment |
-| Front end | Server-rendered templates or a light PWA served by the same app | No separate front-end framework unless one is already in daily use |
-| Database, auth, storage | Supabase (Mumbai): Postgres, Auth, Storage, row-level security | Application connects as a restricted role; RLS policies tested for cross-user access; database, auth and storage stay in Mumbai; model processing and monitoring vendors do not, so the data-flow map in Annex E applies |
-| Background worker | One process on the Mumbai VPS reading a Postgres jobs table with leases and idempotency keys | No Redis, no broker |
-| Workflow glue | n8n for reviewer notifications, review-due reminders and scheduled checks of the source allowlist | Not on the request path |
-| Reminders | One WhatsApp Cloud API template, opt-in, deadline only | Paise per message [PA]; no inbound handling |
-| AI | One hosted model behind a provider adapter; per-account and global spend caps; 15-second timeout | No GPU, no multi-vendor gateway |
-| Search | Postgres full-text plus a synonym table | Enough for a curated catalogue |
-| Monitoring | Error tracking, uptime check, structured logs without personal data | Nothing else |
-| Staging | Separate Supabase project and VPS container; synthetic data only | Real student data never in development |
-
-Timeline, 12 weeks, two tracks.
-| Week | Engineering track | Content track |
-| --- | --- | --- |
-| 1 | Journeys, claims schema, threat model, source allowlist, rule test-case format | Career-family list, exam list, source register, editor onboarded |
-| 2–3 | Supabase Auth and RLS, admin publishing (draft → review → publish), explorer, verified record cards | 25 career families drafted; exams sourced from official notifications; second reviewer onboarded |
-| 4 | Consent and safeguarding workflow (school-mediated consent, no identity documents, distress rule, support queue) | Rule functions and test cases for 5 exams |
-| 5–6 | Comparison, eligibility, timeline and cost engines | 50+ programme records with sources; scholarships |
-| 7 | Saved plans, WhatsApp deadline template, AI explanation with server-controlled citations | Hindi review of all critical content |
-| 8 | Cross-user access tests, backup restore drill, 25-session load test, AI-disabled test, spend-cap test | Content freeze for trial; review-due dates set |
-| 9–10 | Ten-user trial: adult testers on synthetic profiles, then first real students under consent; corrections | Correction SLA measured |
-| 11–12 | Gradual admission to 100; pre/post survey; cached answers invalidated on corrections | Freshness check on every critical claim |
-
-Budget.
-| Item | Allowance [CE] |
+| Term | Meaning in this document |
 | --- | --- |
-| Application hosting and worker (existing VPS) | ₹0–4,000 per month |
-| Supabase project, backups, storage | ₹2,500–6,000 per month |
-| AI usage | ₹1,000–5,000 per month at Hindi-adjusted volumes |
-| WhatsApp templates, monitoring, email, miscellaneous | ₹500–2,500 per month |
-| Operating subtotal | ₹4,000–17,500 per month |
-| Development, if hired: one senior full-stack engineer, 12 weeks | ₹6–14 lakh one-time |
-| Editor and second reviewer honoraria, 12 weeks | ₹1.5–3 lakh one-time |
-| Part-time QA and security review | ₹0.5–1.5 lakh one-time |
+| ABC | Academic Bank of Credits, the national credit-record system linked to APAAR |
+| ACPC, ACPUGMEC, GCAS | Gujarat's admission committees for professional courses, undergraduate medical courses, and the common admission service for general degrees (verify current names) |
+| AICTE, UGC, NMC, BCI | Regulators for technical, university, medical and legal education whose approval status must appear on every programme |
+| AISHE, UDISE+ | Official surveys of higher education and school education; sources for population figures |
+| APAAR, DigiLocker | National student identifier and document wallet; consent-based record sources |
+| CBSE Career Guidance portal | National career portal launched in 2021 by CBSE, UNICEF and iDreamCareer; an incumbent |
+| CERT-In | National cyber-security agency whose incident-reporting and log-retention directions apply |
+| CET | A state common entrance test (GUJCET, MHT-CET and similar) |
+| Coverage transparency | Four published counts per module and state: available, verified, within SLA, awaiting confirmation |
+| CSR | Corporate social responsibility funding |
+| CUET, JEE, NEET, CLAT, NDA, GATE, CAT | National entrance exams in Wave 1 |
+| Data Integrity Council | Governance body owning the source registry and verification standards |
+| DPDP Act 2023, DPDP Rules 2025 | India's personal-data law and its rules; verifiable parental consent for minors comes from here |
+| EMI | Equated monthly instalment on an education loan |
+| Evidence tags | [OF] official fact; [HF] historical figure; [PA] planning assumption; [PT] target; [CE] cost estimate ±30%; [UH] unvalidated hypothesis |
+| Fact card | A server-rendered block showing a date, cost or eligibility outcome from the database, so generated prose never carries the number |
+| Federated consortium | Governance Option C: central anchor, member states, a Section 8 operating company, an independent Data Integrity Council |
+| ITI, polytechnic, apprenticeship | Vocational pathways given parity with degrees |
+| Lite | BCION Lite, the 10–100 user software pilot planned in `docs/BCION-Lite-Build-Pack.md` |
+| Maker-checker | Two-person publication: the author of a critical claim cannot approve it |
+| MAU | Monthly active users, the unit for cost and adoption targets |
+| MoU | Memorandum of understanding with a sponsor, state, regulator or exam authority |
+| NCO-2015 | National Classification of Occupations; the anchor for the career taxonomy |
+| NCS | National Career Service portal |
+| NEP 2020 | National Education Policy 2020 |
+| NIRF, NAAC, NBA | National ranking and accreditation bodies; shown with source, year and method, never merged into a BCION rank |
+| NSP, PM Vidyalaxmi | National Scholarship Portal and the education-loan scheme; linked, not replicated |
+| NSQF | National Skills Qualifications Framework; skill clusters map to it |
+| NTA | National Testing Agency |
+| Phase −1, −2 | Pre-approval (sponsor, governance, appraisal) and the Lite proof of concept that precede Phase 0 |
+| PWA | Progressive web app, the lite app under 10 MB |
+| Readiness level | 0–4 score per module and state derived from coverage transparency; level 4 required before a state is "BCION recommended" |
+| RLS | Row-level security in Postgres; the mechanism that keeps one student's data from another |
+| RPO, RTO | Recovery point objective and recovery time objective, set per service tier |
+| Section 8 company | Indian not-for-profit company form |
+| SFC, EFC | Standing and Expenditure Finance Committees that appraise central schemes (verify current thresholds) |
+| SLA | Service-level agreement, used here for freshness and correction commitments |
+| SWAYAM, DIKSHA, NPTEL | Public learning platforms, linked not copied |
+| TALASH | 2025 UNICEF and Ministry of Tribal Affairs platform for Eklavya schools; an incumbent |
+| Tele-MANAS | National tele-mental-health service; the helpline shown in the crisis protocol (verify the current number at launch) |
+| Tier 0–3 (AI) | Query routing: database and rules; small model; mid model; large model with human escalation |
+| Tier 1–4 (data) | Freshness tiers: critical, cycle, annual, market |
+| Tier 1–4 (human service) | Self-serve; teacher-facilitated; certified counsellor; crisis |
+| Tranche | Funding released on a gate: 1 for Phases 0–1, 2 for Phase 2, 3 for Phase 3 |
 
-If built in-house, the one-time lines become the builder's own time; state that opportunity cost rather than showing zero.
-Launch gates before admitting 100 users. The CTO plan's nine gates, plus: consent and safeguarding workflow reviewed by someone other than its author; the outcome instrument piloted on the first ten users; a named owner for source review and corrections; the distress rule tested with Hindi and Hinglish phrasing.
+# ANNEX D — Assumptions register
 
-## C.4 What Lite measures for the national DPR
+Every [PA] and [UH] item in one place, with what replaces it and when. Items are closed when the validation column is done, not when someone agrees with them.
 
-| Measurement | Feeds | Assumption it tests |
-| --- | --- | --- |
-| Share of interactions served without a model call | Section 9 | Tier 0 at 65–70% |
-| Support and escalation requests per 100 users per month | Section 19 | Tier-3 referral rate 1–1.5% per year |
-| Editor hours per verified programme record and per exam rule | Sections 24, 26 | Data-operations headcount |
-| AI cost per Hindi answer | Section 9 | ₹10–15 per MAU per year |
-| Pre/post decision quality: can name three pathways, total cost of first choice, next deadline, a backup, one scholarship they are eligible for | Section 29 | 15-point uplift target |
-| Whether one school lets 30 Class 10–12 students use it under parental consent | Section 12, 23 | School channel and consent design |
-| Return visits in weeks 2–4 after sign-up | Section 12 | 30% monthly activity |
+| # | Assumption | Tag | Section | Validation | When |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Class 8–12 population 8–10 crore; other market figures | [PA] [HF] | 4 | Current UDISE+, AISHE, NTA figures | Phase 0 |
+| 2 | Reachable users 15–25% of the population at M60; 25–35% monthly activity among registered | [PA] | 4 | Pilot registration and retention | M18 |
+| 3 | Tier 0 serves 65–70% of interactions | [PA] | 9 | Lite logs, then pilot logs | Lite; M18 |
+| 4 | AI cost ₹10–15 per MAU per year, cap ₹20; Hindi token overhead 2–4× | [PA] | 9 | Model-gateway cost simulation; Lite cost per Hindi answer | Phase 0; Lite |
+| 5 | Tier-3 counselling referral 1–1.5% of registered per year; Tier 2 absorbs half of escalations | [PA] | 19 | Measured in Lite and pilot | Lite; M18 |
+| 6 | Counsellor 150 sessions per year; honorarium ₹600–800; 25% no-show; supervision 1:12 | [PA] | 19 | Pilot operations | M18 |
+| 7 | Institution data stewards maintain self-declared profiles | [UH] doubtful | 15, 24 | Claim-and-verify trial with 200 institutions | M18 |
+| 8 | Editor hours per verified record and per exam rule | [PA] | 24, 26 | Lite content track, then pilot | Lite; M18 |
+| 9 | Students reject long assessments; a 5-minute quick start works | [UH] | 12 | Usability testing across age, language and device | Phase 0; Lite |
+| 10 | Parents prefer linked visibility for younger students | [UH] disputed | 23 | Consent and family research | Phase 0 |
+| 11 | WhatsApp is the dominant access channel | [UH] | 7, 12 | Channel-cost and adoption pilot | M18 |
+| 12 | Schools adopt only with an official circular | [UH] | 12, 25 | State administrative interviews | Phase 0 |
+| 13 | Teachers run a 40-minute Career Period from a kit | [UH] | 19 | Trial in 30 schools | Phase 0–1 |
+| 14 | Existing state portals accept a migration path | [UH] unknown | 1.3, 6, 25 | Talks with three state departments and the portal vendor | Phase −1 |
+| 15 | State portals are still maintained in 2026 | [UH] | 1.3 | State-by-state check with UNICEF India, CBSE and departments | Phase −1 |
+| 16 | A federated consortium is acceptable to states | [UH] unknown | 20 | Legal and institutional assessment; state consultations | Phase −1 |
+| 17 | Distress detection routes safely without flooding counsellors | [UH] | 9, 19 | Red-team precision and recall on Indian-language text | Phase 0–1; Lite |
+| 18 | Institutions will pay for data services | [UH] rejected | 27 | None; revenue assumed zero | Closed |
+| 19 | All cost figures are top-down and ±30% | [CE] | 26 | Bottom-up model with vendor quotes and salary benchmarks | Phase 0 |
+| 20 | Scheme appraisal takes 9–15 months of elapsed time | [PA] | 25 | Sponsor confirms the route and thresholds | Phase −1 |
+| 21 | Messaging cost per opted-in alert | [PA] | 26 | Vendor quote | Phase 0 |
+| 22 | About 300 careers at maturity under the NCO-2015 taxonomy | [PA] | 10, 13 | Taxonomy work | Phase 0 |
+| 23 | Monthly active users at least 30% of registered | [PT] | 25 | Pilot | M18 |
+| 24 | DPDP consent mechanisms as designed in Section 23 | [PA] | 23 | Legal review against the DPDP Rules 2025 text | Phase 0 |
+| 25 | Data residency by policy is achievable with the chosen vendors | [PA] | 23 | Data-flow map with confirmed regions | Phase 0; Lite |
+| 26 | Gujarat as the Lite pilot state; English and Hindi suffice for the cohort | [PA] | Lite pack | Owner decision on the cohort | Lite Step 0 |
 
+# ANNEX E — Lite build pack
 
-## C.5 Items to back-port into the main DPR
+The 10–100 user pilot, its interface brief, operating rules for Claude Code, data-flow map, 16-step schedule, budget, gates and ready-to-paste Step 1 prompt are in `docs/BCION-Lite-Build-Pack.md` (mirrors the "Lite build pack" tab of the living DPR/White Paper doc).
 
-The CTO plan is more precise than the national text in six places. These should be folded into Sections 10, 11 and 16 in the next revision: three-outcome eligibility; a review-due date on every claim; a changed source is not a changed rule; approvals bound to the exact draft version and invalidated on edit; confirmed versus potential assistance in the cost engine; server-rendered fact cards for critical values.
-
-# ANNEX D — BCION Lite: interface and experience brief
-
-The design brief is the soundest of the three Lite documents: comparison as the central screen, next action as the central outcome, provisional language, field-level trust labels and difficult states designed first. Its gaps are integration gaps: it is not scheduled in the Annex C timeline, has no designer in the Annex C roles, does not decide where a guest's plan lives, ignores the pilot state's language, and gives the outcome measures in C.4 nothing to measure with.
-
-## D.1 Review of the design brief
-
-Accepted as written. Start from the student's uncertainty, not the modules; no ten-tile home screen; four destinations (Explore, Compare, My Plan, Saved) with account, language and privacy in a utility menu; contextual "Ask BCION" entry points with canned prompts instead of a blank chat box; useful before personal, with no marks, income, category, phone or parent details asked upfront; career cards that show the work, not the prestige, with "why am I seeing this" and a reality check; comparison of pathways, not career titles, on consistent fields; three visibly separate cost amounts; My Plan as current decision, next three actions, saved alternatives, with no readiness percentage; trust status at field level, never a whole-college badge; a student-approved family summary instead of a parent dashboard; no teacher analytics for 100 users; calm visual direction with one accent, labelled icons, 44–48 px targets and no meaning by colour alone; difficult states before homepage polish; task-based usability testing.
-The contextual prompts are also a cost decision: each entry point maps to a fixed prompt template over retrieved records, which is exactly the precomputed-template approach in Section 9.
-Problems.
-| # | Problem | Consequence | Fix |
-| --- | --- | --- | --- |
-| 1 | Not scheduled | Annex C has no design or usability rounds; the engines would be built before anyone tests the comparison screen | Design rounds inserted into the Annex C timeline (D.3) |
-| 2 | No designer in the Annex C roles | Either the engineer designs, or the brief is unfunded | Part-time product designer for weeks 1–3 and 7–9, ₹1–2.5 lakh [CE], or an explicit decision that the engineer uses a component library and the brief's low-fidelity flows |
-| 3 | Where a guest's plan lives is undecided | Local storage on a shared phone leaks a sibling's plan; a server session is data collection | Anonymous server session with a random token, no personal fields, 7-day expiry, shown as "not saved to an account"; account creation migrates it |
-| 4 | Language stops at "language selection visible" | If the pilot state is Gujarat and users are government-school students, English and Hindi miss the medium of instruction; Hinglish and Roman-script Hindi input are not mentioned | Decide the user population first; if Gujarati-medium, translate the UI strings (a few hundred) and the quick start, keep content English and Hindi; accept Roman-script Hindi in Ask BCION and search via the synonym table in Annex C |
-| 5 | No instrumentation | C.4's measurements (time to first saved action, comparison opened, source link clicked, return visits) have no events behind them | Event log without personal data: screen reached, time to first saved action, comparison opened, source link clicked, preference changed, return visit; keyed to the anonymous session or account id only |
-| 6 | Reality checks and "why am I seeing this" are content, not design | 20–30 reality checks written and reviewed add to the content track that Annex C already found to be the long pole | Add to the content track from week 2; one reviewer per reality check |
-| 7 | Parent summary is "student-approved"; DPDP consent comes from the parent | A consenting parent may expect to see what they consented to | Policy stated in the consent screen: the parent consents to the account; the student controls what the family summary shows; support-queue and distress content is never shown to anyone but staff |
-| 8 | Deadline reminders have no channel in the brief | Annex C sends them by WhatsApp template; the opt-in screen, message copy and "last checked" date on the message are interface work | Add the opt-in screen and one message template to the component set |
-| 9 | "Information changed" state exists; a changes surface does not | Section 11 promises a public recently-changed log | A "What changed" list under My Plan and in the utility menu, showing field, old and new value, date and source |
-| 10 | Typography "one readable family with language support" | Devanagari plus Latin (plus Gujarati if needed) on low-data connections | Noto Sans family with system-font fallback; no web-font download on the text-only mode |
-
-
-## D.2 Adopted design decisions for Lite
-
-Objective. Within five minutes a student understands their options and knows their next useful action. The first result after quick start is three routes worth comparing, each with "why am I seeing this".
-Emotional progression. Uncertainty → exploration → comparison → provisional decision → action → review. Never assessment → score → label. Language: "Explore this route", "Save as an option", "You can change this later". Banned: "Your perfect career", "You are 92% suitable", "You must choose science".
-Navigation.
-| Destination | Purpose |
-| --- | --- |
-| Explore | Discover careers and routes |
-| Compare | Examine two or three shortlisted pathways |
-| My Plan | Current decision, next three actions, saved alternatives, what changed |
-| Saved | Careers, programmes and sources to revisit |
-
-First visit. Headline "Find your next step"; three starting choices (exploring my options, career in mind, need an alternative plan); language visible; no carousel, video or account wall. Quick start asks one question at a time: studying now; what to decide; interests; what matters most (affordable, near home, start work sooner, keep options open, a particular interest, not sure yet), with skip where not essential. Account creation only when the user wants to save or sync.
-Comparison fields (the central screen). Entry requirements (met, not met, still unknown); main stages; time as a range with assumptions; total cost as verified charges plus separated estimates; funding as confirmed versus potential; location; work realities; alternatives if plans change; evidence with sources, dates and missing information. Desktop: side-by-side columns. Mobile: stacked sections or a pathway switch that keeps the same field in view; no sideways-scrolling table. Closing prompt: "Which option would you like to investigate further?"
-Timeline and cost. Editable milestones, with required stages, optional stages and user assumptions distinguished; an unsuccessful attempt offers "Revise this scenario", not a failure badge. Three separate amounts: verified charges, estimated additional expenses, potential assistance not yet awarded; assumptions editable without re-entering the profile.
-Trust labels, applied per field.
-| Status | Meaning |
-| --- | --- |
-| Checked against official source | Reviewed evidence supports this field |
-| Institution-reported | Supplied by the institution; not independently confirmed |
-| Estimate | Calculated from stated assumptions |
-| Needs rechecking | Verification overdue or evidence has changed |
-| Not available | No sufficient evidence |
-
-Each consequential fact shows source authority, applicable cycle, verification date, official link and "Report an issue". A recommendation explanation shows why it appeared, which preferences influenced it, what remains unknown and how to change the preferences.
-Other stakeholders in Lite. Parent: a student-approved family summary (options explored, time and cost assumptions, questions to discuss, a suggested next conversation). Teacher: a session guide, a demonstration journey, printable prompts, a referral route. Support staff: only the authorised case summary (decision faced, options considered, constraints volunteered, unresolved questions), never a model-generated label. Institutions, coaching, lenders and employers: no student-facing controls; corrections enter the review workflow.
-Visual direction. Warm white background, deep charcoal text, one deep-blue accent, teal or green for positive states with text and icon, amber with explanation for caution, red sparingly; generous spacing, short sections, one primary action per screen; brief functional motion respecting reduced-motion settings; images only where they explain work. No glass effects, giant gradients, decorative dashboards, stock graduation imagery or animated mascot.
-Difficult states, designed before the homepage.
-| Situation | Response |
-| --- | --- |
-| AI unavailable or budget exhausted | "You can still compare routes and use the calculators." |
-| Eligibility uncertain | Name the missing requirement; never guess |
-| Information changed | Say what changed and which saved plans may be affected |
-| No matching result | Broader searches and alternatives |
-| Save failed | Keep the draft visible; never say "Saved" |
-| Weak connection | Lightweight content and visible connection status |
-| Shared device | Easy sign-out; nothing sensitive persists by default; guest session expires |
-| Permission denied | Explain the boundary without exposing another user's data |
-
-Public content cached selectively; an offline deadline shows its last-checked date and needs online confirmation before consequential action.
-
-## D.3 Integration with the Annex C timeline
-
-| Week | Addition to the Annex C plan |
-| --- | --- |
-| 1–2 | Three end-to-end journeys (undecided, goal-focused, alternative-seeking); low-fidelity quick start, explore, compare and plan; clickable prototype with test-labelled content |
-| 3 | Usability round 1, 5–8 participants including a shared-phone user, a Hindi-preferring user, a parent and a teacher; run before the comparison and cost engines are built |
-| 4 | Consent screen copy and the parent-summary policy text finalised with the consent workflow |
-| 7 | Component set frozen: cards, source labels, inputs, alerts, comparison sections, reminder opt-in, "what changed" list; event instrumentation live |
-| 9 | Usability round 2 alongside the ten-user trial; the six task criteria below are the pass mark |
-
-Task criteria for both rounds. Participants can find two plausible routes; explain the difference between verified costs and estimates; locate an official source; save a next action; change a preference; and recognise uncertainty rather than treat the system as an authority. Score task completion, not whether the design "looks good".
-
-## D.4 Items to back-port into the main DPR
-
-The five per-field trust labels replace the three-track model in Section 15 and the record-level labelling in Section 11; "Estimate" and "Needs rechecking" are states the national text lacks. The guest-session rule belongs in Section 23. The four-destination navigation and the contextual-prompt approach belong in Sections 7 and 9. To be applied on request together with the Annex C back-ports.
-
-# ANNEX E — BCION Lite: Claude Code execution blueprint
-
-The blueprint is right about how to run Claude Code and wrong about the stack for the same reason the CTO plan was. Lead plus one specialist, memory in version-controlled files, contracts before parallel work, milestone exit proofs, four separate spend ledgers and production credentials kept out of the development environment are all adopted. Its default of Next.js, Vercel and pnpm for a builder who runs FastAPI, Supabase, a Mumbai VPS and n8n is overruled by its own rule: choose a familiar stack once. Its "2–4 weeks to a reviewed 10-user pilot" is the software, not the pilot; the 12-week envelope in Annexes C and D stands, and E.3 maps the milestones onto it.
-
-## E.1 Review of the blueprint
-
-Accepted as written. Development agents, runtime AI and background jobs as three separate systems; no permanent agent swarm; "trained agents" as configured roles and evaluation cases, not fine-tuning; scope contract with synthetic fixtures that can never appear as verified facts; memory as short repository files (CLAUDE.md, PRODUCT, ARCHITECTURE, UI, DATA, SECURITY, DECISIONS, STATUS, task cards, RUNBOOK, KNOWN_ISSUES) rather than long chats; session-close discipline (record tests actually run, never "all tests pass" for one suite); conflict resolution order (approved task → accepted architecture decision → code and tests as evidence); three specialists with stated non-invocation triggers and reviewer calibration on a seeded-bug fixture; contracts before parallel implementation; milestones M0–M6 with exit proofs; the task-card template; hooks as convenience, not security; quality gates including the rule that no aggregate score excuses a data-leak case; golden evaluation of 30+ cases with mocked API in unit tests and a capped live evaluation before release; expand/contract migrations and the warning that database rollback is not code rollback; atomic reservation of runtime AI allowance with a kill switch; the daily operator workflow; and the closing instruction that the owner's job is scope decisions, content review and acceptance, not repeated master plans.
-The blueprint also corrects Annex C on one point: choosing a Mumbai database region does not make the system India-only. Logs, monitoring, email, backups and model processing each have their own region. Annex C's residency line has been amended and E.6 carries the data-flow map.
-Problems.
-| # | Problem | Consequence | Fix |
-| --- | --- | --- | --- |
-| 1 | Defaults to Next.js, TypeScript, Tailwind, pnpm, Vitest and Vercel | Contradicts Annex C and the blueprint's own "familiar stack" rule; adds learning time inside a 12-week pilot; Vercel functions cannot run the worker the blueprint itself needs | Stack pinned to what already runs (E.2); the starting instruction names it so an empty repository does not fall back to the blueprint's default |
-| 2 | "Do not buy n8n" | n8n is already self-hosted on the owner's VPS at zero marginal cost | Keep it off the request path: reviewer notifications, review-due reminders, scheduled source checks only |
-| 3 | "2–4 weeks to a reviewed 10-user pilot" | Will be read as the whole pilot in a month; it is M0–M5 software with synthetic data | M0–M5 in weeks 1–7; M6 acceptance in weeks 9–10 after content, consent and usability rounds (E.3) |
-| 4 | No content track | Same gap as the CTO plan; "who will verify facts" is on the owner checklist with no schedule | Content track from Annex C runs in parallel from week 1; M6 cannot exit without it |
-| 5 | No design or usability rounds in the milestones | The comparison screen ships untested until the 10-user trial | Annex D rounds attached to M1 (prototype) and M6 (acceptance) |
-| 6 | Consent is "design" at M3 and "support" at M6 | The consent and safeguarding workflow is never explicitly built and reviewed | M3 exit proof includes the consent workflow implemented and reviewed by a person, not only the data/security agent |
-| 7 | Golden evaluation has no language requirement | Hindi and Hinglish answers are where grounding and refusal fail first | At least 10 of the 30 cases in Hindi or Roman-script Hindi, human-reviewed |
-| 8 | Hindi critical copy left to M6 | Late translation review lands on the acceptance week | Hindi review starts at M2 for calculator and eligibility copy, M4 for reviewer console copy |
-
-
-## E.2 Stack resolution
-
-| Need | Blueprint default | Lite decision | Why |
-| --- | --- | --- | --- |
-| Application | Next.js + TypeScript, server modules | FastAPI monolith with data, rules, planning and AI modules; server-rendered templates or a light PWA | Already in daily use; Claude Code works in a Python repository as well as a JavaScript one |
-| UI | Tailwind plus a small component set | Tailwind plus the Annex D component set, tokens in docs/UI.md | Adopted unchanged |
-| Database, auth, storage | Supabase managed Postgres, Auth, Storage; staging and production projects | Same | Adopted; grants plus RLS, restricted application role, RLS tests on every exposed table, view and storage bucket |
-| Hosting | Vercel, provisional | Mumbai VPS with Docker, a reverse proxy, separate staging and production containers; deploy from GitHub Actions through a protected environment holding the deploy key | Runs the worker natively; keeps compute beside the database; no new provider |
-| Background work | Postgres job table plus scheduled serverless invocations | Postgres job table plus one worker process on the VPS with leases, bounded retries and idempotency keys | The blueprint's own concern about serverless execution limits disappears |
-| Workflow glue | Not bought | n8n on the VPS, off the request path | Already running |
-| Tests | Vitest, Playwright, accessibility checks, SQL policy tests | pytest, Playwright for Python, accessibility checks, SQL policy tests against staging | Same gates, matching tools |
-| Lint and typecheck | ESLint, tsc | ruff, mypy | Same gates |
-| Runtime AI | One hosted provider behind an adapter, restricted key, spending cap | Same | Adopted |
-| Reminders | No SMS initially; email if account flow needs it | One WhatsApp Cloud API template, opt-in, deadline only (Annex C) | Already in the toolkit; students do not read email |
-| Monitoring | One error tracker, one uptime monitor, payloads scrubbed, no session replay | Same | Adopted; vendor region recorded in E.6 |
-| Not bought | Kubernetes, Redis, Kafka, Elasticsearch, graph or vector database, GPU, memory platform, agent orchestration | Same list; Vercel added to it |  |
-
-
-## E.3 Milestones on the 12-week timeline
-
-| Milestone | Deliverable | Exit proof | Weeks | Depends on |
-| --- | --- | --- | --- | --- |
-| M0 bootstrap | Memory files, scope, stack lock, task backlog, CI skeleton, three specialist agents | Reproducible install and passing smoke check; real lint, typecheck, test and build commands exist | 1 | Owner checklist (E.4) |
-| M1 first vertical slice | Published career record → explore → compare two options, on synthetic fixtures | Real staging database and browser journey pass; Annex D usability round 1 on the clickable prototype | 2–3 | Design track weeks 1–2 |
-| M2 deterministic intelligence | Eligibility with unknown state, cost, timeline, evidence states | Boundary, arithmetic, overlap and missing-data tests; Hindi copy review begins | 4–5 | Content track: rule functions for 5 exams |
-| M3 private plans | Auth, RLS, save and edit plan, consent and safeguarding workflow, distress rule, support queue | Guest, student A, student B and reviewer access matrix passes; consent workflow reviewed by a person | 4–6 | Annex C week-4 gate |
-| M4 reviewer operations | Draft, approve, publish, supersede, correction; approvals bound to draft version | Unapproved facts cannot reach public results; seed-publication procedure retired | 6–7 | Content track: 50+ programme records ready to publish through it |
-| M5 bounded AI | Retrieval, server-owned citations, contextual explanations, timeout and budget fallback, WhatsApp reminder template | Evaluation suite (30+ cases, 10+ Hindi) and AI-off journey pass; cost per Hindi answer recorded | 7–8 | Annex D contextual prompts |
-| M6 pilot release | Hindi critical copy complete, mobile QA, monitoring, backups, support, event instrumentation | Restore drill; cross-user tests; load test at 25 sessions; security review by a person; Annex D usability round 2; 10-user acceptance | 8–10 | Content freeze week 8 |
-| 100-user admission | Gradual admission | Annex C launch gates plus the C.4 pre/post instrument on the first ten users | 11–12 | M6 acceptance |
-
-A narrow staging demonstration can exist within days; it is not the pilot. 100-user access follows acceptance, not a date.
-
-## E.4 Adopted operating rules
-
-Owner checklist before M0. Repository location and branch permissions; pilot scope and the named fact reviewers; three separate spend ceilings (development agents, runtime AI, hosting); staging service accounts with restricted permissions; data-region and external-model policy (E.6); one authorised production approver; approval to develop on synthetic fixtures. Sign-in, billing, MFA and secrets are entered through provider interfaces; Claude Code receives variable names, never values.
-Memory files. CLAUDE.md at 60–100 lines: mission, non-negotiables, verified commands, links. STATUS.md under 400 words: milestone, exact commit, blockers, next task. docs/DECISIONS.md: dated decisions with reasons and superseded status. Task cards in tasks/BCI-xxx.md. The DPR is linked, not imported. Secrets, raw student data and unverified conclusions are never written to memory.
-Agent roster. Lead implementer (every feature; own branch; no production access). Data/security reviewer (auth, SQL, publication, privacy changes; read and test only; severity-ranked reproducible findings). UX/QA reviewer (completed journeys; isolated test accounts; failed steps, screenshots, accessibility findings). AI evaluator, added at M5 (grounding, refusal, cost, latency; capped budget; no student data). Definitions under .claude/agents/, each stating when not to invoke it. Default concurrency: lead plus one specialist; two implementers only with a fixed contract, disjoint files and separate worktrees; never parallel edits to a migration, lockfile or shared schema. Calibrate each reviewer on a fixture seeded with a cross-user access bug, a missing source, a stale deadline and a misleading status label before trusting it.
-Token rules. One bounded outcome per task; read STATUS and targeted files, not the repository; rg with generated output excluded; targeted tests while iterating, full suite before merge; short summaries and paths, no reprinting saved files; deterministic tools for formatting, arithmetic, linting, migrations and tests; fresh session after a clean handoff; strongest model for architecture, security and hard failures, standard model for ordinary implementation, cheap models only for verified low-risk work; after two failed fixes of one failure, reproduce and diagnose. Track cost per accepted slice, failed-fix cycles, escaped defects and time to a tested feature.
-Contracts before parallel work. Request and response schemas and error shapes; money precision, duration units, currency, date and time conventions; the three eligibility outcomes; evidence states and stale-data behaviour; guest and signed-in authorisation; loading, empty, permission-denied, failed-save and AI-unavailable states.
-Quality gates. Calculators: zero values, boundaries, missing inputs, overlapping durations, rounding. Eligibility: cycle and jurisdiction, unknowns, cut-off dates, rule version. Access: guest, student A, student B, reviewer across read, write, delete, export and storage. Publication: separate maker and checker, exact draft approval, invalidation on edit. AI: wrong source IDs, unsupported claims, stale evidence, prompt injection, timeout, overspend. Privacy: PII-free logs, logout and cache behaviour, authorised export and deletion. UI: mobile and desktop, keyboard, screen-reader spot tests, Hindi text expansion, every error state. Operations: fresh migration, staging deploy, monitoring alert, backup restore. No known critical or high security issue ships; lower-severity exceptions carry a named owner, rationale and expiry; model review alone never signs off child data or production security.
-Deployment flow. Feature branch on synthetic data → pull request runs checks without production secrets → preview against staging only, with restricted callbacks and origins → reviewer findings resolved and checks rerun → owner approves the exact release commit and migration plan → protected GitHub Actions environment applies additive migrations and releases to the production container → smoke tests → monitor; disable AI or revert the release if needed. Schema changes are append-only migration files, never dashboard edits; forward fixes over reversed destructive migrations; any restore carries a declared data-loss window. No production credential in the everyday Claude Code environment.
-Spend controls. Four ledgers: development agents, application inference, hosting and monitoring, human verification and support. Runtime AI reserves an allowance per request atomically, limits input and output tokens, records actual usage and degrades to deterministic tools at the cap; provider caps plus an application kill switch; alerts at agreed thresholds; no expensive-model retry cascade. The Annex C operating range remains an unquoted planning range until current quotes, including staging, backups and tax, are obtained.
-
-## E.5 Starting instruction for Claude Code (amended for the pinned stack)
-
-```
-You are the lead engineer for BCION Lite, a 10–100-user career decision pilot.Use Annexes C, D and E of the BCION DPR as the operating specification.Stack is fixed: FastAPI monolith (Python), Supabase (Mumbai) for Postgres, Authand Storage with RLS, Tailwind with the docs/UI.md component set, a Postgres jobstable with one worker process on the Mumbai VPS, n8n off the request path,one hosted AI provider behind an adapter, pytest + Playwright + ruff + mypy,GitHub Actions with a protected production environment. Do not proposeNext.js, Vercel or any replacement for these.Priorities: verified decisions, privacy, calm mobile UX, low operating cost,short cycles with objective tests. No agent swarm; do not attempt the wholeproduct in one turn. Inspect the repository first; preserve existing work;read CLAUDE.md and STATUS.md if present and never overwrite them blindly.Implement M0 only:1. Identify the existing stack and gaps; propose only necessary changes.2. Create or update a concise CLAUDE.md, scoped PRODUCT, ARCHITECTURE, UI,   DATA and SECURITY docs, STATUS.md and a dependency-ordered task backlog.3. Establish and run real lint, typecheck, test and build commands. Report   missing checks; never fabricate passing results.4. Configure at most three specialist agents in the syntax this installed   Claude Code version supports. Reviewers are read and test only.5. Create the smallest runnable application shell and clearly labelled   synthetic fixtures. Fixtures are never published as facts.After M0, report the proposed first vertical-slice task (M1), actual checkresults, required account setup and unresolved decisions. Do not provisionpaid services, deploy publicly or touch production without explicit approval.For later tasks: read only relevant files; own a bounded scope; ordinary codefor facts and calculations, AI only for grounded explanation over retrievedrecords with server-owned citations. Never send student data to developmentagents or store secrets in repository memory. Test cross-user access, sourcestatus and failure states every time. Update STATUS.md at close. Two failedfixes of one issue require diagnosis, not a third patch. Keep reports short;never claim completion without test evidence.
-```
-
-
-## E.6 Data-flow map (residency, replacing the Annex C claim)
-
-| Flow | Where it runs or is stored | Contains personal data | Control |
-| --- | --- | --- | --- |
-| Database, authentication, file storage | Supabase, Mumbai | Yes | RLS, restricted role, field-level encryption for optional sensitive fields |
-| Application and worker | Hostinger VPS, Mumbai | Yes, in transit and in memory | No personal data in logs; containers isolated; staging separate |
-| Database backups | Supabase-managed; region to be confirmed at provisioning | Yes | Daily backups; point-in-time recovery only if a day's loss is unacceptable |
-| Runtime AI requests | Hosted model provider; region outside India unless the chosen provider offers otherwise | No: PII redacted, no names, phone numbers or identifiers; retrieved records and the student's stated interests and constraints only | Provider terms reviewed for retention and training; restricted key; spending cap |
-| Error tracking and uptime | Monitoring vendor; region recorded at sign-up | No: payloads scrubbed, no session replay | Vendor region and retention noted in docs/SECURITY.md |
-| WhatsApp reminders | Meta Cloud API | Phone number and a deadline template | Opt-in only; template contains no personal fields beyond first name |
-| Transactional email, if used | Provider; region recorded | Email address | Domain verified; delivery tested |
-| Development agents | Owner's machine, Claude Code | Never | Synthetic fixtures only; staging keys only |
-
-Rule: real personal data of a minor does not enter the system until every row above has a confirmed region and the owner has accepted the map in writing. "India-only" is a statement about this table, not about the database region.
-
-# ANNEX F — BCION Lite: step-by-step build guide
-
-The build guide is adopted as the executable sequence for Lite; Annexes C, D and E remain the reasoning behind it. Its 16 steps are in the right order, AI comes last, the publishing console enforces maker-checker in the database rather than in a button, and the ten-user gates are concrete. It has four conflicts with the earlier annexes and one real gap: it scaffolds Next.js again, excludes WhatsApp, starts real content only at Step 10, and puts the first human usability test after production deployment. F.2 to F.4 resolve these. This annex closes the Lite planning set; the next output is Step 0 done and Step 1 pasted.
-
-## F.1 Review of the build guide
-
-Accepted as written. One step per prompt, each authorising only its own bounded work, with an acceptance check the owner performs before the next; the common completion report ("looks good" and "tests should pass" are not evidence); Step 0's five owner decisions; accounts created only when a step needs them; Step 3's two read-and-test-only reviewers calibrated on labelled invalid fixtures kept out of deployment; Step 4's data foundation built with RLS tests that attempt cross-user reads and writes and are not run as database owner; Step 5's early private staging behind an access gate; Step 8's guest-to-login path that does not silently create a profile, with expiry for temporary state and shared-device logout; Step 9's publishing console (author cannot approve own claim, enforced server-side; approval bound to source version and draft contents; edit invalidates approval; atomic publish; audit events; corrections invalidate caches and flag saved plans); Step 10's import template with required evidence fields and the rule that Claude may extract but never mark its own extraction verified; Step 11's pipeline with server-owned fact cards, atomic budget reservation, 30-question live evaluation and the AI-off journey; Step 12's PWA caching of public assets only and no offline writes; Step 13's restore into a separate test target, object-storage backups and a 25-session load test without live model calls; Step 14's owner-approved release of an exact commit with production credentials outside the Claude workspace; Step 15's eight tester tasks and its 8-of-10 gates; Step 16's batched expansion 10 → 25 → 50 → 100 on observed metrics; the daily operating prompts; the ask-versus-proceed table; the final checklist; and the closing line to the owner: do not request another master plan.
-Problems.
-| # | Problem | Consequence | Fix |
-| --- | --- | --- | --- |
-| 1 | Steps 1, 2 and 5 scaffold Next.js, pnpm, Vitest, Vercel and NEXT_PUBLIC_ variables | Pasted verbatim, the prompts override the Annex E stack decision on day one | F.2 states the decision once with the one condition under which to flip; F.3 gives the exact substitutions |
-| 2 | WhatsApp is on the excluded list | Contradicts Annex C, where one opt-in deadline template is the retention hook | Keep it as an optional Step 13 item; if the template or scheduler is not ready, defer as the guide says and keep the in-app action list |
-| 3 | Real content starts at Step 10 | Reviewers are assumed to exist by then; nothing schedules the 20–30 careers, 5–10 exams and 50–100 programme records that Annex C found to be the long pole | Content track starts alongside Step 1; Step 10 is the import, not the start of curation (F.4) |
-| 4 | First human usability test is Step 15, after production deployment | The comparison screen is tested by people only after it is live | Insert a five-person guest-only round on staging after Step 7 (F.4); no accounts needed, so no consent work |
-| 5 | Step 15 gates are usability gates only | The C.4 pre/post decision-quality instrument has no home | Add it to Step 15 for the first ten and Step 16 for each batch |
-| 6 | Step 11's distress handling says "reviewed safe wording" | Wording alone does not route anyone | Keyword rule returns the national tele-mental-health helpline (verify the current number at launch) and flags the named staff member within 24 hours, as in Annex C |
-| 7 | Step 0 assumes Windows and winget | Harmless if true; wrong if the machine is Linux or macOS | Follow the installer for the actual machine; everything else is unchanged |
-| 8 | Pilot state chosen "based on your actual testers" | Correct, but undecided | Gujarat if confirmed (Annex C); rules for exactly one state, nothing invented for others |
-
-
-## F.2 The stack, decided once
-
-The FastAPI, Supabase (Mumbai), Mumbai VPS, n8n-off-the-request-path stack in Annex E stands. It is the familiar stack, it runs the worker natively, and it adds no provider. The cost is that the guide's Steps 1, 2, 5, 13 and 14 need the substitutions in F.3, and that Supabase row-level security is enforced by passing the signed-in user's token to Postgres on every request (supabase-py with the user's access token, or a per-request role and claims setting on a direct connection) rather than by the JavaScript client's defaults; that is a Step 4 contract, tested in Step 4.
-One condition flips the decision: if the owner intends Claude Code, not himself, to remain the maintainer of the front end, and wants per-pull-request preview deployments, the guide may be used verbatim with Next.js and Vercel (Mumbai region selected, plan and retention verified). Take that decision in Step 0 and record it in docs/DECISIONS.md. Do not revisit it afterwards.
-The guide's Step 1 prompt, with the F.3 substitutions, replaces the E.5 starting instruction.
-
-## F.3 Substitutions for the pinned stack
-
-| Guide text | Replace with |
-| --- | --- |
-| Next.js, TypeScript, Tailwind, Vitest, Playwright; Vercel as provisional host | FastAPI (Python), server-rendered templates or a light PWA, Tailwind, pytest, Playwright for Python; Mumbai VPS with Docker as host |
-| pnpm, Node.js LTS, lockfile | uv or pip-tools with a pinned lockfile; supported Python version |
-| pnpm dev, lint, typecheck, test:unit, test:e2e, test:db, build | make dev, make lint (ruff), make typecheck (mypy), make test-unit (pytest), make test-e2e (Playwright), make test-db (policy tests against the local Supabase), make build (Docker image) |
-| NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY | SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_JWT_SECRET (server-only, for verifying user tokens); no browser-exposed privileged key under any name |
-| Vercel project; preview URLs; auth callbacks per environment | Staging container on the VPS behind a basic-auth gate at a separate hostname; production container at the pilot hostname; callbacks allow-listed per hostname |
-| Scheduled serverless runner for the jobs table | One worker process on the VPS with leases, bounded retries and idempotency keys |
-| Transactional email for reminders | Optional WhatsApp Cloud API deadline template, opt-in; email only if the account flow needs it |
-| Protected CI deployment via the hosting plan | GitHub Actions protected environment holding the VPS deploy key; owner approval required on that environment; or an owner-run deploy script |
-| "Do not buy n8n" | n8n already runs on the VPS; use it only for reviewer notifications and review-due reminders |
-
-
-## F.4 Steps mapped to milestones and weeks
-
-| Step | Milestone | Week | Runs alongside |
-| --- | --- | --- | --- |
-| 0 Prepare | — | 0 | Owner's five decisions, including the F.2 stack decision |
-| 1 Memory and rules | M0 | 1 | Content track starts: career-family list, exam list, source register, editor onboarded |
-| 2 Scaffold and tests | M0 | 1 |  |
-| 3 Agent team | M0 | 1 |  |
-| 4 Data foundation and RLS tests | M1 | 2 | Design track: journeys and low-fidelity flows (Annex D) |
-| 5 Private staging | M1 | 2 |  |
-| 6 UI system and Explore | M1 | 2–3 | Second reviewer onboarded; 25 career families drafted |
-| 7 Compare and calculators | M2 | 4–5 | Rule functions and test cases for 5 exams; Hindi copy review begins |
-| Inserted: human usability round 1 | M2 | 5 | Five people, guest only, on staging; Annex D task criteria |
-| 8 Sign-in, plans, consent gate | M3 | 4–6 | Consent and safeguarding workflow reviewed by a person |
-| 9 Publishing console | M4 | 6–7 | 50+ programme records ready to enter it |
-| 10 Real pilot dataset | M4 | 7–8 | Two human reviewers; exception report; nothing published without approval |
-| 11 Bounded AI | M5 | 7–8 | Contextual prompts from Annex D; 30-question evaluation with 10+ in Hindi |
-| 12 Hindi, accessibility, difficult states | M6 | 8 | Content freeze |
-| 13 Operational safety and release review | M6 | 8–9 | Optional WhatsApp template; restore drill; load test |
-| 14 Production deployment | M6 | 9 | Owner approves the exact commit |
-| 15 Ten-person trial | Acceptance | 9–10 | Usability round 2; C.4 pre/post instrument |
-| 16 Expand to 100 | Expansion | 11–12 | Batches on observed metrics; C.4 instrument per batch |
-
-
-## F.5 Adopted gates and prompts
-
-Completion report after every step. Step; status (complete, blocked, partial); implemented; verified with exact commands and results; not verified; owner action only where necessary; Git state; next permitted step.
-Ask versus proceed. Routine work within an approved step proceeds. Equivalent low-risk component choices follow the approved stack. Credentials are configured by the owner privately. Paid plans, new services and plugin permissions need approval. Unknown fees, rules and deadlines are marked unknown and routed to a reviewer. Destructive database actions and production releases stop for exact-target approval. A failed gate is reported, never claimed complete. Real minor accounts stay disabled until the consent and safeguarding policy is reviewed.
-Step 15 gates, approved before testing. No critical data or security failure; at least 8 of 10 complete the core journey without intervention; at least 8 of 10 correctly distinguish estimated from verified cost; no repeated unexplained save failure; plus the C.4 instrument administered at sign-up and at week 4. These are small-sample gates, not impact claims.
-Step 16 expansion checks per batch. Failed logins and saves; critical source freshness; pending reviews; AI fallback rate; usage budget; backup status; reviewer hours per record; support requests per 100 users. Stop or pause if data integrity, privacy, spend or support capacity breaches its agreed limit.
-Daily prompts kept as written. Resume after a new session; continue to the next step; end a session cheaply; stop a debugging loop; request a release review.
-"Built" means. Reproducible repository with pinned dependencies and reviewed migrations; guest exploration, comparison, calculators and saved plans working; field-level evidence status with real sources and no disguised synthetic content; account isolation tested beyond the UI; two authorised people for critical publishing with no bypass; English and Hindi critical content reviewed, mobile and accessibility checks done; AI grounded, budgeted, interruptible and optional; separate staging and production with protected release authority; monitoring, support owner, restore and recovery verified; real-data and minor-account approvals completed; ten-user results recorded honestly and expansion justified by evidence.
-
-## F.6 Planning is complete
-
-Annexes C to F now hold a scope, an interface brief, an operating discipline and an executable step sequence for the same 10–100 user pilot. Nothing further is gained from another plan. The next artefact is a repository with Step 1 complete and a completion report in docs/STATUS.md. The only decisions still open before Step 1 are the five in the guide's Step 0, with the F.2 stack decision folded into the first.
+*End of document. This DPR is a consultation draft; all figures and legal references must be validated during Phases −1 and 0.*
