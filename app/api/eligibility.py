@@ -30,6 +30,7 @@ from pydantic import BaseModel
 from supabase import Client
 
 from app.api.deps import get_db_client
+from app.data.models import ClaimStatus
 from app.rules.eligibility import (
     Criterion,
     EligibilityInput,
@@ -58,10 +59,24 @@ class EligibilityResponse(BaseModel):
 
 def _criteria_from_claims(claim_rows: list[dict[str, Any]]) -> list[Criterion]:
     """Build the criteria list from whatever eligibility-shaped claims
-    exist on this pathway. Only published claims ever reach this
-    function — the caller fetches through the normal RLS-scoped client,
-    same as everywhere else in this codebase."""
-    by_field = {row["field"]: row for row in claim_rows}
+    exist on this pathway.
+
+    `claim_rows` is whatever the caller's RLS-scoped client was allowed
+    to SELECT — for a guest or student that's published claims only
+    (db/migrations/0001_init.sql's `claims_select_published` policy),
+    but for a reviewer it is `status = 'published' or is_reviewer()`,
+    i.e. every draft/in_review/superseded row too, so reviewers can
+    review them. RLS controls fetchability, not "is this a fact" — this
+    function still has to filter to published claims itself before
+    using a row's value, the same defense-in-depth check
+    app/planning/comparison.py's field_value_for() applies. Skipping it
+    would mean a reviewer calling this route could get an eligibility
+    outcome computed from an unapproved draft criterion — exactly what
+    CLAUDE.md's maker-checker rule ("unapproved facts never reach public
+    results") forbids, regardless of who's asking.
+    """
+    published_rows = [row for row in claim_rows if row["status"] == ClaimStatus.published]
+    by_field = {row["field"]: row for row in published_rows}
     criteria: list[Criterion] = []
 
     if row := by_field.get("minimum_age"):

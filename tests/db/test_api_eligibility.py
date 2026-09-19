@@ -20,6 +20,10 @@ from app.main import app
 client = TestClient(app)
 
 
+def _auth(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
 @pytest.fixture
 def eligibility_pathway(
     admin_client: Client,
@@ -171,3 +175,119 @@ class TestEligibilityEndpoint:
         finally:
             admin_client.table("pathways").delete().eq("id", pathway["id"]).execute()
             admin_client.table("careers").delete().eq("id", career["id"]).execute()
+
+
+@pytest.fixture
+def pathway_with_a_draft_criterion(
+    admin_client: Client,
+) -> Iterator[dict[str, Any]]:
+    """One PUBLISHED minimum_age=17 claim, plus a DRAFT
+    minimum_marks_percentage=90 claim never approved by anyone.
+    db/migrations/0001_init.sql's `claims_select_published` policy lets
+    a reviewer's own RLS-scoped client SELECT the draft row too (so they
+    can review it) — that must not mean a reviewer calling /eligibility
+    gets an outcome computed from it."""
+    official_source = (
+        admin_client.table("sources")
+        .insert(
+            {
+                "authority_name": "API TEST DRAFT-CRITERION SOURCE (fixture)",
+                "official_url": "https://example.invalid/draft-criterion-source",
+                "source_type": "official",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    career = (
+        admin_client.table("careers")
+        .insert({"name": "Draft-criterion test career (SYNTHETIC)"})
+        .execute()
+        .data[0]
+    )
+    pathway = (
+        admin_client.table("pathways")
+        .insert(
+            {
+                "career_id": career["id"],
+                "name": "Draft-criterion test pathway (SYNTHETIC)",
+                "description": "Seeded by tests/db/test_api_eligibility.py",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    claims = [
+        admin_client.table("claims")
+        .insert(
+            {
+                "entity_type": "Pathway",
+                "entity_id": pathway["id"],
+                "field": "minimum_age",
+                "value": "17",
+                "source_id": official_source["id"],
+                "verification_date": "2026-09-01",
+                "verifier": "test-fixture-reviewer",
+                "status": "published",
+                "review_due_date": "2099-01-01",
+            }
+        )
+        .execute()
+        .data[0],
+        admin_client.table("claims")
+        .insert(
+            {
+                "entity_type": "Pathway",
+                "entity_id": pathway["id"],
+                "field": "minimum_marks_percentage",
+                "value": "90",
+                "source_id": official_source["id"],
+                "verification_date": "2026-09-01",
+                "verifier": "test-fixture-reviewer",
+                "status": "draft",
+                "review_due_date": "2099-01-01",
+            }
+        )
+        .execute()
+        .data[0],
+    ]
+
+    yield {"pathway": pathway}
+
+    for claim in claims:
+        admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+    admin_client.table("pathways").delete().eq("id", pathway["id"]).execute()
+    admin_client.table("careers").delete().eq("id", career["id"]).execute()
+    admin_client.table("sources").delete().eq("id", official_source["id"]).execute()
+
+
+class TestDraftClaimsNeverAffectEligibilityOutcome:
+    """Regression test for a maker-checker bypass: _criteria_from_claims
+    used to build a criterion from ANY row the caller's client could
+    SELECT, trusting RLS alone to mean "this is a published fact" --
+    true for a guest/student, false for a reviewer, who can also SELECT
+    drafts. A student scoring 72% would fail a published-only check here
+    (only minimum_age=17 exists) but would wrongly fail an unpublished
+    minimum_marks_percentage=90 check if the draft leaked through."""
+
+    def test_reviewer_gets_the_same_outcome_as_a_guest_draft_ignored(
+        self,
+        reviewer: tuple[str, Client],
+        pathway_with_a_draft_criterion: dict[str, Any],
+    ) -> None:
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        response = client.get(
+            "/eligibility",
+            params={
+                "pathway_id": pathway_with_a_draft_criterion["pathway"]["id"],
+                "age": 18,
+                "marks_percentage": 72,
+            },
+            headers=_auth(token),
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["outcome"] == "meets"
+        assert len(body["criteria"]) == 1
+        assert body["criteria"][0]["name"] == "minimum_age"
