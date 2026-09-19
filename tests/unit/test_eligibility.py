@@ -233,3 +233,184 @@ class TestRealisticExamComposition:
         student = EligibilityInput()  # nothing filled in yet
         result = evaluate_eligibility(criteria, student)
         assert result.outcome == EligibilityOutcome.insufficient_information
+
+
+class TestDomicileMultipleStates:
+    """`domicile_in` allows a whole set of states at once (e.g. a quota
+    open to several states) — distinct from the single-state cases above,
+    which only ever exercised a one-element `allowed_states`."""
+
+    def test_meets_when_matching_any_of_several_allowed_states(self) -> None:
+        criterion = domicile_in(frozenset({"Gujarat", "Maharashtra", "Rajasthan"}))
+        result = criterion.check(EligibilityInput(domicile_state="Rajasthan"))
+        assert result.outcome == EligibilityOutcome.meets
+
+    def test_does_not_meet_when_outside_several_allowed_states(self) -> None:
+        criterion = domicile_in(frozenset({"Gujarat", "Maharashtra", "Rajasthan"}))
+        result = criterion.check(EligibilityInput(domicile_state="Kerala"))
+        assert result.outcome == EligibilityOutcome.does_not_meet
+        # every allowed state should be named so the student knows the
+        # full set they could have matched, not just one of them
+        assert "Gujarat" in result.explanation
+        assert "Maharashtra" in result.explanation
+        assert "Rajasthan" in result.explanation
+
+    def test_insufficient_information_still_wins_with_many_allowed_states(self) -> None:
+        criterion = domicile_in(frozenset({"Gujarat", "Maharashtra", "Rajasthan", "Kerala"}))
+        result = criterion.check(EligibilityInput(domicile_state=None))
+        assert result.outcome == EligibilityOutcome.insufficient_information
+
+
+class TestDuplicateNamedCriteria:
+    """Nothing in `evaluate_eligibility` deduplicates by `Criterion.name`
+    — two criteria that happen to share a name (e.g. two differently
+    configured `minimum_marks_percentage` checks composed by mistake, or
+    on purpose for two separate thresholds) must both run and both be
+    reported, not merged or dropped."""
+
+    def test_both_duplicate_named_criteria_are_evaluated_independently(self) -> None:
+        criteria = [
+            minimum_marks_percentage(50.0, source_claim_id="claim-a"),
+            minimum_marks_percentage(60.0, source_claim_id="claim-b"),
+        ]
+        result = evaluate_eligibility(criteria, EligibilityInput(marks_percentage=55.0))
+        # both have the same .name, but the engine must still run both:
+        assert len(result.criteria) == 2
+        assert all(c.name == "minimum_marks_percentage" for c in result.criteria)
+        assert result.criteria[0].source_claim_id == "claim-a"
+        assert result.criteria[1].source_claim_id == "claim-b"
+        # 55% clears the 50% duplicate but fails the 60% duplicate —
+        # overall must reflect the real failure, not be masked because
+        # a same-named criterion elsewhere passed
+        assert result.outcome == EligibilityOutcome.does_not_meet
+        assert len(result.failing) == 1
+        assert result.failing[0].source_claim_id == "claim-b"
+
+    def test_duplicate_named_criteria_both_unknown_are_both_reported(self) -> None:
+        criteria = [
+            domicile_in(frozenset({"Gujarat"}), source_claim_id="claim-x"),
+            domicile_in(frozenset({"Maharashtra"}), source_claim_id="claim-y"),
+        ]
+        result = evaluate_eligibility(criteria, EligibilityInput(domicile_state=None))
+        assert len(result.criteria) == 2
+        assert len(result.unknown) == 2
+        assert result.outcome == EligibilityOutcome.insufficient_information
+
+
+class TestLargeCriteriaList:
+    """A criteria list well beyond any real exam's shape (10+) — pins down
+    that the combination logic scales by content, not by some assumed
+    small fixed size, and that ordering/priority still holds at scale."""
+
+    def test_large_all_meeting_list_gives_meets(self) -> None:
+        criteria = [minimum_marks_percentage(10.0 + i) for i in range(15)]
+        result = evaluate_eligibility(criteria, EligibilityInput(marks_percentage=99.0))
+        assert len(result.criteria) == 15
+        assert result.outcome == EligibilityOutcome.meets
+
+    def test_large_list_with_one_failure_among_many_meets_and_unknowns(self) -> None:
+        # 12 criteria that meet, 1 that fails, 5 that are unknown (age
+        # unset) — the single failure must still win overall.
+        criteria = (
+            [minimum_marks_percentage(10.0 + i) for i in range(12)]
+            + [minimum_marks_percentage(999.0)]  # impossible to meet -> fails
+            + [minimum_age(10 + i) for i in range(5)]  # age unset -> unknown
+        )
+        result = evaluate_eligibility(criteria, EligibilityInput(marks_percentage=80.0))
+        assert len(result.criteria) == 18
+        assert result.outcome == EligibilityOutcome.does_not_meet
+        assert len(result.failing) == 1
+        assert len(result.unknown) == 5
+
+    def test_large_list_all_unknown_gives_insufficient_information(self) -> None:
+        criteria = [minimum_age(15 + i) for i in range(10)] + [
+            minimum_marks_percentage(40.0 + i) for i in range(5)
+        ]
+        result = evaluate_eligibility(criteria, EligibilityInput())
+        assert len(result.criteria) == 15
+        assert result.outcome == EligibilityOutcome.insufficient_information
+        assert len(result.unknown) == 15
+
+
+class TestUnicodeSubjectNames:
+    """Subject names are free-text strings pulled from real curricula —
+    Indian-language and accented subject names must compare correctly,
+    not be mangled by naive ASCII assumptions."""
+
+    def test_meets_with_devanagari_subject_names(self) -> None:
+        required = frozenset({"गणित", "विज्ञान"})  # Maths, Science
+        criterion = required_subjects(required)
+        studied = frozenset({"गणित", "विज्ञान", "अंग्रेज़ी"})  # + English
+        result = criterion.check(EligibilityInput(subjects_studied=studied))
+        assert result.outcome == EligibilityOutcome.meets
+
+    def test_does_not_meet_reports_missing_unicode_subject_by_name(self) -> None:
+        required = frozenset({"गणित", "विज्ञान"})
+        criterion = required_subjects(required)
+        result = criterion.check(EligibilityInput(subjects_studied=frozenset({"गणित"})))
+        assert result.outcome == EligibilityOutcome.does_not_meet
+        assert "विज्ञान" in result.explanation
+
+    def test_accented_subject_name_is_not_confused_with_unaccented(self) -> None:
+        """'Français' and 'Francais' must be treated as different strings
+        — no implicit normalisation collapses them, so a student who
+        studied one is not silently credited for the other."""
+        criterion = required_subjects(frozenset({"Français"}))
+        result = criterion.check(EligibilityInput(subjects_studied=frozenset({"Francais"})))
+        assert result.outcome == EligibilityOutcome.does_not_meet
+        assert "Français" in result.explanation
+
+    def test_domicile_state_with_unicode_name_meets(self) -> None:
+        criterion = domicile_in(frozenset({"पश्चिम बंगाल"}))  # West Bengal
+        result = criterion.check(EligibilityInput(domicile_state="पश्चिम बंगाल"))
+        assert result.outcome == EligibilityOutcome.meets
+
+
+class TestFullyPopulatedStudentInput:
+    """Every `EligibilityInput` field populated simultaneously — the
+    realistic 'complete profile' case, as opposed to the sparse/partial
+    inputs every other test class exercises."""
+
+    def _fully_populated_student(self) -> EligibilityInput:
+        return EligibilityInput(
+            age=18,
+            marks_percentage=87.5,
+            subjects_studied=frozenset({"Physics", "Chemistry", "Biology", "English", "Maths"}),
+            domicile_state="Gujarat",
+            category="General",
+            as_of=date(2026, 9, 19),
+        )
+
+    def test_all_fields_populated_and_meeting_gives_meets(self) -> None:
+        criteria = [
+            minimum_age(17, source_claim_id="src-age"),
+            maximum_age(25, source_claim_id="src-age"),
+            minimum_marks_percentage(50.0, source_claim_id="src-marks"),
+            required_subjects(
+                frozenset({"Physics", "Chemistry", "Biology"}), source_claim_id="src-subjects"
+            ),
+            domicile_in(frozenset({"Gujarat"}), source_claim_id="src-domicile"),
+        ]
+        result = evaluate_eligibility(criteria, self._fully_populated_student())
+        assert result.outcome == EligibilityOutcome.meets
+        assert result.failing == ()
+        assert result.unknown == ()
+        assert len(result.criteria) == 5
+
+    def test_all_fields_populated_but_one_criterion_fails(self) -> None:
+        """Every field is known (nothing unknown anywhere) — a single
+        failing criterion (wrong domicile) must still drive the overall
+        outcome to does_not_meet, not be swallowed by everything else
+        being fully populated and otherwise passing."""
+        criteria = [
+            minimum_age(17),
+            maximum_age(25),
+            minimum_marks_percentage(50.0),
+            required_subjects(frozenset({"Physics", "Chemistry", "Biology"})),
+            domicile_in(frozenset({"Maharashtra"})),  # student is Gujarat -> fails
+        ]
+        result = evaluate_eligibility(criteria, self._fully_populated_student())
+        assert result.outcome == EligibilityOutcome.does_not_meet
+        assert len(result.failing) == 1
+        assert result.failing[0].name == "domicile_in"
+        assert result.unknown == ()
