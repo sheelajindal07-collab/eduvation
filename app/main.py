@@ -7,6 +7,7 @@ list of what's live.
 from fastapi import FastAPI
 
 from app.api.auth import router as auth_router
+from app.api.claims import router as claims_router
 from app.api.compare import router as compare_router
 from app.api.eligibility import router as eligibility_router
 from app.api.explore import router as explore_router
@@ -31,6 +32,7 @@ def create_app() -> FastAPI:
     app.include_router(timeline_router)
     app.include_router(auth_router)
     app.include_router(plans_router)
+    app.include_router(claims_router)
     return app
 
 

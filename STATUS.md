@@ -2,8 +2,8 @@
 
 **Milestone:** M0 (BCI-001), M1 (BCI-002), M2 (BCI-003) all DONE. **M3
 sign-in + saved plans + guest→account migration DONE** (BCI-004). **M4
-maker-checker enforcement built, awaiting migration** (BCI-005).
-**Commit:** see `git log -1` on `main`. **Repo:**
+maker-checker enforcement + publishing-console API built, awaiting
+migration** (BCI-005). **Commit:** see `git log -1` on `main`. **Repo:**
 [github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
 verified healthy, talking to the real database).
@@ -24,19 +24,21 @@ verified healthy, talking to the real database).
   student A's plan through the real API.
 - Deployed on your Oracle VM alongside `hisab`/`lekha`/`attendance-app`,
   nothing else touched.
-- **Maker-checker, enforced at the database, not built yet before now**:
-  `db/migrations/0003_maker_checker.sql` — a claim must always be
-  inserted as a draft (no direct-to-published shortcut), the author of a
-  claim can never approve their own, and a published claim's recorded
-  content is frozen (a correction means a new claim, never an in-place
-  edit). **Not yet applied to your project** — same as 0002, this needs
-  you to run it via the SQL Editor before it's live; 12 tests are written
-  and correctly skip until then.
+- **Maker-checker, enforced at the database, plus the publishing console
+  API on top of it** — neither existed before this session:
+  `db/migrations/0003_maker_checker.sql` (a claim must always be
+  inserted as a draft, the author of a claim can never approve their
+  own, a published claim's recorded content is frozen — a correction
+  means a new claim, never an in-place edit) and `app/api/claims.py`
+  (`POST /claims`, `/submit`, `/approve`, `/reject`, `/supersede`,
+  `GET /claims`) on top of it. **Neither is live yet** — same as 0002,
+  the migration needs you to run it via the SQL Editor first; every
+  route in `claims.py` 403s/400s until then, and its 12 tests correctly
+  skip rather than pretend to pass.
 
-**150 tests total** (138 passing + 12 correctly skipping pending the
-0003 migration — verified with `pytest --collect-only`, since the 157
-figure quoted earlier this session didn't match a direct run), lint/
-typecheck clean, CI green on every push this session.
+**163 tests total** (138 passing + 25 correctly skipping pending the
+0003 migration — verified with `pytest --collect-only`), lint/typecheck
+clean, CI green on every push this session.
 
 ## Blockers
 None on engineering. **One real blocker on judgment, below.**
@@ -93,10 +95,12 @@ Full details on all of these in `docs/DECISIONS.md`.
 **The consent-gate decision above is the one that actually matters right
 now** — everything else is normal backlog. Once that's resolved: apply
 `db/migrations/0003_maker_checker.sql` (same as 0002 — SQL Editor or
-`scripts/apply_migrations.py`), then a reservation/quota-adjacent
-decision is closed, M4's publishing-console API (draft/submit/approve/
-supersede endpoints — the DB enforcement is built, nothing calls it yet),
-M5 (bounded AI), or a content/design pass — your call.
+`scripts/apply_migrations.py`) so `app/api/claims.py` actually goes live
+and can be verified for real (right now every one of its tests is a
+skip, not a pass — don't treat M4 as proven until that's rerun green).
+After that: a reviewer-facing UI for the publishing console (the API
+exists, nothing shows it to a human yet), M5 (bounded AI), or a
+content/design pass — your call.
 
 ## Infrastructure
 | Thing | Status |

@@ -111,11 +111,14 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             if "test_api_plans.py" in str(item.fspath):
                 item.add_marker(plans_skip)
 
-    # Same pattern, for 0003_maker_checker.sql.
+    # Same pattern, for 0003_maker_checker.sql -- both the trigger-level
+    # tests and the HTTP-layer tests over app/api/claims.py depend on it.
     if not _maker_checker_migration_applied():
         maker_checker_skip = pytest.mark.skip(reason=_MAKER_CHECKER_SKIP_REASON)
         for item in items:
-            if "test_maker_checker.py" in str(item.fspath):
+            if "test_maker_checker.py" in str(item.fspath) or "test_api_claims.py" in str(
+                item.fspath
+            ):
                 item.add_marker(maker_checker_skip)
 
 
