@@ -1,8 +1,8 @@
 # Status
 
 **Milestone:** M0 complete (BCI-001); M1 first vertical slice DONE
-(BCI-002); **M2 eligibility + cost engines DONE** (BCI-003). **Commit:**
-see `git log -1` on `main`. **Repo:**
+(BCI-002); **M2 eligibility + cost + timeline engines DONE** (BCI-003).
+**Commit:** see `git log -1` on `main`. **Repo:**
 [github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
 verified healthy, talking to the real database).
@@ -23,20 +23,28 @@ verified healthy, talking to the real database).
   assistance (the only thing that reduces what a student owes), and
   potential assistance (shown, but **never subtracted** — an unawarded
   scholarship must never look like money in hand).
+- `app/rules/timeline.py` — stages sum to a total honest about two
+  things: an unknown-duration stage makes the total `None` (never a
+  partial sum shown as real), and overlapping stages (prep, applications,
+  internships) are genuinely subtracted, not blindly added — an overlap
+  that exceeds either stage's own duration raises rather than silently
+  clamping. Also: `expand_attempts()` for user-chosen retry counts,
+  parallel activities that are visible but never added to the total, and
+  backup pathways that compute their own independent timeline.
 - Deployed and running on your Oracle VM alongside your other apps
   (`hisab`, `lekha`, `attendance-app`), same systemd/nginx conventions,
   nothing else touched.
 
-**67 tests passing** (54 unit + 13 live DB), lint/typecheck clean, on
+**88 tests passing** (75 unit + 13 live DB), lint/typecheck clean, on
 GitHub Actions too.
 
 ## Blockers
 None.
 
 ## Next task
-Timeline engine, a reservation/quota engine, wiring eligibility+cost
-into an actual API route, or a design/UI usability round — steering
-committee's call. See `tasks/BCI-003.md` for exact remaining scope.
+A reservation/quota engine, wiring eligibility+cost+timeline into an
+actual API route, or a design/UI usability round — steering committee's
+call. See `tasks/BCI-003.md` for exact remaining scope.
 
 ## Infrastructure
 | Thing | Status |
