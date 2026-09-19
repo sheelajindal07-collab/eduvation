@@ -1,7 +1,7 @@
 # Status
 
-**Milestone:** M0 complete (BCI-001). **Commit:** see `git log -1` — first
-commit on `main`, message "M0 bootstrap: BCION Lite repo, docs, app shell".
+**Milestone:** M0 complete (BCI-001). **Commit:** `4c06a4d` on `main`
+("M0 bootstrap: BCION Lite repo, memory files, app shell (BCI-001)").
 
 ## What works right now
 `make lint`, `make typecheck`, `make test-unit` all pass for real (see
