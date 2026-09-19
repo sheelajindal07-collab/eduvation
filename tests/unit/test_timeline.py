@@ -195,3 +195,91 @@ class TestBackupPathwaysComposeIndependently:
         assert primary.total_weeks == 52
         assert backup_result.total_weeks == 156
         assert backup.name == "Switch to allied health degree"
+
+    def test_backup_pathway_with_unknown_duration_stage_gives_none_total(self) -> None:
+        """A backup's own stage list is fed straight back into
+        compute_timeline, so an unknown duration inside it must be just
+        as honest as an unknown duration in the primary path — never
+        silently dropped just because it's a fallback plan."""
+        backup = BackupPathway(
+            name="Switch to allied health degree",
+            stages=(
+                Stage("Bridge course", duration_weeks=None),
+                Stage("Allied health degree", duration_weeks=156),
+            ),
+        )
+        backup_result = compute_timeline(list(backup.stages))
+        assert backup_result.total_weeks is None
+        assert backup_result.complete is False
+        assert backup_result.unknown == (Stage("Bridge course", duration_weeks=None),)
+
+
+class TestManyStagesMixedOverlaps:
+    def test_ten_plus_stages_with_mixed_overlapping_and_non_overlapping(self) -> None:
+        """A long real-world pathway: some stages overlap their
+        predecessor, most don't, some overlap by zero explicitly. The
+        total must equal the naive sum minus exactly the declared
+        overlaps, no more and no less."""
+        stages = [
+            Stage("Class 8", duration_weeks=52),
+            Stage("Class 9", duration_weeks=52),
+            Stage("Class 10", duration_weeks=52),
+            Stage("Board exam prep", duration_weeks=12, overlap_weeks_with_previous=4),
+            Stage("Class 11", duration_weeks=52),
+            Stage("Class 12", duration_weeks=52),
+            Stage("Entrance coaching", duration_weeks=26, overlap_weeks_with_previous=10),
+            Stage("Entrance exam attempts", duration_weeks=20),
+            Stage("Degree year 1", duration_weeks=52),
+            Stage("Degree year 2", duration_weeks=52),
+            Stage("Internship", duration_weeks=16, overlap_weeks_with_previous=6),
+            Stage("Degree year 3", duration_weeks=52, overlap_weeks_with_previous=0),
+        ]
+        result = compute_timeline(stages)
+        naive_sum = sum(s.duration_weeks for s in stages)  # type: ignore[misc]
+        total_overlap = 4 + 10 + 6
+        assert result.total_weeks == naive_sum - total_overlap
+        assert result.complete is True
+        assert len(result.stages) == 12
+
+
+class TestExpandAttemptsZeroGap:
+    def test_zero_gap_between_attempts_is_just_the_attempts_summed(self) -> None:
+        """An explicit zero gap (back-to-back attempts, e.g. consecutive
+        exam sittings with no break) must not raise and must contribute
+        nothing extra — distinct from omitting the gap argument."""
+        stage = expand_attempts(
+            attempt_duration_weeks=10, num_attempts=4, gap_between_attempts_weeks=0
+        )
+        assert stage.duration_weeks == 40
+
+    def test_zero_gap_matches_default_gap_omitted(self) -> None:
+        explicit = expand_attempts(
+            attempt_duration_weeks=8, num_attempts=3, gap_between_attempts_weeks=0
+        )
+        default = expand_attempts(attempt_duration_weeks=8, num_attempts=3)
+        assert explicit.duration_weeks == default.duration_weeks == 24
+
+
+class TestParallelActivityListWithManyEntries:
+    def test_five_plus_parallel_activities_all_reported_none_affect_total(self) -> None:
+        stages = [Stage("Degree", duration_weeks=208)]
+        activities = [
+            ParallelActivity("Coaching classes", duration_weeks=104),
+            ParallelActivity("Part-time certification", duration_weeks=52),
+            ParallelActivity("Language course", duration_weeks=26),
+            ParallelActivity("Volunteering", duration_weeks=None),
+            ParallelActivity("Sports commitment", duration_weeks=200),
+            ParallelActivity("Online electives", duration_weeks=12),
+        ]
+        result = compute_timeline(stages, parallel_activities=activities)
+        assert result.total_weeks == 208
+        assert result.complete is True
+        assert len(result.parallel_activities) == 6
+        assert [a.name for a in result.parallel_activities] == [
+            "Coaching classes",
+            "Part-time certification",
+            "Language course",
+            "Volunteering",
+            "Sports commitment",
+            "Online electives",
+        ]
