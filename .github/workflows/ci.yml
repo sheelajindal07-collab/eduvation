@@ -35,10 +35,13 @@ jobs:
       - name: Unit tests (pytest)
         run: pytest tests/unit -v
 
-      # - name: DB/RLS policy tests
-      #   run: make test-db
-      #   # Needs a staging Supabase/Postgres target — wire up at M1
-      #   # (docs/ARCHITECTURE.md, Annex E.3).
+      - name: DB/RLS policy tests
+        run: pytest tests/db -v
+        # Skips cleanly (with a printed reason) until SUPABASE_URL,
+        # SUPABASE_PUBLISHABLE_KEY and SUPABASE_SERVICE_ROLE_KEY are set as
+        # repo secrets against a real staging project — see
+        # db/migrations/README.md. Never silently green for a check that
+        # didn't run: a skip prints in the job log, it isn't hidden.
 
       # - name: E2E tests (Playwright)
       #   run: make test-e2e

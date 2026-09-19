@@ -22,7 +22,7 @@ test-e2e:
 	@echo "Playwright e2e not wired yet (no UI to drive before M1's vertical slice). See STATUS.md."
 
 test-db:
-	@echo "RLS/policy tests need a live Postgres (Supabase local or staging). See docs/SECURITY.md."
+	pytest tests/db -v
 
 build:
 	@echo "Docker build not wired yet — no Dockerfile until hosting is provisioned (docs/DECISIONS.md)."

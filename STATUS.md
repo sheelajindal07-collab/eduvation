@@ -1,26 +1,27 @@
 # Status
 
-**Milestone:** M0 complete (BCI-001). **Commit:** `4c06a4d` on `main`
-("M0 bootstrap: BCION Lite repo, memory files, app shell (BCI-001)").
+**Milestone:** M0 complete (BCI-001); M1 data foundation drafted
+(BCI-002, in progress). **Commit:** see `git log -1` on `main`.
 
 ## What works right now
-`make lint`, `make typecheck`, `make test-unit` all pass for real (see
-`tasks/BCI-001.md` for exact output). The FastAPI app boots
-(`uvicorn app.main:app`) and serves `/healthz` and `/docs` live. No
-database, no auth, no AI calls yet — by design, per the M0 scope.
+`make lint`, `make typecheck`, `make test-unit` all pass for real. The
+FastAPI app boots (`uvicorn app.main:app`) and serves `/healthz` and
+`/docs` live. `db/migrations/0001_init.sql` (schema + RLS policies) and
+`app/db/client.py` (RLS-aware client factory) are written but not yet
+applied to any real project. `tests/db/test_rls.py` has 9 real,
+non-trivial test cases for the guest/student A/student B/reviewer access
+matrix — they currently **skip with a printed reason** (no Supabase
+project configured yet), verified by actually running them, not assumed.
 
 ## Blockers
-None for continuing engineering work. Real blockers are owner decisions,
-not technical ones — see "Needs your input" below. Engineering can proceed
-on synthetic fixtures regardless.
+None for continuing engineering work. The next real step forward — making
+`make test-db` go from 9 skipped to 9 passing — needs your Supabase
+project (see below). Everything else can keep proceeding on synthetic
+fixtures in the meantime.
 
 ## Next task
-**BCI-002 — M1 first vertical slice**: published career record → explore
-→ compare two options, on synthetic fixtures, backed by a real staging
-Supabase/Postgres with RLS actually enforced and tested. See
-`tasks/BCI-002.md` for the full breakdown. This is the first task that
-benefits from — but is not strictly blocked by — a real Supabase project;
-it can start against a local Postgres if nothing is provisioned yet.
+**BCI-002 — M1 first vertical slice**: explore → compare on synthetic
+fixtures, verified against a real project. See `tasks/BCI-002.md`.
 
 ## Infrastructure (confirmed 2026-09-19)
 Supabase, GitHub, Oracle hosting and a Gemini API key are ready — **on
@@ -51,7 +52,9 @@ SQL migration files in the repo for you to apply yourself.
    stack. Say so only if you want the Next.js/Vercel alternative.
 
 ## Not claimed
-No RLS test, no e2e test, no live AI call, no deployment has happened.
-`make test-db`, `make test-e2e` and `make build` are intentionally
-placeholder targets (see `Makefile`) until M1/M5/hosting respectively
-give them something real to run against.
+No RLS assertion has actually executed against a real database — 9 real
+test cases exist (`tests/db/test_rls.py`) and currently skip honestly.
+No e2e test, no live AI call, no deployment has happened. `make test-e2e`
+and `make build` are still placeholder targets (see `Makefile`) until
+M1's UI and a hosting decision respectively give them something real to
+run against; `make test-db` is real now, just unexercised.
