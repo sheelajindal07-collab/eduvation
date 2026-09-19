@@ -5,6 +5,43 @@ never deleted.
 
 ---
 
+## 2026-09-19 — Infrastructure accounts: owner-provided, separate from this
+## machine's connected tools; MCP/CLI management tools not used for them
+**Decision:** The owner confirmed Supabase, GitHub, Oracle hosting and a
+Gemini API key are ready to use — but on accounts **different** from the
+ones already authenticated in this dev session (GitHub CLI was signed in
+as `maheshjin-bot`; the session's Supabase MCP tool only saw an org named
+`ridhivi` with unrelated projects and no free-project slot). The owner
+explicitly said to use different accounts and **not to use the Supabase
+MCP tool** for this project.
+**What this changes:**
+- No project was created and nothing was touched in the `ridhivi`
+  Supabase org or under `maheshjin-bot` on GitHub (checked read-only:
+  `list_projects`/`list_organizations`/`get_cost`/`confirm_cost` — no
+  write action was taken before the instruction arrived).
+- Supabase schema work proceeds as **versioned SQL migration files in the
+  repo** (`db/migrations/`), for the owner to apply via their own
+  project's SQL editor or the Supabase CLI — not applied by an agent
+  through the management API.
+- GitHub remote/push is deferred until the owner gives a repo URL (their
+  own account) or says to create one there.
+- AI provider: "Gemini API ready" is read as Google Gemini; the adapter
+  interface is written provider-agnostic regardless (per Annex E.2), so
+  this costs nothing to get right or wrong before M5.
+- Oracle hosting: noted ready; specifics (region, compute shape, whether
+  Docker is already installed) are gathered when deployment work starts
+  (M6 / Annex F Step 13-14), not blocking now.
+**Status:** Confirmed by owner. Supersedes the 2026-09-19 "Hosting ...
+not yet provisioned" entry below for account *availability*, but not for
+account *identity* — real URLs/keys are still not in this repo and still
+won't be; only `.env`, never committed (`CLAUDE.md` non-negotiable).
+**Owner action needed:** when ready, give (a) the GitHub repo URL to push
+to (or "create one, here's the account"), and (b) confirm Gemini vs a
+different provider. Supabase project URL/keys go straight into your own
+local `.env` — never paste them into chat.
+
+---
+
 ## 2026-09-19 — Stack pinned to FastAPI/Supabase/VPS (not Next.js/Vercel)
 **Decision:** Use the Annex E.2/F.2 pinned stack (FastAPI monolith, Supabase
 Mumbai, Tailwind + server-rendered templates or a light PWA, one VPS worker,
@@ -35,34 +72,39 @@ week 1).**
 **Owner action needed:** confirm Gujarat, or name a different pilot state.
 
 ## 2026-09-19 — AI provider: Anthropic Claude API (assumed)
-**Decision:** Implement the AI provider adapter (`app/ai/`) against the
-Anthropic Messages API first, behind a provider-agnostic interface so a
-second provider can be added without touching callers.
-**Reason:** No provider was specified in the annexes beyond "one hosted
-model behind a provider adapter." This is a Claude Code project; Anthropic
-is the reasonable default and the adapter pattern keeps the cost of being
-wrong low.
-**Status:** Assumption. Does not require an API key until M5 (bounded AI
-milestone) — M0–M4 use no live AI calls.
-**Owner action needed:** confirm, or name a different provider/model.
+**SUPERSEDED same day — see below.** Original text kept for the record:
+implement the AI provider adapter (`app/ai/`) against the Anthropic
+Messages API first, behind a provider-agnostic interface. Reason: no
+provider was specified in the annexes beyond "one hosted model behind a
+provider adapter"; Anthropic was the reasonable default in a Claude Code
+project.
+
+## 2026-09-19 — AI provider: Google Gemini API (owner-confirmed)
+**Decision:** Owner confirmed "Gemini API ready." Adapter
+(`app/ai/`, built at M5) targets the Gemini API as the first
+implementation, behind the same provider-agnostic interface — swapping
+providers later stays a small, contained change.
+**Status:** Confirmed. Still does not require a live key until M5;
+M0–M4 make no AI calls.
+**Owner action needed:** none, unless you want a specific Gemini model
+pinned (e.g. flash vs pro) ahead of M5 — otherwise that's chosen at M5
+based on the cost/latency numbers at the time.
 
 ## 2026-09-19 — Hosting/Supabase/n8n/WhatsApp: not yet provisioned
-**Decision:** Treat all external accounts (Supabase project, VPS, n8n
-instance, WhatsApp Business/Cloud API, AI provider key, monitoring vendor)
-as **not yet provisioned**. Build M0–M4 to run and test locally
-(`uvicorn`, pytest, ruff, mypy) without requiring any of them. Environment
-variables are named and documented (`.env.example`) but left unset.
-**Reason:** Annex C/E/F's cost tables and stack descriptions read as if a
-Mumbai VPS, an existing Supabase project and WhatsApp access already exist
-("a builder who runs FastAPI, Supabase, n8n and the WhatsApp Cloud API").
-No evidence in this repo or from the owner confirms these are actually
-provisioned yet for *this* project.
-**Status:** Assumption. Explicitly flagged for the owner — see
-`STATUS.md` "Needs your input."
-**Owner action needed:** confirm what's already provisioned (Supabase
-project? VPS? domain? WhatsApp Business account? AI provider account?) so
-`.env.example` values and `docs/SECURITY.md`'s data-flow map can be
-finalised with real regions instead of placeholders.
+**PARTIALLY SUPERSEDED same day** — see "Infrastructure accounts" entry
+above. Supabase and Oracle hosting are confirmed ready by the owner (on
+accounts separate from this session's connected tools, which must not be
+used to manage them). n8n and WhatsApp Cloud API status is still
+unconfirmed. Original text kept for the record: all external accounts
+were assumed not yet provisioned, built to run and test locally
+(`uvicorn`, pytest, ruff, mypy) without requiring any of them; reasoning
+was that Annex C/E/F's cost tables read as if a VPS, a Supabase project
+and WhatsApp access already existed for "a builder who runs FastAPI,
+Supabase, n8n and the WhatsApp Cloud API" with nothing in this repo
+confirming that for *this* project.
+**Still open:** n8n instance status; WhatsApp Business/Cloud API status;
+Oracle hosting specifics (region, compute shape, Docker availability) —
+gathered at the deployment milestone (M6), not blocking now.
 
 ## 2026-09-19 — Named fact reviewers: not yet assigned
 **Decision:** The publishing console (maker-checker) is built so that ANY
@@ -78,8 +120,11 @@ a small reviewer pool) before Week 1 of the content track in earnest.
 
 ## 2026-09-19 — Repository and version control
 **Decision:** Git-initialised in place (`F:\the competetion project`),
-branch `main`. No remote configured yet.
+branch `main`. No remote configured. The dev machine's GitHub CLI is
+signed in as `maheshjin-bot`, but the owner uses a **different** GitHub
+account for this project — that account was not used or touched.
 **Reason:** Annex E.4 owner checklist item ("repository location and
 branch permissions"); the working directory was already given.
-**Owner action needed:** none required now; add a GitHub remote when ready
-to enable the CI workflow in `.github/workflows/`.
+**Owner action needed:** give the target repo's URL (existing empty repo)
+or say "create one" plus which account, so a remote can be added and
+`.github/workflows/ci.yml` starts running.
