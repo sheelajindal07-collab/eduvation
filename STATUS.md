@@ -1,7 +1,8 @@
 # Status
 
 **Milestone:** M0 (BCI-001), M1 (BCI-002), M2 (BCI-003) all DONE. **M3
-sign-in + saved plans + guest→account migration DONE** (BCI-004).
+sign-in + saved plans + guest→account migration DONE** (BCI-004). **M4
+maker-checker enforcement built, awaiting migration** (BCI-005).
 **Commit:** see `git log -1` on `main`. **Repo:**
 [github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
@@ -23,55 +24,97 @@ verified healthy, talking to the real database).
   student A's plan through the real API.
 - Deployed on your Oracle VM alongside `hisab`/`lekha`/`attendance-app`,
   nothing else touched.
+- **Maker-checker, enforced at the database, not built yet before now**:
+  `db/migrations/0003_maker_checker.sql` — a claim must always be
+  inserted as a draft (no direct-to-published shortcut), the author of a
+  claim can never approve their own, and a published claim's recorded
+  content is frozen (a correction means a new claim, never an in-place
+  edit). **Not yet applied to your project** — same as 0002, this needs
+  you to run it via the SQL Editor before it's live; 12 tests are written
+  and correctly skip until then.
 
-**132 tests passing, zero skipped** (92 unit + 40 live DB), lint/
-typecheck clean, CI green on every push this session.
+**157 tests total** (145 passing + 12 correctly skipping pending the
+0003 migration), lint/typecheck clean, CI green on every push this
+session.
 
 ## Blockers
-None. **M3's engineering scope is complete.**
+None on engineering. **One real blocker on judgment, below.**
 
-## Two real bugs found and fixed this session (not assumed away)
-1. **Security**: the database client was a shared singleton — under
-   real concurrent traffic, one user's access token could have leaked
-   onto another user's request. Found while building the auth work,
-   fixed, regression-tested. A concurrent session's independent security
-   review then found and fixed a follow-on connection-leak issue in the
-   same area. Nothing in production was exposed (app isn't public yet).
-2. The guest→account plan migration silently failed every single call
-   at first — an insert that forgot to set `student_id` was correctly
-   rejected by RLS, but the function's own "never fail sign-up over a
-   bad plan" design meant that failure was invisible until a live test
-   actually checked the row got created. Fixed by passing the user id
-   through explicitly.
+## ⚠️ Read this one — sign-up is live with no age/consent gate
+A full security review of M3's auth surface (run this session,
+independent read-only agent, verified live against the real database —
+not a static-analysis guess) confirmed something worth your immediate
+attention, not just a someday item: **`POST /auth/sign-up` accepts
+anyone, any age, right now — no birth-year field, no consent flag,
+nothing in the code that disables a real minor's account.** This project
+exists for Class 8–12 students, i.e. minors are the primary user. Before
+M3, the whole app was anonymous/stateless, so this couldn't matter; M3 is
+exactly what introduced real persistent accounts, and the consent gate
+CLAUDE.md and `docs/SECURITY.md` call a **launch gate** hasn't been
+built.
+**What limits the actual exposure right now**: the app is still
+localhost-only on your VM — nobody outside it can reach `/auth/sign-up`
+today. That's the only thing standing between this and a real problem,
+not any code. **This is a hard blocker before the public-domain request
+below** (item 1) — don't say yes to public exposure until this is
+resolved one way or another (a real consent flow, or a simple interim
+gate like an invite-only/reviewer-approved sign-up for the pilot).
+Full write-up: `docs/DECISIONS.md`, and the review agent's own findings
+(ask either session to relay the full transcript if you want it
+verbatim).
 
-Full details on both in `docs/DECISIONS.md`.
+## Other bugs found and fixed this session (not assumed away)
+1. **Security**: the database client was a shared singleton — under real
+   concurrent traffic, one user's access token could have leaked onto
+   another user's request. Found, fixed, regression-tested. An
+   independent review then found and fixed a follow-on connection-leak
+   issue in the same area, plus hardened the regression tests and config.
+2. The guest→account plan migration silently failed every call at
+   first — an insert that forgot to set `student_id` was correctly
+   rejected by RLS, invisible because the function's own "never fail
+   sign-up over a bad plan" design swallows the exception. Fixed; **now
+   also logs the failure** (`user_id`/`pathway_id` only — never the
+   student-supplied notes/figures) so a recurrence won't be invisible
+   again.
+3. **Fixed**: `POST /plans`'s error handling mislabelled two distinct
+   failures (a nonexistent `pathway_id`, a malformed UUID) as "already
+   saved" — now 404 and 422 respectively, 409 reserved for a genuine
+   duplicate. A malformed `plan_id` on update/delete used to crash to a
+   raw 500 — now a clean 422, checked before any query runs.
+4. **Test-coverage gaps closed**: the review's live probes (reviewer vs.
+   saved_plans, delete cross-user) were correct but had no permanent
+   regression test — 6 new tests added, all passing
+   (`tests/db/test_api_plans.py`).
+
+Full details on all of these in `docs/DECISIONS.md`.
 
 ## Next task
-Only genuinely open M3 item: **full consent/safeguarding review before
-real minor accounts are enabled** — this is deliberately a human
-decision, not something any commit should do as a side effect
-(docs/SECURITY.md). A concurrent session flagged wanting to be looped in
-on that specifically. Otherwise: M4 (mock tests, teacher dashboard) or
-M5 (bounded AI) are the next milestones, or a content/design pass — your
-call.
+**The consent-gate decision above is the one that actually matters right
+now** — everything else is normal backlog. Once that's resolved: apply
+`db/migrations/0003_maker_checker.sql` (same as 0002 — SQL Editor or
+`scripts/apply_migrations.py`), then a reservation/quota-adjacent
+decision is closed, M4's publishing-console API (draft/submit/approve/
+supersede endpoints — the DB enforcement is built, nothing calls it yet),
+M5 (bounded AI), or a content/design pass — your call.
 
 ## Infrastructure
 | Thing | Status |
 | --- | --- |
-| Supabase | **Live.** Mumbai (`ap-south-1`). Schema `0001` and `0002` both applied and verified. |
+| Supabase | **Live.** Mumbai (`ap-south-1`). Schema `0001`/`0002` applied and verified; `0003` (maker-checker) written, awaiting your application. |
 | GitHub | **Live.** `sheelajindal07-collab/eduvation`, CI green. |
 | Oracle hosting | **Live.** `eduvation.service` on `moulding-app-a1`, port 8010 (localhost only — no public domain/nginx site yet). |
 | AI provider | Gemini, owner-confirmed. Not used before M5. |
 
-## Needs your input — none blocking
-1. **Public domain** — if you want the app reachable from outside the
-   VM, send a domain/subdomain and I'll add an nginx site.
-2. **Pilot state** — still assumed Gujarat, confirm or correct.
-3. **Named content reviewers**, **Gemini model** — not blocking.
-4. **Consent/safeguarding review** — needs your (or a designated
-   reviewer's) eyes before real minor accounts can be enabled. Not
-   urgent — nothing currently allows a real account of any age to do
-   anything unsafe; this gate matters before that changes.
+## Needs your input
+1. **Consent/safeguarding gate — see the ⚠️ section above.** Blocks
+   item 2 below. Not blocking engineering elsewhere, but blocking any
+   move toward public reachability.
+2. **Public domain** — hold until item 1 is resolved. Once it is, send a
+   domain/subdomain and I'll add an nginx site.
+3. **Apply `0003_maker_checker.sql`** — same process as 0002 (SQL
+   Editor, or `scripts/apply_migrations.py` if `DATABASE_URL` is set).
+4. **Pilot state** — still assumed Gujarat, confirm or correct.
+5. **Named content reviewers**, **Gemini model** — not blocking.
 
 ## Not claimed
 No e2e test, no live AI call, no public exposure of the deployed app
