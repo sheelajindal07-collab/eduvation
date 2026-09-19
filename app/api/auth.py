@@ -30,6 +30,7 @@ from typing import Any, cast
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 from supabase import Client
+from supabase_auth.errors import AuthApiError
 
 from app.db import get_anon_client
 
@@ -133,11 +134,24 @@ def sign_up(request: SignUpRequest) -> AuthResponse:
     try:
         try:
             result = client.auth.sign_up({"email": request.email, "password": request.password})
+        except AuthApiError as exc:
+            # Propagate Supabase Auth's own HTTP status instead of
+            # flattening every failure to 400. Matters concretely for
+            # rate limiting: Supabase itself returns 429 with
+            # exc.code == "over_email_send_rate_limit" (confirmed live,
+            # 2026-09-19) — collapsing that to 400 is why
+            # tests/db/test_api_auth.py used to have to guess at "was
+            # this a rate limit?" by pattern-matching the free-text
+            # message, which flaked under the test suite's own load
+            # whenever Supabase phrased a different rate-limit variant
+            # slightly differently. exc.status is what the provider
+            # actually returned, not a guess; exc.message is already
+            # safe, user-facing text.
+            raise HTTPException(status_code=exc.status, detail=exc.message) from exc
         except Exception as exc:
-            # Supabase Auth errors (weak password, email already
-            # registered, ...) surface as their own exception types we
-            # don't need to enumerate here — the message itself is safe
-            # to relay, it's already user-facing text from the provider.
+            # Not a structured Supabase Auth error (network issue,
+            # unexpected client-library exception) -- no provider status
+            # to propagate, so surface it as a plain 400 same as before.
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         if result.session is None or result.user is None:

@@ -105,18 +105,23 @@ class TestSignUp:
         a session, or 202 pending confirmation) — and of Supabase's own
         project-level email-sending rate limit, which this specific
         request genuinely can trigger since it exercises the real
-        email-sending path. A rate-limit response is an infrastructure
-        constraint of the shared test project, not an endpoint bug —
-        confirmed by inspecting the literal error message rather than
-        assumed, so this test can't accidentally mask a real 400."""
+        email-sending path.
+
+        Checks the real HTTP status (429) Supabase Auth itself returns
+        for a rate limit, not a guess at the message's wording
+        (app/api/auth.py propagates exc.status from the underlying
+        AuthApiError). The previous version of this test pattern-matched
+        "rate limit" in the flattened-to-400 detail string, which flaked
+        under the full suite's own combined sign-up load: Supabase has
+        more than one rate-limit error code (`over_email_send_rate_limit`,
+        `over_request_rate_limit`, confirmed live 2026-09-19) and not
+        every variant's message necessarily contains that exact
+        substring — the status code doesn't have that ambiguity."""
         email = f"bcion-signuptest-{uuid.uuid4().hex[:12]}@example.com"
         response = client.post(
             "/auth/sign-up", json={"email": email, "password": "correct-horse-battery-staple-2"}
         )
-        if response.status_code == 400:
-            assert "rate limit" in response.json()["detail"].lower(), (
-                f"Got a 400 that isn't the known rate-limit case: {response.json()}"
-            )
+        if response.status_code == 429:
             return
 
         assert response.status_code in (201, 202)
@@ -149,9 +154,7 @@ class TestSignUp:
             json={"email": registered_user["email"], "password": "another-password-123"},
         )
         assert response.status_code != 201
-        if response.status_code == 400:
-            assert "rate limit" in response.json()["detail"].lower()
-        else:
+        if response.status_code != 429:
             assert response.status_code == 202
 
 
@@ -280,8 +283,7 @@ class TestSignUpWithPendingPlan:
                 },
             },
         )
-        if response.status_code == 400:
-            assert "rate limit" in response.json()["detail"].lower()
+        if response.status_code == 429:
             return
         if response.status_code == 202:
             # Email confirmation required by this project's settings —
