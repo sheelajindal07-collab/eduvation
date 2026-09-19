@@ -14,10 +14,10 @@ matrix — they currently **skip with a printed reason** (no Supabase
 project configured yet), verified by actually running them, not assumed.
 
 ## Blockers
-None for continuing engineering work. The next real step forward — making
-`make test-db` go from 9 skipped to 9 passing — needs your Supabase
-project (see below). Everything else can keep proceeding on synthetic
-fixtures in the meantime.
+None for continuing engineering work. Your Supabase project now exists
+(Mumbai, `ap-south-1` — see below) — the one remaining step to unblock
+`make test-db` is applying `db/migrations/0001_init.sql` to it and
+putting the connection values into your own local `.env`.
 
 ## Next task
 **BCI-002 — M1 first vertical slice**: explore → compare on synthetic
@@ -35,13 +35,16 @@ SQL migration files in the repo for you to apply yourself.
 ## Needs your input (tracked in full in `docs/DECISIONS.md`)
 1. **GitHub repo** — you're creating one yourself on your own account.
    Send me the URL + confirm push credentials are set up locally.
-2. **Supabase project URL** — you're creating a fresh project in
-   `ap-south-1` (Mumbai) — `project education` (Singapore) is not being
-   used. Once created, send me the URL (not secret); put the actual keys
-   into your own local `.env` — never paste secret values into chat. Then
-   apply `db/migrations/0001_init.sql` via the SQL editor (see
-   `db/migrations/README.md`) and `make test-db` should go from 9 skipped
-   to 9 passing.
+2. **Apply the migration** — Supabase project exists: Mumbai
+   (`ap-south-1`), URL `https://bvacroguuhgqufelascd.supabase.co`
+   (transcribed from a screenshot — double check against your own
+   dashboard). Go to **SQL Editor**, paste
+   [`db/migrations/0001_init.sql`](db/migrations/0001_init.sql), click
+   **Run**. Then copy `.env.example` → `.env` and fill in
+   `SUPABASE_URL` (above), plus the anon/publishable key and JWT secret
+   from **Project Settings → API Keys** — never paste those two into
+   chat. Once done, `make test-db` should go from 9 skipped to 9 passing
+   — tell me when it's applied and I'll help verify.
 3. **Pilot state** — still assumed Gujarat (Annex C.2, "if confirmed").
    Confirm or name another state before the content track writes real
    admission-rule content.

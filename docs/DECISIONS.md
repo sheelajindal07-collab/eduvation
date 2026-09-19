@@ -15,11 +15,19 @@ choice between keeping it or creating a fresh India-region project, the
 owner chose to create a new one in `ap-south-1` (Mumbai), matching
 `docs/SECURITY.md`'s residency table. `project education` is **not**
 used for BCION Lite and was not touched.
-**Status:** Waiting on the owner to create the new project and share its
-URL (not secret) — see `STATUS.md`. `db/migrations/0001_init.sql` and
-`app/db/client.py` need no changes either way; only `.env` values differ.
-**Owner action needed:** create the project, give me its URL; put the
-actual keys straight into your own local `.env`.
+**Status:** DONE. Owner created a new project, also displayed as "project
+education" (same org, confusingly the same display name as the Singapore
+one — they are different projects) but region **South Asia (Mumbai),
+ap-south-1**, compute `t4g.nano`. Project URL (from a screenshot,
+re-verify against your own dashboard if anything seems off):
+`https://bvacroguuhgqufelascd.supabase.co`. Status "Healthy", no
+migrations applied yet, no repo connected, no backups yet — a genuinely
+fresh project.
+**Owner action needed next:** apply `db/migrations/0001_init.sql` via
+this project's SQL Editor (paste the file's contents, click Run), then
+put `SUPABASE_URL=https://bvacroguuhgqufelascd.supabase.co` plus the
+anon/publishable key and JWT secret (Project Settings → API Keys) into
+your own local `.env` — keys never shared in chat.
 
 ## 2026-09-19 — GitHub: owner will create the repo on their own account
 **Decision:** The owner is on a GitHub account different from this

@@ -74,7 +74,7 @@ signs off child data or production security** — a person does.
 ## Data-flow map (residency — replaces any blanket "India-only" claim)
 | Flow | Where | Personal data? | Control |
 | --- | --- | --- | --- |
-| Database, auth, file storage | Supabase, Mumbai | Yes | RLS, restricted role, field-level encryption for optional sensitive fields |
+| Database, auth, file storage | Supabase, South Asia (Mumbai, `ap-south-1`) — confirmed 2026-09-19, see `docs/DECISIONS.md` | Yes | RLS, restricted role, field-level encryption for optional sensitive fields |
 | Application + worker | VPS, Mumbai (once provisioned) | Yes, in transit/memory | No personal data in logs; isolated containers; staging separate |
 | Database backups | Supabase-managed; region to confirm at provisioning | Yes | Daily backups; point-in-time recovery only if a day's loss is unacceptable |
 | Runtime AI requests | Hosted model provider; region may be outside India | No — PII redacted; retrieved records + stated interests/constraints only | Provider terms reviewed for retention/training; restricted key; spend cap |
