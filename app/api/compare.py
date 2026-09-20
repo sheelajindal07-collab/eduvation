@@ -9,6 +9,7 @@ too). This route does the I/O; comparison.py stays pure and unit-tested.
 
 from __future__ import annotations
 
+import uuid as uuid_module
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, cast
@@ -39,6 +40,28 @@ COMPARISON_FIELDS = ["entry_requirements", "main_stages", "time_range", "locatio
 
 MIN_PATHWAYS = 2
 MAX_PATHWAYS = 3
+
+
+def _looks_like_a_uuid(value: str) -> bool:
+    """Local to this route file by the same convention
+    app/web/pages.py's identically-named helper documents -- small
+    per-route shape checks stay file-local rather than shared.
+
+    Security-review finding, 2026-09-20 (MEDIUM): the JSON /compare
+    route had zero UUID-shape validation on pathway_id before calling
+    assemble_comparisons(), which passes it straight into a Postgres
+    query -- a malformed id raised an uncaught postgrest APIError
+    (Postgres code 22P02) that propagated as an unhandled 500.
+    app/web/pages.py's HTML route already had this exact fix (for an
+    earlier ux-qa-reviewer finding) but it was never applied here even
+    though both routes now share assemble_comparisons() since a recent
+    refactor.
+    """
+    try:
+        uuid_module.UUID(value)
+    except ValueError:
+        return False
+    return True
 
 
 class FieldValueOut(BaseModel):
@@ -213,6 +236,17 @@ def compare_pathways(
             status_code=400,
             detail=f"Compare needs {MIN_PATHWAYS} or {MAX_PATHWAYS} pathway_id values.",
         )
+    if len(set(pathway_id)) != len(pathway_id):
+        # Security-review finding, 2026-09-20 (LOW): requesting the same
+        # pathway_id twice passed the count check above and silently
+        # rendered the same pathway twice as if it were a real two-way
+        # comparison.
+        raise HTTPException(
+            status_code=400,
+            detail="pathway_id values must be distinct -- pick different pathways to compare.",
+        )
+    if not all(_looks_like_a_uuid(pid) for pid in pathway_id):
+        raise HTTPException(status_code=422, detail="pathway_id must be a valid id.")
 
     as_of = datetime.now(tz=UTC).date()
     comparisons = assemble_comparisons(

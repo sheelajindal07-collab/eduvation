@@ -21,6 +21,10 @@ from app.main import app
 client = TestClient(app)
 
 
+def _auth(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
 @pytest.fixture
 def seeded_pathway(
     admin_client: Client, synthetic_source: str
@@ -94,6 +98,32 @@ class TestExploreCareers:
 class TestComparePathways:
     def test_rejects_fewer_than_two_pathways(self, seeded_pathway: dict[str, Any]) -> None:
         response = client.get("/compare", params={"pathway_id": seeded_pathway["pathway"]["id"]})
+        assert response.status_code == 400
+
+    def test_malformed_pathway_id_gives_a_clean_422_not_a_500(
+        self, seeded_pathway: dict[str, Any]
+    ) -> None:
+        """Security-review finding, 2026-09-20 (MEDIUM): the JSON route
+        had zero UUID-shape validation on pathway_id before calling
+        assemble_comparisons(), which passed it straight into a Postgres
+        query -- a malformed id raised an uncaught postgrest APIError
+        (Postgres code 22P02) that propagated as an unhandled 500.
+        app/web/pages.py's HTML route already had this exact fix; this
+        pins the same protection onto the JSON route."""
+        response = client.get(
+            "/compare",
+            params={"pathway_id": ["not-a-uuid", seeded_pathway["pathway"]["id"]]},
+        )
+        assert response.status_code == 422
+
+    def test_duplicate_pathway_id_gives_a_clean_400_not_a_fake_comparison(
+        self, seeded_pathway: dict[str, Any]
+    ) -> None:
+        """Security-review finding, 2026-09-20 (LOW): requesting the same
+        pathway_id twice passed the count check and silently rendered
+        the same pathway twice as if it were a real two-way comparison."""
+        pid = seeded_pathway["pathway"]["id"]
+        response = client.get("/compare", params={"pathway_id": [pid, pid]})
         assert response.status_code == 400
 
     def test_guest_never_sees_a_draft_claim_value(
@@ -292,3 +322,68 @@ class TestComparePathways:
             admin_client.table("claims").delete().eq("id", published_claim["id"]).execute()
             admin_client.table("pathways").delete().eq("id", other_pathway["id"]).execute()
             admin_client.table("sources").delete().eq("id", official_source["id"]).execute()
+
+
+class TestReviewerNeverSeesADraftClaimEitherAppLayerNotJustRLS:
+    """Security-review finding, 2026-09-20 (MEDIUM, test coverage): every
+    existing test for /compare used only the guest role. RLS
+    (db/migrations/0001_init.sql's `claims_select_published` policy)
+    already blocks a guest/student from ever fetching a draft row at
+    all, which means those tests only prove RLS works -- not that
+    field_value_for()'s own independent status/synthetic re-check does
+    anything. A REVIEWER's RLS-scoped client CAN select a draft row
+    (`status=published or is_reviewer()`), so a reviewer-authenticated
+    request is the only one that actually exercises the app-layer check
+    end to end over a live DB round-trip, rather than relying on RLS
+    having already filtered the row out before app code ever saw it.
+    Mirrors tests/db/test_api_eligibility.py's
+    TestDraftClaimsNeverAffectEligibilityOutcome for a sibling route."""
+
+    def test_reviewer_still_never_sees_a_draft_claim_value_on_compare(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        seeded_pathway: dict[str, Any],
+    ) -> None:
+        """seeded_pathway already carries a draft entry_requirements
+        claim on a synthetic source -- both reasons it must never show
+        as a fact. Authenticate as the reviewer fixture (whose RLS-scoped
+        client CAN see this row) and prove the API response still hides
+        it, proving the app layer, not RLS, is what protects this field
+        for the one role RLS lets the row through for."""
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+
+        other_pathway = (
+            admin_client.table("pathways")
+            .insert(
+                {
+                    "career_id": seeded_pathway["career"]["id"],
+                    "name": "reviewer-visibility test pathway (SYNTHETIC)",
+                    "description": "Seeded by tests/db/test_api_explore_compare.py",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get(
+                "/compare",
+                params={
+                    "pathway_id": [
+                        seeded_pathway["pathway"]["id"],
+                        other_pathway["id"],
+                    ]
+                },
+                headers=_auth(token),
+            )
+            assert response.status_code == 200
+            body = response.json()
+            target = next(
+                p for p in body["pathways"] if p["pathway_id"] == seeded_pathway["pathway"]["id"]
+            )
+            entry_req = target["fields"]["entry_requirements"]
+            assert entry_req["label"] == "not_available"
+            assert entry_req["value"] is None
+        finally:
+            admin_client.table("pathways").delete().eq("id", other_pathway["id"]).execute()
