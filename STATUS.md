@@ -86,10 +86,8 @@ runs for real" and "this specific foreign key/fixture-scoping rule
 applies," which is exactly why the task card said not to treat M4 as
 verified until this exact moment.
 
-**213 tests passing, zero skipped** — the first time this whole test
-suite has been fully green with nothing waiting on anything, verified
-live just now. Lint/typecheck clean, CI green on every push this
-session.
+**229 tests passing, zero skipped** — verified live, this session.
+Lint/typecheck clean, CI green on every push this session.
 
 **Fixed** (commit `1919c4d`): the flaky `test_sign_up_new_email_
 succeeds_or_requires_confirmation` above — root cause found, not
@@ -138,6 +136,54 @@ maker-checker bugs above) flagged two gaps; both closed:
    (`tests/db/test_api_eligibility.py`).
 2. **LOW, fixed** (commit `86cffce`, other session) —
    `app/api/auth.py`'s docstring accuracy gap closed.
+
+## Dedicated security review of the new UI surface — 6 real findings, all fixed
+Separate from the UX review above: a security/correctness pass (4
+independent reviewers, one dimension each — maker-checker/provenance,
+XSS, cross-user/RLS, general correctness — every finding adversarially
+re-verified 3x before being trusted) over `app/api/compare.py`'s
+`assemble_comparisons()` refactor, `app/web/pages.py`, the Jinja
+templates, and `app/planning/comparison.py`. 9 candidates, all survived
+verification; 6 were real bugs/gaps (3 informational — confirmed no
+regression from the earlier refactor, confirmed no RLS-bypass exists,
+confirmed the reviewer role is currently unreachable through this UI at
+all, which is fail-safe not a leak). All 6 real ones fixed same
+session, independently re-verified again (2 more adversarial passes,
+plus hand-tested against 13 bypass strings myself before merging).
+Commits `fb776a2`, `39e4782`.
+1. **HIGH, XSS** — `field_value_for()`'s `source_url` had no scheme
+   check before reaching `href="{{ fv.source_url }}"` in
+   `_trust_badge.html`. A `javascript:`/`data:` URI on `Source.official_url`
+   rendered as a fully clickable, script-executing link on an evidence
+   badge explicitly framed as "official source" — same class the other
+   session independently caught in `eligibility.py`'s own copy of this
+   pattern the same day. Fixed with `_safe_source_url()`: allowlists
+   `http`/`https` only, via `urlsplit` (robust against
+   case/whitespace/embedded-control-character bypasses).
+2. **LOW** — `verification_date` was the one field in `field_value_for()`
+   not gated on `label != not_available` — an unpublished/synthetic
+   claim's date leaked even though its value/source were correctly
+   hidden. Now gated identically to the other three fields.
+3. **MEDIUM** — `GET /compare` (JSON) had zero UUID-shape validation;
+   a malformed `pathway_id` crashed to an unhandled 500. `GET
+   /compare/view` (HTML) already had this fix from the UX review, but
+   the refactor that shared `assemble_comparisons()` between both
+   routes never carried it to the JSON side. Now both return a clean
+   422, matching `plans.py`'s established convention.
+4. **LOW** — requesting the same `pathway_id` twice passed validation
+   and silently rendered the same pathway twice as a fake comparison.
+   JSON route now 400s; HTML route degrades to the existing friendly
+   message.
+5. **MEDIUM, test coverage** — no test authenticated as a reviewer
+   against `/compare`/`/explore`/`/compare/view`. The reviewer role is
+   the *only* one whose RLS-scoped client can fetch a draft claim row
+   at all, so a guest-only test suite was only proving RLS filters
+   correctly, never actually exercising `field_value_for()`'s own
+   independent status re-check end-to-end. Added, mirrors the existing
+   pattern in `test_api_eligibility.py`.
+6. **MEDIUM, test coverage** — `/compare/view` (HTML) had no live
+   regression pinning its draft/synthetic-claim protection, unlike the
+   JSON route. Added.
 
 ## Design mockup (2026-09-19, separate session — no repo code touched)
 A design canvas of the whole app now exists, built from `docs/UI.md` and
