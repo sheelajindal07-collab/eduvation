@@ -47,7 +47,7 @@ def official_source(admin_client: Client) -> Iterator[str]:
     admin_client.table("sources").delete().eq("id", source_id).execute()
 
 
-def _draft_payload(source_id: str, created_by: str, **overrides: object) -> dict:
+def _draft_payload(source_id: str, created_by: str | None, **overrides: object) -> dict:
     payload = {
         "entity_type": "Pathway",
         "entity_id": str(uuid.uuid4()),
@@ -107,14 +107,18 @@ class TestInsertMustBeDraft:
     ) -> None:
         """The exact fixture pattern every other test file in this repo
         already relies on (tests/db/test_api_explore_compare.py etc.)
-        must keep working unchanged."""
+        must keep working unchanged.
+
+        `created_by` is left `None` here on purpose: it's a real foreign
+        key to `auth.users` (0001_init.sql), and a fabricated UUID fails
+        that constraint before the trigger under test is even reached --
+        this test is about the service-role INSERT exemption, not
+        authorship, and `created_by` is nullable precisely because no
+        publishing-console API existed to set it correctly when M1's
+        schema was written."""
         row = (
             admin_client.table("claims")
-            .insert(
-                _draft_payload(
-                    official_source, str(uuid.uuid4()), status="published"
-                )
-            )
+            .insert(_draft_payload(official_source, None, status="published"))
             .execute()
         )
         claim_id = row.data[0]["id"]
@@ -169,20 +173,6 @@ class TestSelfApprovalIsRejected:
                 ).execute()
         finally:
             _cleanup(admin_client, claim_id)
-
-
-@pytest.fixture
-def second_reviewer(admin_client: Client) -> Iterator[tuple[str, Client]]:
-    """A distinct reviewer from the `reviewer` fixture -- pytest fixtures
-    are function-scoped by default, so requesting `reviewer` twice under
-    different names would give the SAME instance, which is useless for
-    testing "a DIFFERENT person reviews" (docs/DATA.md)."""
-    from tests.db.conftest import _create_test_user
-
-    user_id, client = _create_test_user(admin_client)
-    admin_client.table("reviewers").insert({"user_id": user_id}).execute()
-    yield user_id, client
-    admin_client.auth.admin.delete_user(user_id)
 
 
 class TestTwoDistinctReviewers:
@@ -360,8 +350,12 @@ class TestPublishedContentIsFrozen:
             # silent overwrite of history.
             assert superseded["value"] == 50000
         finally:
-            _cleanup(admin_client, new_claim_id)
+            # old_claim_id.superseded_by references new_claim_id -- must
+            # delete the referencing row first, or the FK constraint
+            # blocks deleting the still-referenced replacement (Postgres
+            # default: NO ACTION, not CASCADE).
             _cleanup(admin_client, old_claim_id)
+            _cleanup(admin_client, new_claim_id)
 
     def test_a_superseded_claim_is_final(
         self,
@@ -372,9 +366,22 @@ class TestPublishedContentIsFrozen:
     ) -> None:
         published = self._publish(reviewer, second_reviewer, official_source)
         claim_id = published["id"]
+        maker_id, maker_client = reviewer
         _, checker_client = second_reviewer
+
+        # `superseded_by` is a real foreign key to claims(id)
+        # (0001_init.sql) -- a fabricated UUID fails that constraint
+        # before the trigger under test is even reached. Needs an actual
+        # replacement claim to point at, same as
+        # test_correction_via_supersede_is_the_only_legal_change.
+        replacement = (
+            maker_client.table("claims")
+            .insert(_draft_payload(official_source, maker_id))
+            .execute()
+            .data[0]
+        )
         checker_client.table("claims").update(
-            {"status": "superseded", "superseded_by": str(uuid.uuid4())}
+            {"status": "superseded", "superseded_by": replacement["id"]}
         ).eq("id", claim_id).execute()
         try:
             with pytest.raises(APIError):
@@ -382,4 +389,8 @@ class TestPublishedContentIsFrozen:
                     "id", claim_id
                 ).execute()
         finally:
+            # The superseded claim references the replacement -- must be
+            # deleted first, or the FK constraint blocks deleting the
+            # still-referenced replacement (Postgres default: NO ACTION).
             _cleanup(admin_client, claim_id)
+            _cleanup(admin_client, replacement["id"])

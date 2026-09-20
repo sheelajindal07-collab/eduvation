@@ -2,9 +2,10 @@
 
 **Milestone:** M0 (BCI-001), M1 (BCI-002), M2 (BCI-003) all DONE. **M3
 sign-in + saved plans + guest→account migration DONE** (BCI-004). **M4
-maker-checker enforcement + publishing-console API built, awaiting
-migration** (BCI-005). **First real UI shipped** — Explore → Compare,
-the first screens anyone could actually click through (BCI-006).
+maker-checker enforcement + publishing-console API DONE and verified
+live** (BCI-005) — migration applied, every test that was skipping now
+actually passes. **First real UI shipped** — Explore → Compare, the
+first screens anyone could actually click through (BCI-006).
 **Commit:** see `git log -1` on `main`. **Repo:**
 [github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
@@ -48,20 +49,47 @@ verified healthy, talking to the real database).
   autoescaping confirmed on); the zero-JS claim confirmed genuinely true.
   9 new regression tests plus the original 6, all live.
 - **Maker-checker, enforced at the database, plus the publishing console
-  API on top of it** — neither existed before this session:
-  `db/migrations/0003_maker_checker.sql` (a claim must always be
-  inserted as a draft, the author of a claim can never approve their
-  own, a published claim's recorded content is frozen — a correction
-  means a new claim, never an in-place edit) and `app/api/claims.py`
+  API on top of it — now live and genuinely proven, not just written.**
+  You applied `db/migrations/0003_maker_checker.sql`: a claim must always
+  be inserted as a draft, the author of a claim can never approve their
+  own, a published claim's recorded content is frozen (a correction
+  means a new claim, never an in-place edit). `app/api/claims.py`
   (`POST /claims`, `/submit`, `/approve`, `/reject`, `/supersede`,
-  `GET /claims`) on top of it. **Neither is live yet** — same as 0002,
-  the migration needs you to run it via the SQL Editor first; every
-  route in `claims.py` 403s/400s until then, and its 12 tests correctly
-  skip rather than pretend to pass.
+  `GET /claims`) sits on top of it, all wired to the real, live database.
 
-**213 tests total** (188 passing + 25 correctly skipping pending the
-0003 migration — verified live this session, not just collected),
-lint/typecheck clean, CI green on every push this session.
+## The migration landing found 4 real bugs — in the tests, not the trigger
+The moment `0003` was applied, every test that had been correctly
+skipping (never run against real enforcement before) actually ran for
+the first time — and found genuine problems, all in test fixtures that
+had never been exercised live, not in the migration/trigger logic
+itself:
+1. Two tests set `superseded_by`/`created_by` to a fabricated random
+   UUID. Both are real foreign keys (`superseded_by → claims(id)`,
+   `created_by → auth.users(id)`, `db/migrations/0001_init.sql`) — a
+   made-up id fails that constraint before the trigger under test is
+   even reached. Fixed by using a real replacement claim / `None`
+   (nullable) respectively.
+2. Two tests' cleanup deleted a "replacement" claim before the claim
+   that referenced it via `superseded_by` — Postgres's default `NO
+   ACTION` (not `CASCADE`) on that foreign key blocks deleting a row
+   that's still referenced. Fixed by reordering cleanup to delete the
+   referencing row first.
+3. `tests/db/test_api_claims.py` used a `second_reviewer` fixture
+   defined only inside `tests/db/test_maker_checker.py` — invisible to
+   any other file, and invisible to pytest's own fixture-not-found check
+   while every test using it was being skipped. Moved to
+   `tests/db/conftest.py`, alongside `reviewer`/`student_a`/`student_b`,
+   where it always should have lived.
+None of these were bugs a human or an agent could have caught by
+reading the code — they only exist at the intersection of "this test
+runs for real" and "this specific foreign key/fixture-scoping rule
+applies," which is exactly why the task card said not to treat M4 as
+verified until this exact moment.
+
+**213 tests passing, zero skipped** — the first time this whole test
+suite has been fully green with nothing waiting on anything, verified
+live just now. Lint/typecheck clean, CI green on every push this
+session.
 
 **Fixed** (commit `1919c4d`): the flaky `test_sign_up_new_email_
 succeeds_or_requires_confirmation` above — root cause found, not
@@ -80,32 +108,36 @@ project, which is currently saturated from this session's own testing)
 instead of hardcoding 400; the three affected tests now check
 `status_code == 429` directly. Full suite rerun clean after the fix.
 
-## Open findings from the background UX review, not yet fixed
+## Background UX review findings — both now fixed
 A read-only `ux-qa-reviewer` pass this session (separate from the two
-maker-checker bugs above, already fixed) flagged two more real gaps,
-still open:
-1. **HIGH** — `GET /eligibility`'s `CriterionResultOut.source_claim_id`
-   and `POST /timeline`'s `StageOut`/`ParallelActivityOut.source_claim_id`
-   are bare claim UUIDs with no route that resolves one into an actual
-   displayable source (authority name, official link, verification
-   date) — unlike `GET /compare`, which already does this via
-   `FieldValueOut.source_url`/`verification_date`. Fine while these two
-   screens are JSON-only; becomes a real problem the moment someone
-   builds the eligibility or timeline/cost-calculator UI screens (next
-   on `tasks/BCI-006.md`'s list) — docs/UI.md requires "source
-   authority, applicable cycle, verification date, official link" on
-   every fact shown, and right now those two screens have nowhere to
-   get it from. Whoever picks up that UI work should resolve this
-   first, following `app/api/compare.py`'s existing
-   `_row_to_source`/`sources_by_id` pattern.
-2. **LOW** — `app/api/auth.py`'s docstring cites a guest-session design
-   (anonymous server session, random token, 7-day expiry, "never
-   localStorage") that docs/UI.md describes but no route actually
-   implements yet, and the citation to `docs/DECISIONS.md` for it
-   doesn't point at anything real. Not a live bug (nothing currently
-   claims this exists at runtime), just a docs-accuracy gap worth
-   closing before someone builds a guest-session route assuming the
-   docstring already describes what's there.
+maker-checker bugs above) flagged two gaps; both closed:
+1. **HIGH, fixed** — `GET /eligibility`'s `CriterionResultOut` was a bare
+   `source_claim_id` UUID with no route resolving it to a displayable
+   source, unlike `GET /compare`. Fixed the same way: fetches the
+   claim/source rows it already has and resolves each criterion's
+   `source_authority`/`source_url`/`verification_date`, same
+   `_row_to_source`/`sources_by_id` pattern as `compare.py`. Draft claims
+   still can't leak a source either — the existing published-only filter
+   already covers the new fields since a criterion never exists for an
+   unpublished claim in the first place. `POST /timeline` intentionally
+   still doesn't resolve sources — it's stateless by design (no DB access
+   at all), so resolution belongs to whatever builds its stage list, not
+   to the route itself; noted for whoever builds that UI screen.
+   **Caught while building this, same day, by a concurrent session's
+   independent security review**: nothing validated the URL scheme on
+   `Source.official_url` before it reached `href="{{ ... }}"` in a
+   template — a `javascript:`/`data:` URI would render as a fully
+   clickable, script-executing link on the evidence badge. Reviewer-
+   write-only today, but the same "trusted-role write reaches render
+   with no independent check" shape as the maker-checker bugs above.
+   Fixed here with a `_safe_source_url()` guard (degrade a non-http(s)
+   scheme to `None`, same pattern as any other "unavailable" field); the
+   other session fixed the equivalent gap in `app/planning/comparison.py`
+   (this route builds its URL independently, so neither fix covered the
+   other). 3 new tests total across both fixes
+   (`tests/db/test_api_eligibility.py`).
+2. **LOW, fixed** (commit `86cffce`, other session) —
+   `app/api/auth.py`'s docstring accuracy gap closed.
 
 ## Design mockup (2026-09-19, separate session — no repo code touched)
 A design canvas of the whole app now exists, built from `docs/UI.md` and
@@ -202,20 +234,18 @@ Full details on all of these in `docs/DECISIONS.md`.
 
 ## Next task
 **The consent-gate decision above is the one that actually matters right
-now** — everything else is normal backlog. Once that's resolved: apply
-`db/migrations/0003_maker_checker.sql` (same as 0002 — SQL Editor or
-`scripts/apply_migrations.py`) so `app/api/claims.py` actually goes live
-and can be verified for real (right now every one of its tests is a
-skip, not a pass — don't treat M4 as proven until that's rerun green).
-After that: more UI screens (quick start, timeline/cost calculator, a
-reviewer console for the publishing API — see `tasks/BCI-006.md` for the
-full "not done yet" list, including that Playwright e2e still isn't
-wired), M5 (bounded AI), or a content/design pass — your call.
+now** — everything else is normal backlog. All engineering milestones
+through M4 are done and genuinely verified (migration applied, zero
+tests skipping). Candidates for what's next, all your call: more UI
+screens (quick start, timeline/cost calculator, a reviewer console for
+the publishing API — see `tasks/BCI-006.md`'s full "not done yet" list,
+including that Playwright e2e still isn't wired), M5 (bounded AI), or a
+content/design pass.
 
 ## Infrastructure
 | Thing | Status |
 | --- | --- |
-| Supabase | **Live.** Mumbai (`ap-south-1`). Schema `0001`/`0002` applied and verified; `0003` (maker-checker) written, awaiting your application. |
+| Supabase | **Live.** Mumbai (`ap-south-1`). Schema `0001`/`0002`/`0003` all applied and verified — the full test suite is genuinely green with nothing skipping. |
 | GitHub | **Live.** `sheelajindal07-collab/eduvation`, CI green. |
 | Oracle hosting | **Live.** `eduvation.service` on `moulding-app-a1`, port 8010 (localhost only — no public domain/nginx site yet). |
 | AI provider | Gemini, owner-confirmed. Not used before M5. |
@@ -226,10 +256,8 @@ wired), M5 (bounded AI), or a content/design pass — your call.
    move toward public reachability.
 2. **Public domain** — hold until item 1 is resolved. Once it is, send a
    domain/subdomain and I'll add an nginx site.
-3. **Apply `0003_maker_checker.sql`** — same process as 0002 (SQL
-   Editor, or `scripts/apply_migrations.py` if `DATABASE_URL` is set).
-4. **Pilot state** — still assumed Gujarat, confirm or correct.
-5. **Named content reviewers**, **Gemini model** — not blocking.
+3. **Pilot state** — still assumed Gujarat, confirm or correct.
+4. **Named content reviewers**, **Gemini model** — not blocking.
 
 ## Content drafts — NEET (UG) added and cross-checked (2026-09-19)
 `docs/content-drafts/neet-ug-eligibility.md` — draft research only, same

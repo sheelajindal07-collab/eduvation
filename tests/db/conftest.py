@@ -185,6 +185,26 @@ def reviewer(admin_client: Client) -> Iterator[tuple[str, Client]]:
 
 
 @pytest.fixture
+def second_reviewer(admin_client: Client) -> Iterator[tuple[str, Client]]:
+    """A distinct reviewer from the `reviewer` fixture -- pytest fixtures
+    are function-scoped by default, so requesting `reviewer` twice under
+    different names would give the SAME instance, which is useless for
+    testing "a DIFFERENT person reviews" (docs/DATA.md). Moved here from
+    tests/db/test_maker_checker.py (2026-09-20): a fixture defined inside
+    one test file is invisible to every other file, which
+    tests/db/test_api_claims.py's own use of this fixture surfaced as a
+    real `fixture 'second_reviewer' not found` error the moment
+    db/migrations/0003_maker_checker.sql was applied and those tests
+    stopped being skipped -- invisible while skipped, same shape as the
+    per-file-hook bug this conftest.py's own docstring already warns
+    about above."""
+    user_id, client = _create_test_user(admin_client)
+    admin_client.table("reviewers").insert({"user_id": user_id}).execute()
+    yield user_id, client
+    admin_client.auth.admin.delete_user(user_id)
+
+
+@pytest.fixture
 def synthetic_source(admin_client: Client) -> Iterator[str]:
     """A source row tagged synthetic, for tests that must never risk
     touching anything that looks like a real, verified fact."""

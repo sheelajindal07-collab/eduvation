@@ -257,8 +257,13 @@ class TestFullWorkflowThroughTheRealAPI:
             assert body["superseded_by"] == new["id"]
             assert body["value"] == 42000  # old claim's own value is untouched
         finally:
-            admin_client.table("claims").delete().eq("id", new["id"]).execute()
+            # old["id"]'s superseded_by references new["id"] -- must
+            # delete the referencing row first, or the FK constraint
+            # blocks deleting the still-referenced replacement (Postgres
+            # default: NO ACTION, not CASCADE). Same bug, same fix, as
+            # tests/db/test_maker_checker.py's equivalent test.
             admin_client.table("claims").delete().eq("id", old["id"]).execute()
+            admin_client.table("claims").delete().eq("id", new["id"]).execute()
 
 
 class TestListClaims:

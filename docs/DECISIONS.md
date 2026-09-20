@@ -5,6 +5,76 @@ never deleted.
 
 ---
 
+## 2026-09-20 — Migration 0003 applied: M4 genuinely verified, 4 real test
+## bugs found and fixed (none in the trigger/migration itself)
+**Event:** Owner applied `db/migrations/0003_maker_checker.sql` to the
+live Supabase project. Every test in `tests/db/test_maker_checker.py`
+and `tests/db/test_api_claims.py` that had been correctly *skipping*
+(per `tests/db/conftest.py`'s established skip-if-not-applied pattern)
+ran against real enforcement for the first time. Result: the
+`enforce_claims_workflow` trigger and the tightened
+`claims_update_reviewers` RLS policy both work exactly as designed —
+every failure found was in test fixtures that had never been exercised
+live, never in the migration/trigger logic they were testing.
+**Bugs found and fixed:**
+1. Two tests set `superseded_by` / `created_by` to a fabricated random
+   UUID. Both are real foreign keys (`superseded_by → claims(id)`,
+   `created_by → auth.users(id)`, `0001_init.sql`) — a made-up id fails
+   that constraint before the trigger under test is even reached. Fixed:
+   a real replacement claim for `superseded_by`; `None` (the column is
+   nullable) for `created_by` where authorship wasn't the thing being
+   tested.
+2. Two tests' cleanup deleted a "replacement" claim before the claim
+   referencing it via `superseded_by` — Postgres's default `NO ACTION`
+   (not `CASCADE`) on that foreign key blocks deleting a still-referenced
+   row. Fixed by reordering cleanup: delete the referencing row first.
+3. `tests/db/test_api_claims.py` used a `second_reviewer` fixture defined
+   only inside `tests/db/test_maker_checker.py` — a pytest fixture
+   defined in one test file is invisible to every other file (the same
+   class of scoping mistake `tests/db/conftest.py`'s own docstring
+   already warns about for hooks specifically). Invisible while every
+   test using it was being skipped; surfaced the moment skipping stopped.
+   Fixed by moving `second_reviewer` to `tests/db/conftest.py`, alongside
+   `reviewer`/`student_a`/`student_b`, where it always should have lived.
+**Reason this is worth recording, not just fixing quietly:** none of
+these four bugs were catchable by reading the code, lint, mypy, or
+`pytest --collect-only` — they only exist at the intersection of "this
+specific test actually runs" and "this specific foreign key or
+fixture-scoping rule applies." This is precisely why `tasks/BCI-005.md`
+said explicitly not to treat M4 as verified until the migration landed
+and these tests were rerun green — that caveat wasn't hedging, it
+identified a real, specific class of bug that then actually occurred.
+**Result:** 213 tests passing, zero skipping — the first time this
+project's full suite has been completely green with nothing waiting on
+anything.
+**Owner action needed:** none.
+
+## 2026-09-20 — Dangerous URL scheme could reach an evidence link
+## (`javascript:`/`data:`), fixed independently in two places
+**Event:** A concurrent session's security review confirmed (adversarial
+verify, all votes survived) that nothing validated the URL scheme on
+`Source.official_url` before it was rendered into `href="{{ ... }}"` in
+`_trust_badge.html`. Jinja's autoescape only HTML-entity-escapes; it does
+not block a dangerous scheme. A `Source` row with
+`official_url="javascript:alert(document.cookie)"` renders as a fully
+clickable, script-executing link on the evidence badge — reproduced
+live. Sources are reviewer-write-only today, so this needs a malicious
+or compromised reviewer credential to set, but that is exactly the
+"trusted-role write reaches render with no independent check" shape as
+the maker-checker bugs already fixed this session, and gets worse once
+M4's AI-extraction pipeline can populate a URL that no human has
+scrutinized yet.
+**Fixed in two places, independently, because the URL is built twice**:
+`app/planning/comparison.py`'s `field_value_for()` (which
+`app/api/compare.py` depends on) by the reviewing session, and
+`app/api/eligibility.py`'s own separate `_safe_source_url()` helper by
+this session — `check_eligibility` builds its source data directly
+rather than going through `field_value_for()`, so one fix did not cover
+the other. Both use the same pattern: a non-`http(s)` scheme degrades to
+`None`, the same "unavailable" treatment already used for a missing or
+unpublished source, rather than rendering the value.
+**Owner action needed:** none.
+
 ## 2026-09-19 — M3 auth surface security-reviewed: one flagged gate, three
 ## bugs fixed
 **Event:** A full read-only security review of M3's sign-in/saved-plans/

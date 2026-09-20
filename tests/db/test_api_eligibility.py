@@ -115,6 +115,18 @@ class TestEligibilityEndpoint:
         assert body["outcome"] == "meets"
         assert len(body["criteria"]) == 4
         assert all(c["source_claim_id"] is not None for c in body["criteria"])
+        # ux-qa-reviewer finding, 2026-09-19: a bare claim UUID has
+        # nowhere to get "source authority ... official link,
+        # verification date" from (docs/UI.md) -- now resolved.
+        assert all(
+            c["source_authority"] == "API TEST ELIGIBILITY SOURCE (fixture)"
+            for c in body["criteria"]
+        )
+        assert all(
+            c["source_url"] == "https://example.invalid/eligibility-source"
+            for c in body["criteria"]
+        )
+        assert all(c["verification_date"] == "2026-09-01" for c in body["criteria"])
 
     def test_missing_subject_gives_does_not_meet(
         self, eligibility_pathway: dict[str, Any]
@@ -175,6 +187,84 @@ class TestEligibilityEndpoint:
         finally:
             admin_client.table("pathways").delete().eq("id", pathway["id"]).execute()
             admin_client.table("careers").delete().eq("id", career["id"]).execute()
+
+
+class TestDangerousSourceUrlSchemeIsNeverRendered:
+    """Security-review finding, 2026-09-20: nothing validated the URL
+    scheme on Source.official_url before it reached a template's
+    href="{{ ... }}" -- a javascript:/data: URI would render as a fully
+    clickable, script-executing link on the evidence badge. Confirmed
+    live and fixed with the same "degrade to unavailable" pattern
+    app/planning/comparison.py's field_value_for() also uses -- this
+    route builds source_url independently, so that fix doesn't cover it."""
+
+    def test_javascript_scheme_source_url_is_never_returned(
+        self, admin_client: Client
+    ) -> None:
+        dangerous_source = (
+            admin_client.table("sources")
+            .insert(
+                {
+                    "authority_name": "MALICIOUS SOURCE (test)",
+                    "official_url": "javascript:alert(document.cookie)",
+                    "source_type": "official",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        career = (
+            admin_client.table("careers")
+            .insert({"name": "Dangerous-URL test career (SYNTHETIC)"})
+            .execute()
+            .data[0]
+        )
+        pathway = (
+            admin_client.table("pathways")
+            .insert(
+                {
+                    "career_id": career["id"],
+                    "name": "Dangerous-URL test pathway (SYNTHETIC)",
+                    "description": "Seeded by tests/db/test_api_eligibility.py",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": pathway["id"],
+                    "field": "minimum_age",
+                    "value": "17",
+                    "source_id": dangerous_source["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": "test-fixture-reviewer",
+                    "status": "published",
+                    "review_due_date": "2099-01-01",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get(
+                "/eligibility", params={"pathway_id": pathway["id"], "age": 18}
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert len(body["criteria"]) == 1
+            # The authority name (plain text, safe) still shows; the
+            # dangerous URL itself must never reach the response.
+            assert body["criteria"][0]["source_authority"] == "MALICIOUS SOURCE (test)"
+            assert body["criteria"][0]["source_url"] is None
+        finally:
+            admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+            admin_client.table("pathways").delete().eq("id", pathway["id"]).execute()
+            admin_client.table("careers").delete().eq("id", career["id"]).execute()
+            admin_client.table("sources").delete().eq("id", dangerous_source["id"]).execute()
 
 
 @pytest.fixture
