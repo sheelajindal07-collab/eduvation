@@ -123,8 +123,9 @@ def _safe_source_url(raw_url: str | None) -> str | None:
     """
     if not raw_url:
         return None
-    scheme = urlsplit(raw_url.strip()).scheme
-    return raw_url if scheme in _SAFE_URL_SCHEMES else None
+    stripped = raw_url.strip()
+    scheme = urlsplit(stripped).scheme
+    return stripped if scheme in _SAFE_URL_SCHEMES else None
 
 
 def field_value_for(
