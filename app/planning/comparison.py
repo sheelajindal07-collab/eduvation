@@ -14,9 +14,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+from urllib.parse import urlsplit
 
 from app.data.models import Claim, ClaimStatus, Source, SourceType, TrustLabel
 from app.rules.cost import AssistanceItem, CostSummary, FeeComponent, compute_cost_summary
+
+# Only these schemes are safe to render as a clickable evidence link
+# (see `_safe_source_url` below).
+_SAFE_URL_SCHEMES = frozenset({"http", "https"})
 
 # Tier-1-ish default freshness SLA for Lite, in days (docs/DATA.md S11
 # scales this per tier; Lite uses one conservative default until the
@@ -92,6 +97,36 @@ class FieldValue:
     source_authority: str | None = None
 
 
+def _safe_source_url(raw_url: str | None) -> str | None:
+    """Only ever return a URL that is safe to render as a clickable
+    `<a href>` (app/web/templates/_trust_badge.html renders `source_url`
+    directly into an anchor tag: `href="{{ fv.source_url }}"`). Jinja's
+    autoescaping only HTML-entity-escapes angle brackets/quotes -- it
+    does NOT block a dangerous scheme, so a `javascript:` or
+    `data:text/html;...` URI in `source.official_url` would render as a
+    fully clickable link framed as trustworthy evidence (security-review
+    finding, 2026-09-20, reproduced live).
+
+    Checked independently of trust label: even a genuinely published,
+    official-source claim must have its URL scheme validated -- URL
+    scheme safety is a separate axis from publication status, not a
+    consequence of it.
+
+    Whitespace is stripped and the scheme compared case-insensitively
+    (`urlsplit` itself lowercases the scheme) so a padded or
+    case-variant scheme like `"  JavaScript:alert(1)"` can't slip past a
+    naive prefix check. Anything other than `http`/`https` -- some real
+    Indian government sites are still http-only, so both are accepted --
+    is treated exactly like "no URL at all" (`None`), the same "hide it"
+    pattern already used for `not_available`, rather than raised or
+    passed through unescaped.
+    """
+    if not raw_url:
+        return None
+    scheme = urlsplit(raw_url.strip()).scheme
+    return raw_url if scheme in _SAFE_URL_SCHEMES else None
+
+
 def field_value_for(
     field: str,
     claims_by_field: dict[str, Claim],
@@ -104,14 +139,13 @@ def field_value_for(
     claim = claims_by_field.get(field)
     source = sources_by_id.get(claim.source_id) if claim else None
     label = trust_label_for_claim(claim, source, as_of=as_of)
+    available = label != TrustLabel.not_available
     return FieldValue(
-        value=claim.value if (claim and label != TrustLabel.not_available) else None,
+        value=claim.value if (claim and available) else None,
         label=label,
-        source_url=source.official_url if (source and label != TrustLabel.not_available) else None,
-        verification_date=claim.verification_date if claim else None,
-        source_authority=(
-            source.authority_name if (source and label != TrustLabel.not_available) else None
-        ),
+        source_url=_safe_source_url(source.official_url) if (source and available) else None,
+        verification_date=claim.verification_date if (claim and available) else None,
+        source_authority=source.authority_name if (source and available) else None,
     )
 
 

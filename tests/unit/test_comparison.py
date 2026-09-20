@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from app.data.models import Claim, ClaimStatus, Source, SourceType, TrustLabel
 from app.planning.comparison import (
     DEFAULT_FRESHNESS_SLA_DAYS,
+    _safe_source_url,
     assemble_cost_breakdown,
     assemble_cost_summary,
     field_value_for,
@@ -160,6 +161,100 @@ def test_field_value_for_hides_source_authority_when_not_available() -> None:
         as_of=TODAY,
     )
     assert result.source_authority is None
+
+
+def test_field_value_for_hides_verification_date_when_not_available() -> None:
+    """Security-review finding, 2026-09-20: verification_date was set
+    whenever a claim object existed at all, with no gating on label --
+    unlike value/source_url/source_authority. A draft (or
+    synthetic-sourced) claim's verification_date must be hidden exactly
+    like its value and source already are."""
+    claim = _claim(ClaimStatus.draft, OFFICIAL_SOURCE.id, TODAY)
+    result = field_value_for(
+        "verified_charges",
+        {"verified_charges": claim},
+        {OFFICIAL_SOURCE.id: OFFICIAL_SOURCE},
+        as_of=TODAY,
+    )
+    assert result.verification_date is None
+
+
+def test_field_value_for_shows_verification_date_when_available() -> None:
+    claim = _claim(ClaimStatus.published, OFFICIAL_SOURCE.id, TODAY)
+    result = field_value_for(
+        "verified_charges",
+        {"verified_charges": claim},
+        {OFFICIAL_SOURCE.id: OFFICIAL_SOURCE},
+        as_of=TODAY,
+    )
+    assert result.verification_date == TODAY
+
+
+class TestSafeSourceUrl:
+    """Security-review finding, 2026-09-20 (HIGH, XSS):
+    app/web/templates/_trust_badge.html renders `source_url` straight
+    into `href="{{ fv.source_url }}"`. Jinja's autoescaping only
+    HTML-entity-escapes angle brackets/quotes -- it does not block a
+    dangerous scheme, so a `javascript:`/`data:` URI in a Source row
+    would render as a fully clickable link framed as trustworthy
+    evidence. Only http/https may ever reach the template; anything else
+    must come back None (the same "hide it" pattern as not_available),
+    never raise."""
+
+    def test_javascript_scheme_is_hidden(self) -> None:
+        assert _safe_source_url("javascript:alert(document.cookie)") is None
+
+    def test_data_scheme_is_hidden(self) -> None:
+        assert (
+            _safe_source_url("data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==")
+            is None
+        )
+
+    def test_https_url_passes_through(self) -> None:
+        url = "https://gseb.example.invalid/official-page"
+        assert _safe_source_url(url) == url
+
+    def test_http_url_passes_through(self) -> None:
+        """Some real Indian government sites are still http-only."""
+        url = "http://gseb.example.invalid/official-page"
+        assert _safe_source_url(url) == url
+
+    def test_case_variant_scheme_is_still_caught(self) -> None:
+        """A naive prefix check like `.startswith("javascript:")` would
+        miss this -- the scheme must be normalised before comparison."""
+        assert _safe_source_url("JavaScript:alert(1)") is None
+
+    def test_whitespace_padded_scheme_is_still_caught(self) -> None:
+        assert _safe_source_url("   javascript:alert(1)   ") is None
+
+    def test_none_is_hidden_not_a_crash(self) -> None:
+        assert _safe_source_url(None) is None
+
+    def test_empty_string_is_hidden_not_a_crash(self) -> None:
+        assert _safe_source_url("") is None
+
+
+def test_field_value_for_hides_javascript_scheme_source_url() -> None:
+    """End-to-end (not just the helper in isolation): a published,
+    genuinely official-source claim whose Source row carries an unsafe
+    URL scheme must still have its source_url hidden -- URL-scheme
+    safety is checked regardless of trust label."""
+    unsafe_source = Source(
+        id="src-xss",
+        authority_name="Malicious Source",
+        official_url="javascript:alert(document.cookie)",
+        source_type=SourceType.official,
+    )
+    claim = _claim(ClaimStatus.published, unsafe_source.id, TODAY)
+    result = field_value_for(
+        "verified_charges",
+        {"verified_charges": claim},
+        {unsafe_source.id: unsafe_source},
+        as_of=TODAY,
+    )
+    assert result.label == TrustLabel.checked_against_official_source
+    assert result.value == claim.value  # value itself is unaffected
+    assert result.source_url is None  # only the unsafe link is hidden
 
 
 def test_cost_breakdown_keeps_three_amounts_separate() -> None:

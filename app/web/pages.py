@@ -83,7 +83,14 @@ def compare_page(
     crash — a human clicked into this page, they didn't send a malformed
     request on purpose."""
     invalid_shape = not all(_looks_like_a_uuid(pid) for pid in pathway_id)
-    if invalid_shape or not (MIN_PATHWAYS <= len(pathway_id) <= MAX_PATHWAYS):
+    has_duplicates = len(set(pathway_id)) != len(pathway_id)
+    # Security-review finding, 2026-09-20 (LOW): requesting the same
+    # pathway_id twice passed the count check and silently rendered the
+    # same pathway twice as if it were a real two-way comparison. A
+    # human clicked into this page, so this degrades to the same
+    # friendly message as a malformed/wrong-count id rather than
+    # crashing or quietly showing a meaningless "comparison".
+    if invalid_shape or has_duplicates or not (MIN_PATHWAYS <= len(pathway_id) <= MAX_PATHWAYS):
         return templates.TemplateResponse(
             request,
             "compare.html",

@@ -239,3 +239,52 @@ class TestComparePage:
         finally:
             admin_client.table("claims").delete().eq("id", claim["id"]).execute()
             admin_client.table("sources").delete().eq("id", institution_source["id"]).execute()
+
+    def test_draft_claim_value_never_appears_in_the_rendered_html(
+        self,
+        admin_client: Client,
+        synthetic_source: str,
+        two_pathways: dict[str, Any],
+    ) -> None:
+        """Security-review finding, 2026-09-20 (MEDIUM, test coverage):
+        tests/db/test_api_explore_compare.py has this exact live
+        regression for the JSON route, but /compare/view (the HTML
+        route) shares the same underlying assemble_comparisons() and had
+        no equivalent -- it could silently diverge if a future change to
+        app/web/pages.py stopped delegating to it for some field. Seeds
+        a draft claim with a distinctive, greppable value and asserts it
+        does not appear anywhere in the response text (not a JSON field
+        -- the actual rendered HTML a browser would show)."""
+        distinctive_value = "DRAFT-VALUE-MUST-NEVER-RENDER-8f31c2"
+        draft_claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": two_pathways["pathway_b"]["id"],
+                    "field": "main_stages",
+                    "value": distinctive_value,
+                    "source_id": synthetic_source,
+                    "verification_date": "2026-01-01",
+                    "verifier": "test-fixture",
+                    "status": "draft",
+                    "review_due_date": "2099-01-01",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get(
+                "/compare/view",
+                params={
+                    "pathway_id": [
+                        two_pathways["pathway_a"]["id"],
+                        two_pathways["pathway_b"]["id"],
+                    ]
+                },
+            )
+            assert response.status_code == 200
+            assert distinctive_value not in response.text
+        finally:
+            admin_client.table("claims").delete().eq("id", draft_claim["id"]).execute()
