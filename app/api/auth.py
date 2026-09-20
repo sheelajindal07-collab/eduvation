@@ -12,14 +12,20 @@ Each call gets a fresh client (app/db/client.py) — never shared, never
 cached, per the concurrency fix in docs/DECISIONS.md.
 
 **Guest -> account plan migration** (Lite Build Pack §6, docs/UI.md
-"Account creation migrates it"): there is no server-side guest session
-to migrate FROM — a guest's in-progress plan lives only in the client
-(docs/DECISIONS.md's guest-session design: nothing persisted server-side
-for an anonymous visitor). So "migration" here means sign-up optionally
-accepts the one plan the client already has in hand and saves it as the
-new account's first plan, in the same request — never a separate
-round-trip that could be dropped if the client navigates away right
-after signing up.
+"Account creation migrates it"): docs/UI.md's "Guest sessions" section
+specifies an anonymous SERVER session (random token, no personal
+fields, 7-day expiry, "never local storage for a plan"). Nothing here
+implements that yet — no session table, no token, no expiry. What
+exists instead is simpler: the client holds its own in-progress plan
+(however it chooses to -- this route makes no assumption) and hands it
+to sign-up as `pending_plan`, so "migration" means "accept the plan the
+caller already has in hand and save it as the new account's first
+plan," never a session lookup. This is a real, deliberate gap against
+the docs/UI.md spec, not a documentation slip — flagged here (and in
+STATUS.md) so whoever builds an actual guest-session mechanism doesn't
+assume this route already has one to migrate from, and so the "never
+local storage" requirement doesn't get silently violated by whatever
+the client ends up doing to hold that plan in the meantime.
 """
 
 from __future__ import annotations
