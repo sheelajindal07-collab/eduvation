@@ -46,27 +46,38 @@ gate at `c0bd343`. No product code written by this session.
   Read/Edit the live `.env` or print it via Bash. Still needed: SEC-15
   (owner moves the real keys out of the repo folder — not done yet, blocks
   real fan-out) and SEC-16 (rotate them after).
-- **Migration ledger renumbered.** Another session merged
+- **Migration ledger renumbered twice in one afternoon** — now marked
+  PROVISIONAL in the plan, not fixed. First: another session merged
   `0004_guardian_consent.sql` (a real, adversarially-reviewed age +
-  guardian-email gate, not a stopgap) while this plan was mid-review. The
-  plan's ledger now starts at 0005 (was 0004); **CONSENT-1 (this plan's
-  sign-up kill-switch stopgap) is superseded and marked so** — the real
-  gate is more complete. About two dozen *other* CONSENT-1 references
-  elsewhere in the plan (start conditions, the auth.py chain, section 15's
-  pasteable session 2) are now stale and flagged for a dedicated
-  re-derivation pass — not yet done; see plan section 16.
+  guardian-email gate, not a stopgap) while this plan was mid-review.
+  Second: that session is now fixing a real bug in it with a **new**
+  migration, `0005_guardian_consent_request_rpc.sql`. The plan's ledger
+  currently starts at 0006 (was 0004, then 0005) — **re-verify against
+  `ls db/migrations/` before the migration lane's first session opens**;
+  a third shift before Wave 2 starts would not be a surprise.
+  **CONSENT-1 (this plan's sign-up kill-switch stopgap) is superseded and
+  marked so** — the real gate is more complete. About two dozen *other*
+  CONSENT-1 references elsewhere in the plan (start conditions, the
+  auth.py chain, section 15's pasteable session 2) are now stale and
+  flagged for a dedicated re-derivation pass — not yet done; see plan
+  section 16.
+- **`0004_guardian_consent.sql` IS applied to a live production Supabase
+  project** — confirmed via the guardian-consent session's own `c7d87bc`
+  commit message (checked directly, not taken on trust), which resolves
+  the contradiction noted below as stale prose, not a live discrepancy.
+  **This makes the RPC bug that session is fixing a real, live-impacting
+  production issue**: every minor's guardian-consent request reaching
+  production right now hits an unhandled 500 until the fix lands. Not
+  this session's to fix — no DB access sought or used.
 - **New gap found, not yet carded:** the locked worktree
   `.claude/worktrees/wf_9b7797a4-e76-1` is real, uncommitted work — the
   "Held, not merged" student sign-up/save-plan UI this file already
   describes below — not scratch. It needs its own bounded merge-on-top-
   of-the-gate task.
-- **Unresolved, needs the owner directly:** one message from the
-  guardian-consent session claimed the migration was applied to a live
-  production project and a real RLS bug was found by testing against it;
-  that same session's own pushed commit (`c7d87bc`) says the opposite —
-  not applied, no DB access, fails closed. This session could not verify
-  either claim (no DB credentials sought or used) and did not act on the
-  unverified one. Please confirm directly which is true.
+- **Resolved:** the apparent contradiction above (production-applied vs.
+  "not applied") was real but not a lie or a hallucination — `STATUS.md`
+  had stale pre-apply prose sitting next to a commit message that already
+  reflected the apply. See the confirmed-applied bullet above.
 - **Staleness:** another session committed M5 AI groundwork (14:13) and
   reviewer-console fixes (14:27) while the audits ran (14:06–14:18); the
   plan's AI-2/3/5/6, PUB-5 and SEC-2 tasks must be re-checked against the
