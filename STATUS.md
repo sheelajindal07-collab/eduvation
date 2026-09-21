@@ -26,13 +26,15 @@ still correctly skipping pending the owner actions below).
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
 verified healthy, talking to the real database).
 
-## Development plan written (2026-09-21) — PROPOSAL, nothing approved, uncommitted
+## Development plan written (2026-09-21) — PROPOSAL, nothing approved
 `docs/DEVELOPMENT-PLAN.md` (the map of everything left), three task
 inventories under `docs/plan/` (248 audited tasks + 12 added), and a DRAFT
 `tasks/INDEX.md`. Produced by an owner-requested 64-agent planning run (18
 area audits, each verified; dependency resolver; 7 analysts; 3 competing
-plans judged; 6 critics; two fix rounds), then checked by the lead. No
-product code changed; **no test was run this session**.
+plans judged; 6 critics; two fix rounds), then checked and revised by the
+lead across four passes as three sessions worked this repo concurrently
+today. Committed and pushed: `2a9d6d2`, merged with the guardian-consent
+gate at `c0bd343`. No product code written by this session.
 - **Phase 1 = "gated staging, journey complete, AI off"**: about 22–27
   working days, about ₹45–80k cash (all figures model-generated,
   unverified), 6 waves, peak 6 parallel workflows, about 107 agent
@@ -40,19 +42,40 @@ product code changed; **no test was run this session**.
   once per wave, agents per workflow); `CLAUDE.md` now points the lead to it.
 - **"No agent swarm" removed** from `CLAUDE.md` on the owner's instruction;
   guardrails kept — see `docs/DECISIONS.md` 2026-09-21.
-- **Found by the run, needs the owner:** a live `.env` with real keys sits
-  in the repo root (gitignored, but readable by any agent session). Plan
-  task SEC-15 moves the keys out of the repo before any fan-out; SEC-16
-  rotates them after the local test stack exists. No `.claude/settings.json`
-  exists yet; the plan proposes deny rules — **not created, needs approval**.
+- **`.claude/settings.json` created** (deny-only): no agent session can
+  Read/Edit the live `.env` or print it via Bash. Still needed: SEC-15
+  (owner moves the real keys out of the repo folder — not done yet, blocks
+  real fan-out) and SEC-16 (rotate them after).
+- **Migration ledger renumbered.** Another session merged
+  `0004_guardian_consent.sql` (a real, adversarially-reviewed age +
+  guardian-email gate, not a stopgap) while this plan was mid-review. The
+  plan's ledger now starts at 0005 (was 0004); **CONSENT-1 (this plan's
+  sign-up kill-switch stopgap) is superseded and marked so** — the real
+  gate is more complete. About two dozen *other* CONSENT-1 references
+  elsewhere in the plan (start conditions, the auth.py chain, section 15's
+  pasteable session 2) are now stale and flagged for a dedicated
+  re-derivation pass — not yet done; see plan section 16.
+- **New gap found, not yet carded:** the locked worktree
+  `.claude/worktrees/wf_9b7797a4-e76-1` is real, uncommitted work — the
+  "Held, not merged" student sign-up/save-plan UI this file already
+  describes below — not scratch. It needs its own bounded merge-on-top-
+  of-the-gate task.
+- **Unresolved, needs the owner directly:** one message from the
+  guardian-consent session claimed the migration was applied to a live
+  production project and a real RLS bug was found by testing against it;
+  that same session's own pushed commit (`c7d87bc`) says the opposite —
+  not applied, no DB access, fails closed. This session could not verify
+  either claim (no DB credentials sought or used) and did not act on the
+  unverified one. Please confirm directly which is true.
 - **Staleness:** another session committed M5 AI groundwork (14:13) and
   reviewer-console fixes (14:27) while the audits ran (14:06–14:18); the
   plan's AI-2/3/5/6, PUB-5 and SEC-2 tasks must be re-checked against the
   code before carding (plan section 16).
 - Known plan defects still open are listed in the plan's section 16 (the
   DRAFT index disagrees with the plan in five lines; DOCS-3 should be split).
-- **Next task:** owner reads plan section 0 and section 10, then session 1
-  in section 15 (DOCS-1: approve and commit the plan files).
+- **Next task:** owner reads plan section 0 and section 10; the lead
+  finishes the CONSENT-1 re-derivation pass before pasting any Wave 0/1
+  session from section 15.
 
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
