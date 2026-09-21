@@ -23,6 +23,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # gitleaks-action scans a commit range (base^..head) on a push
+          # event; actions/checkout's default fetch-depth: 1 doesn't
+          # include the base commit, which fails as "unknown revision"
+          # rather than as a real secret finding. Full history avoids it.
+          fetch-depth: 0
       - name: Secret scan (gitleaks)
         uses: gitleaks/gitleaks-action@v2
         env:
