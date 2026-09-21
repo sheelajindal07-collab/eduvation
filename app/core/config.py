@@ -6,8 +6,32 @@ names). Nothing here holds a real secret — CLAUDE.md non-negotiable.
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _fail_closed_bool(value: object) -> bool:
+    """Parse an env-style boolean the safe way round (DEPLOY-18):
+    anything that isn't unambiguously a "true" token is treated as
+    False, including a missing var, an empty string, or a typo/garbled
+    value. A flag that fails to parse must never be silently read as
+    "enabled" — CLAUDE.md's fail-closed rule, applied to every boolean
+    flag this app has (SIGNUP_ENABLED, MAINTENANCE_MODE, AI_ENABLED,
+    HINDI_UI_ENABLED, MINOR_ACCOUNTS_ENABLED, the demo-mode guard).
+
+    Deliberately never raises: pydantic's own bool coercion rejects an
+    unparseable string outright (a `ValidationError` that would crash
+    `Settings()`/the whole app at boot for a mere typo in a kill
+    switch) — this trades that strictness for "always boots, always
+    into the safe state" instead, which is the behaviour DEPLOY-18 asks
+    for.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    text = str(value).strip().lower()
+    return text in {"1", "true", "yes", "on"}
 
 
 class Settings(BaseSettings):
@@ -74,6 +98,85 @@ class Settings(BaseSettings):
     smtp_username: str | None = Field(default=None)
     smtp_password: str | None = Field(default=None)
     smtp_from_address: str | None = Field(default=None)
+
+    # --- Feature flags / kill switches (DEPLOY-18) ---
+    # docs/CONTRACTS.md "Settled — the flag list, and only this list":
+    # SIGNUP_ENABLED, MAINTENANCE_MODE, AI_ENABLED, HINDI_UI_ENABLED,
+    # ALLOWED_HOSTS, MINOR_ACCOUNTS_ENABLED, plus the demo-mode guard.
+    # `SIGNUPS_ENABLED` (with an S) is a stale name from an earlier plan
+    # draft and must never be reintroduced anywhere in this codebase.
+    # Every boolean flag here defaults to its closed/disabled state and
+    # is parsed by `_fail_closed_bool` below, so a missing var, an empty
+    # string, or a typo can never be silently read as "enabled".
+    signup_enabled: bool = Field(
+        default=False,
+        description="Public sign-up. Off by default outside an explicit opt-in.",
+    )
+    maintenance_mode: bool = Field(
+        default=False,
+        description="Kill switch: when true, every route except /healthz "
+        "should degrade to a paused response. Off by default so a missing "
+        "var never takes the whole app down by accident.",
+    )
+    ai_enabled: bool = Field(
+        default=False,
+        description="Operator toggle for AI-backed features, independent of "
+        "`ai_configured` (whether a provider key is even set). Off by default.",
+    )
+    hindi_ui_enabled: bool = Field(default=False, description="Hindi UI/copy variant.")
+    minor_accounts_enabled: bool = Field(
+        default=False,
+        description="CLAUDE.md non-negotiable: real minor accounts stay "
+        "disabled until the consent/safeguarding workflow is reviewed by a "
+        "person. The pilot's first phase is adults-only.",
+    )
+    demo_mode: bool = Field(
+        default=False,
+        description="Reserved guard for a supervised demo/showcase run "
+        "(e.g. the teacher demo, docs/DECISIONS.md). DEPLOY-18 only adds "
+        "the flag with a fail-closed default; no behaviour is gated on it "
+        "yet — a later task defines what, if anything, changes when it's on.",
+    )
+    # Raw comma-separated value from the environment. Use
+    # `allowed_hosts_list` below, never this field directly — it applies
+    # the fail-closed environment-aware fallback (see that property).
+    allowed_hosts: str = Field(
+        default="",
+        description="Comma-separated hostnames for TrustedHostMiddleware. "
+        "Empty outside development means 'nothing is a valid Host header "
+        "yet' (fail closed), never a wildcard.",
+    )
+
+    @field_validator(
+        "signup_enabled",
+        "maintenance_mode",
+        "ai_enabled",
+        "hindi_ui_enabled",
+        "minor_accounts_enabled",
+        "demo_mode",
+        mode="before",
+    )
+    @classmethod
+    def _parse_flags_fail_closed(cls, value: object) -> bool:
+        return _fail_closed_bool(value)
+
+    @property
+    def allowed_hosts_list(self) -> list[str]:
+        """`TrustedHostMiddleware(allowed_hosts=...)`'s actual input.
+
+        A configured, non-empty `ALLOWED_HOSTS` always wins. Left unset:
+        development gets a permissive `["*"]` (local/testing convenience,
+        never a production concern) — anywhere else, the fail-closed
+        state is an empty list, i.e. no Host header is valid until this
+        is actually configured, never "allow anything" (DEPLOY-18: the
+        safe state, never the permissive one).
+        """
+        hosts = [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
+        if hosts:
+            return hosts
+        if self.app_env == "development":
+            return ["*"]
+        return []
 
     @property
     def db_configured(self) -> bool:

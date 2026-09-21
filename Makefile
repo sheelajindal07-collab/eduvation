@@ -1,32 +1,9 @@
 # BCION Lite — verified commands (docs/ARCHITECTURE.md, CLAUDE.md)
 # Substitutions per Lite Build Pack §10: pnpm scripts -> make targets.
-
-.PHONY: dev css lint typecheck test-unit test-e2e test-db build install
-
-install:
-	pip install -e ".[dev]"
-	npm install
-
-dev:
-	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-css:
-	npx tailwindcss -i ./app/web/styles/input.css -o ./app/static/css/app.css --minify
-
-lint:
-	ruff check app tests
-
-typecheck:
-	mypy app
-
-test-unit:
-	pytest tests/unit -v
-
-test-e2e:
-	pytest tests/e2e -v
-
-test-db:
-	pytest tests/db -v
-
-build:
-	@echo "Docker build not wired yet — no Dockerfile until hosting is provisioned (docs/DECISIONS.md)."
+#
+# DEPLOY-18: this file is deliberately just an include shell. Every
+# actual target lives in mk/*.mk, one file per concern, so a future task
+# adds or extends a target there instead of re-editing this shared file
+# (docs/DEVELOPMENT-PLAN.md's never-parallel groups list the root
+# Makefile itself as exactly that kind of shared merge point).
+include mk/*.mk
