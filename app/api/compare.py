@@ -27,7 +27,7 @@ from app.planning.comparison import (
     assemble_cost_summary,
     field_value_for,
 )
-from app.rules.cost import CostSummary
+from app.rules.cost import CostSummary, Money, NetToArrangeUnavailableReason
 
 router = APIRouter(tags=["compare"])
 
@@ -72,6 +72,17 @@ class FieldValueOut(BaseModel):
     source_authority: str | None = None
     """Additive field (ux-qa-reviewer finding, 2026-09-19) — existing
     JSON consumers unaffected, a new optional key."""
+    currency: str | None = None
+    """SCOPE-4 / docs/CONTRACTS.md "Money and currency": the ISO 4217
+    currency this value is denominated in, for a money field
+    (`verified_charges`, the additional-expenses estimate, potential
+    assistance). `None` on every non-money field — they have no currency
+    and never did — and never `None` on a money field that HAS a value:
+    `app/planning/comparison.py`'s `_money_field_value` renders a money
+    claim with no stated currency as `not_available` instead, so a
+    consumer never has to guess whether a bare number is rupees.
+
+    Additive with a None default — existing JSON consumers unaffected."""
     is_sample: bool = False
     """DATA-12 / docs/CONTRACTS.md "Settled — `is_sample`": this value came
     from a clearly-labelled SAMPLE claim, not a verified one, and must
@@ -99,25 +110,56 @@ class FieldValueOut(BaseModel):
             source_url=fv.source_url,
             verification_date=fv.verification_date,
             source_authority=fv.source_authority,
+            currency=fv.currency,
             is_sample=is_sample,
         )
+
+
+class MoneyOut(BaseModel):
+    """`app/rules/cost.py`'s `Money` on the wire (SCOPE-4): a whole-unit
+    integer amount and the ISO 4217 code it is denominated in, together,
+    always. An amount without its currency is the display bug this whole
+    task exists to prevent — a foreign fee silently read as rupees — so
+    the two never travel as separate optional keys."""
+
+    amount: int
+    currency: str
+
+    @classmethod
+    def from_money(cls, money: Money) -> MoneyOut:
+        return cls(amount=money.amount, currency=money.currency)
 
 
 class CostBreakdownOut(BaseModel):
     verified_charges: FieldValueOut
     estimated_additional_expenses: FieldValueOut
     potential_assistance_not_yet_awarded: FieldValueOut
-    net_to_arrange: float | None = None
+    net_to_arrange: MoneyOut | None = None
     """What the student needs to actually arrange: verified charges +
     estimated extras - CONFIRMED assistance only (app/rules/cost.py).
-    `None` when verified_charges itself is not yet available -- never a
-    confident-looking figure that's actually missing its main input.
+    `None` when the total cannot be computed -- never a confident-looking
+    figure that's actually missing an input, and never a bare number
+    whose currency the caller has to assume (SCOPE-4 changed this from a
+    plain float to `{"amount": ..., "currency": ...}`; see `MoneyOut`).
+    When it is `None`, `net_to_arrange_unavailable_reason` below says
+    why.
+
     There is no confirmed_assistance source in this slice yet (that is
     student-specific award data, out of scope before M3's sign-in and
     consent work), so today this is verified + estimate with nothing
     subtracted; potential_assistance_not_yet_awarded, shown above, is
     never part of this number (Lite Build Pack §6: "an unawarded
     scholarship is never subtracted")."""
+    net_to_arrange_unavailable_reason: NetToArrangeUnavailableReason | None = None
+    """Why there is no total, when there is none: `"missing"` (a charge
+    is not published) or `"mixed_currencies"` (every charge is known but
+    they are not in one currency, and Lite has no FX rate). `None`
+    exactly when `net_to_arrange` is present.
+
+    docs/CONTRACTS.md "Money and currency" requires the mixed-currency
+    case to be *shown*, not silently dropped: the two states need
+    different sentences on screen, and a client that got only `null`
+    could not tell them apart."""
 
 
 class PathwayComparisonOut(BaseModel):
@@ -265,7 +307,12 @@ def assemble_comparisons(
             field: field_value_for(field, claims_by_field, sources_by_id, as_of=as_of)
             for field in COMPARISON_FIELDS
         }
-        cost_breakdown = assemble_cost_breakdown(claims_by_field, sources_by_id, as_of=as_of)
+        cost_breakdown = assemble_cost_breakdown(
+            claims_by_field,
+            sources_by_id,
+            as_of=as_of,
+            estimated_additional_expenses_override=estimated_additional_expenses_override,
+        )
         cost_summary = assemble_cost_summary(
             claims_by_field,
             sources_by_id,
@@ -354,16 +401,19 @@ def compare_pathways(
                         c.cost_breakdown.potential_assistance_not_yet_awarded,
                         is_sample="potential_assistance_not_yet_awarded" in c.sample_fields,
                     ),
-                    # RULES-10 made CostSummary.net_to_arrange a Money
-                    # value (currency-mismatch safety); this response
-                    # shape is still a bare rupee figure until SCOPE-4
-                    # does the real currency-aware display work, so only
-                    # the amount is unwrapped here -- a currency-mismatch
-                    # None (mixed_currencies) still comes through as None.
+                    # SCOPE-4: amount AND currency, together, or nothing
+                    # plus a reason -- the two ways a total can be absent
+                    # ("we don't know a charge" / "they aren't in one
+                    # currency") are different sentences to a student, so
+                    # the API distinguishes them instead of sending a
+                    # bare null the client has to interpret.
                     net_to_arrange=(
-                        c.cost_summary.net_to_arrange.amount
+                        MoneyOut.from_money(c.cost_summary.net_to_arrange)
                         if c.cost_summary.net_to_arrange is not None
                         else None
+                    ),
+                    net_to_arrange_unavailable_reason=(
+                        c.cost_summary.net_to_arrange_unavailable_reason
                     ),
                 ),
             )

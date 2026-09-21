@@ -72,7 +72,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from app.data.models import TrustLabel
 
@@ -84,6 +84,20 @@ if TYPE_CHECKING:
     # `from __future__ import annotations` means annotations are never
     # evaluated at runtime, so this guard is enough.
     from app.planning.comparison import FieldValue
+
+NetToArrangeUnavailableReason = Literal["missing", "mixed_currencies"]
+"""SCOPE-4 / docs/CONTRACTS.md "Money and currency": WHY a total is
+`None`, as one string a template and a JSON consumer can both branch on.
+
+- `"missing"` — at least one charge is not published (or is published
+  without a currency, which renders the same way): we do not know the
+  whole cost.
+- `"mixed_currencies"` — every amount IS known, they simply do not share
+  one currency and Lite has no FX rate to combine them with.
+
+Two different sentences to a student ("this isn't published yet" vs
+"these are quoted in different currencies"), so the reason has to travel
+with the `None`, not be re-guessed by each display layer."""
 
 DEFAULT_CURRENCY = "INR"
 """docs/CONTRACTS.md "Money and currency": `Money`'s default currency —
@@ -316,16 +330,48 @@ class CostSummary:
         expenses/confirmed total don't share the verified charges'
         currency — an unknown or unsummable total cost must never be
         papered over with a confident-looking net figure.
+
+        With NO confirmed assistance at all there is no subtraction term
+        (SCOPE-4). `confirmed_assistance_total` is `Money(0)` for an
+        empty tuple — a well-defined zero, but one carrying the DEFAULT
+        currency, and feeding that zero into `sum_money` alongside, say,
+        GBP charges made every all-GBP pathway's total `None` as if its
+        currencies were mixed. "Nothing was awarded" must not behave
+        like "₹0 was awarded": a zero in a currency nobody chose is not
+        a real term of this sum.
         """
         if self.verified_charges.total is None:
             return None
-        confirmed_total = self.confirmed_assistance_total
-        if confirmed_total is None:
+        terms = [self.verified_charges.total, self.effective_additional_expenses]
+        if self.confirmed_assistance:
+            confirmed_total = self.confirmed_assistance_total
+            if confirmed_total is None:
+                return None
+            terms.append(
+                Money(amount=-confirmed_total.amount, currency=confirmed_total.currency)
+            )
+        return sum_money(terms)
+
+    @property
+    def net_to_arrange_unavailable_reason(self) -> NetToArrangeUnavailableReason | None:
+        """Why `net_to_arrange` is `None` — `None` itself when there IS a
+        total (SCOPE-4, docs/CONTRACTS.md: a mixed-currency total is
+        "shown to the student", so the reason has to be readable, not
+        inferred from the absence of a number).
+
+        `"missing"` only when a charge is genuinely unknown. Anything
+        else that blocks the sum while every charge IS known is a
+        currency mismatch — between components
+        (`verified_charges.mixed_currencies`), or between the charges
+        and the additional-expenses/confirmed-assistance terms — so it
+        reads as `"mixed_currencies"` rather than being conflated with
+        an unpublished figure.
+        """
+        if self.net_to_arrange is not None:
             return None
-        negated_confirmed = Money(amount=-confirmed_total.amount, currency=confirmed_total.currency)
-        return sum_money(
-            [self.verified_charges.total, self.effective_additional_expenses, negated_confirmed]
-        )
+        if self.verified_charges.total is None and not self.verified_charges.mixed_currencies:
+            return "missing"
+        return "mixed_currencies"
 
 
 def compute_cost_summary(

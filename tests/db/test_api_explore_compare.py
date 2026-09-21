@@ -204,6 +204,12 @@ class TestComparePathways:
                     "entity_id": other_pathway["id"],
                     "field": "verified_charges",
                     "value": 75000,
+                    # SCOPE-4: an ordinary Indian fee states its currency.
+                    # A money claim that does NOT is now not_available on
+                    # the display path too, not just in the arithmetic --
+                    # see the null-currency test further down, which is
+                    # where that case belongs.
+                    "currency": "INR",
                     "source_id": official_source["id"],
                     "verification_date": "2026-09-01",
                     "verifier": run_name("test-fixture-reviewer"),
@@ -231,6 +237,7 @@ class TestComparePathways:
             assert cost["value"] == 75000
             assert cost["label"] == "checked_against_official_source"
             assert cost["source_url"] == "https://example.invalid/official-test-source"
+            assert cost["currency"] == "INR"
         finally:
             admin_client.table("claims").delete().eq("id", published_claim["id"]).execute()
             admin_client.table("pathways").delete().eq("id", other_pathway["id"]).execute()
@@ -305,7 +312,10 @@ class TestComparePathways:
                 p for p in no_override.json()["pathways"] if p["pathway_id"] == other_pathway["id"]
             )
             # No hint, no override -> assume zero extra, not unknown.
-            assert target["cost"]["net_to_arrange"] == 100000
+            # SCOPE-4: the total is an amount AND its currency, never a
+            # bare number a client has to assume is rupees.
+            assert target["cost"]["net_to_arrange"] == {"amount": 100000, "currency": "INR"}
+            assert target["cost"]["net_to_arrange_unavailable_reason"] is None
 
             with_override = client.get(
                 "/compare", params={**params, "estimated_additional_expenses": 25000}
@@ -316,7 +326,15 @@ class TestComparePathways:
                 for p in with_override.json()["pathways"]
                 if p["pathway_id"] == other_pathway["id"]
             )
-            assert target["cost"]["net_to_arrange"] == 125000
+            assert target["cost"]["net_to_arrange"] == {"amount": 125000, "currency": "INR"}
+            # SCOPE-4: the displayed assumption line shows the figure the
+            # total was actually computed from -- the student's own -- with
+            # the currency it was treated as, not the 0 it used to show
+            # beside a total that had clearly used 25,000.
+            estimate = target["cost"]["estimated_additional_expenses"]
+            assert estimate["value"] == 25000
+            assert estimate["currency"] == "INR"
+            assert estimate["label"] == "estimate"
 
             # The other pathway in the same request has no published
             # verified_charges claim at all -- its net must stay unknown,
@@ -327,6 +345,7 @@ class TestComparePathways:
                 if p["pathway_id"] == seeded_pathway["pathway"]["id"]
             )
             assert unpublished["cost"]["net_to_arrange"] is None
+            assert unpublished["cost"]["net_to_arrange_unavailable_reason"] == "missing"
         finally:
             admin_client.table("claims").delete().eq("id", published_claim["id"]).execute()
             admin_client.table("pathways").delete().eq("id", other_pathway["id"]).execute()
@@ -395,19 +414,193 @@ class TestComparePathways:
                 p for p in response.json()["pathways"] if p["pathway_id"] == other_pathway["id"]
             )
             assert target["cost"]["net_to_arrange"] is None
-            # Known, disclosed inconsistency (not this test's bug):
-            # `cost.verified_charges` is built by the still-untouched
-            # `assemble_cost_breakdown` path (SCOPE-4's job, per
-            # docs/CONTRACTS.md), so it still shows the claim's normal
-            # trust label here even though the computed net total above
-            # is correctly unavailable -- a student would see a
-            # confidently-labelled fee figure next to a total that
-            # mysteriously won't compute. Pinning the CURRENT behaviour
-            # so SCOPE-4 has a failing test to turn green when it unifies
-            # the two paths, not silently reproducing a stale assumption.
-            assert target["cost"]["verified_charges"]["label"] == "checked_against_official_source"
+            # A null currency is an amount we cannot denominate, not a
+            # currency clash, so the reason is "missing":
+            assert target["cost"]["net_to_arrange_unavailable_reason"] == "missing"
+            # SCOPE-4 closed the inconsistency this test used to pin: the
+            # displayed fee is built by `assemble_cost_breakdown`, which
+            # now applies the SAME currency rule the arithmetic has since
+            # RULES-10 (docs/CONTRACTS.md: "a money claim with a null
+            # currency renders not_available"). Before this, the number
+            # showed under a confident "Checked against official source"
+            # badge right beside a total that said "not available" -- a
+            # student would read the fee as trustworthy and the site as
+            # broken. Both halves now say the same thing.
+            cost = target["cost"]["verified_charges"]
+            assert cost["label"] == "not_available"
+            assert cost["value"] is None
+            assert cost["currency"] is None
         finally:
             admin_client.table("claims").delete().eq("id", published_claim["id"]).execute()
+            admin_client.table("pathways").delete().eq("id", other_pathway["id"]).execute()
+            admin_client.table("sources").delete().eq("id", official_source["id"]).execute()
+
+    def test_a_gbp_only_pathway_keeps_its_own_currency_end_to_end(
+        self, admin_client: Client, seeded_pathway: dict[str, Any]
+    ) -> None:
+        """SCOPE-4, live: a pathway whose fees are published in pounds
+        must come back labelled GBP -- amount and currency together --
+        and must still have an ordinary, computable total. A foreign
+        amount silently shown as rupees is the single riskiest display
+        bug on this screen."""
+        official_source = (
+            admin_client.table("sources")
+            .insert(
+                {
+                    "authority_name": run_name("API TEST OFFICIAL SOURCE (GBP)"),
+                    "official_url": "https://example.invalid/official-test-source-gbp",
+                    "source_type": "official",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        other_pathway = (
+            admin_client.table("pathways")
+            .insert(
+                {
+                    "career_id": seeded_pathway["career"]["id"],
+                    "name": run_name("GBP API test pathway (SYNTHETIC)"),
+                    "description": "Seeded by tests/db/test_api_explore_compare.py",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        published_claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": other_pathway["id"],
+                    "field": "verified_charges",
+                    "value": 9500,
+                    "currency": "GBP",
+                    "jurisdiction": "GB",
+                    "source_id": official_source["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": run_name("test-fixture-reviewer"),
+                    "status": "published",
+                    "review_due_date": "2099-01-01",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get(
+                "/compare",
+                params={"pathway_id": [seeded_pathway["pathway"]["id"], other_pathway["id"]]},
+            )
+            assert response.status_code == 200
+            target = next(
+                p for p in response.json()["pathways"] if p["pathway_id"] == other_pathway["id"]
+            )
+            cost = target["cost"]
+            assert cost["verified_charges"]["value"] == 9500
+            assert cost["verified_charges"]["currency"] == "GBP"
+            assert cost["verified_charges"]["label"] == "checked_against_official_source"
+            # The stated assumption has no claim of its own, so it inherits
+            # the pathway's currency rather than defaulting to rupees:
+            assert cost["estimated_additional_expenses"]["currency"] == "GBP"
+            # ...and an all-GBP pathway has a real total, in GBP.
+            assert cost["net_to_arrange"] == {"amount": 9500, "currency": "GBP"}
+            assert cost["net_to_arrange_unavailable_reason"] is None
+            # Nothing anywhere in this pathway's cost block claims rupees:
+            assert "INR" not in str(cost)
+        finally:
+            admin_client.table("claims").delete().eq("id", published_claim["id"]).execute()
+            admin_client.table("pathways").delete().eq("id", other_pathway["id"]).execute()
+            admin_client.table("sources").delete().eq("id", official_source["id"]).execute()
+
+    def test_one_inr_and_one_gbp_fee_component_report_mixed_currencies_not_missing(
+        self, admin_client: Client, seeded_pathway: dict[str, Any]
+    ) -> None:
+        """SCOPE-4, live: two itemised fee components in different
+        currencies give NO total (docs/CONTRACTS.md: no FX rate exists
+        anywhere in Lite) -- with a reason that says so, distinguishable
+        from "a charge isn't published yet". Both components stay visible
+        with their own currencies; only the sum is withheld."""
+        official_source = (
+            admin_client.table("sources")
+            .insert(
+                {
+                    "authority_name": run_name("API TEST OFFICIAL SOURCE (mixed)"),
+                    "official_url": "https://example.invalid/official-test-source-mixed",
+                    "source_type": "official",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        other_pathway = (
+            admin_client.table("pathways")
+            .insert(
+                {
+                    "career_id": seeded_pathway["career"]["id"],
+                    "name": run_name("mixed-currency API test pathway (SYNTHETIC)"),
+                    "description": "Seeded by tests/db/test_api_explore_compare.py",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        claim_rows = (
+            admin_client.table("claims")
+            .insert(
+                [
+                    {
+                        "entity_type": "Pathway",
+                        "entity_id": other_pathway["id"],
+                        "field": "fee_component:tuition",
+                        "value": 9500,
+                        "currency": "GBP",
+                        "source_id": official_source["id"],
+                        "verification_date": "2026-09-01",
+                        "verifier": run_name("test-fixture-reviewer"),
+                        "status": "published",
+                        "review_due_date": "2099-01-01",
+                    },
+                    {
+                        "entity_type": "Pathway",
+                        "entity_id": other_pathway["id"],
+                        "field": "fee_component:application_fee",
+                        "value": 5000,
+                        "currency": "INR",
+                        "source_id": official_source["id"],
+                        "verification_date": "2026-09-01",
+                        "verifier": run_name("test-fixture-reviewer"),
+                        "status": "published",
+                        "review_due_date": "2099-01-01",
+                    },
+                ]
+            )
+            .execute()
+            .data
+        )
+        try:
+            response = client.get(
+                "/compare",
+                params={"pathway_id": [seeded_pathway["pathway"]["id"], other_pathway["id"]]},
+            )
+            assert response.status_code == 200
+            target = next(
+                p for p in response.json()["pathways"] if p["pathway_id"] == other_pathway["id"]
+            )
+            cost = target["cost"]
+            assert cost["net_to_arrange"] is None
+            assert cost["net_to_arrange_unavailable_reason"] == "mixed_currencies"
+            # Distinguishable from the missing case -- the OTHER pathway in
+            # this same response has nothing published at all:
+            unpublished = next(
+                p
+                for p in response.json()["pathways"]
+                if p["pathway_id"] == seeded_pathway["pathway"]["id"]
+            )
+            assert unpublished["cost"]["net_to_arrange_unavailable_reason"] == "missing"
+        finally:
+            for row in claim_rows:
+                admin_client.table("claims").delete().eq("id", row["id"]).execute()
             admin_client.table("pathways").delete().eq("id", other_pathway["id"]).execute()
             admin_client.table("sources").delete().eq("id", official_source["id"]).execute()
 

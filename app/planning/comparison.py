@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 
 from app.data.models import Claim, ClaimStatus, Source, SourceType, TrustLabel
 from app.rules.cost import (
+    DEFAULT_CURRENCY,
     AssistanceItem,
     CostSummary,
     FeeComponent,
@@ -177,6 +178,91 @@ def field_value_for(
     )
 
 
+def _money_from_field_value(fv: FieldValue) -> Money | None:
+    """Build a `Money` from one claim-backed `FieldValue`, applying
+    docs/CONTRACTS.md's "Money and currency" rule that a money claim
+    with a null currency renders not_available -- never silently
+    assumed to be INR, which would invent a fact about a real fee
+    (`app/data/models.py`'s `Claim.currency` docstring). A claim already
+    `not_available` (unpublished, stale-and-sourceless, synthetic, ...)
+    has `fv.value is None` by the time it reaches here, so that case
+    falls out of the numeric check below without a separate label test.
+
+    `None` when there is no usable numeric value or no currency -- each
+    caller below decides what "no known amount" means for its own
+    output: `Money(amount=0)` for an estimate with no hint at all,
+    an omitted `AssistanceItem` for potential assistance that should
+    simply not exist.
+    """
+    if (
+        isinstance(fv.value, int | float)
+        and not isinstance(fv.value, bool)
+        and fv.currency is not None
+    ):
+        return Money(amount=to_whole_rupees(fv.value), currency=fv.currency)
+    return None
+
+
+def _money_field_value(
+    field: str,
+    claims_by_field: dict[str, Claim],
+    sources_by_id: dict[str, Source],
+    *,
+    as_of: date,
+) -> FieldValue:
+    """`field_value_for`, plus docs/CONTRACTS.md's currency rule for a
+    field that holds MONEY: "a money claim with a null currency renders
+    `not_available`".
+
+    Without this, a published fee claim whose `currency` column was
+    never filled in (the state of every claim written before
+    db/migrations/0008_jurisdiction_currency.sql) rendered its number
+    under a confident "Checked against official source" badge while the
+    arithmetic layer -- which has applied this rule since RULES-10 --
+    correctly refused to use it, so the computed total said "not
+    available" right beside it (SCOPE-4; pinned until now by
+    tests/db/test_api_explore_compare.py's null-currency test). A
+    student cannot read that; it looks like the site is broken, or worse,
+    like the fee is trustworthy and the total is not.
+
+    Degrades to exactly the shape `field_value_for` returns for a
+    missing claim -- no value, no evidence line -- because "we cannot
+    say what this amount is" is the same answer either way, and showing
+    an official link beside a withheld number would imply the number is
+    published and merely hidden.
+    """
+    fv = field_value_for(field, claims_by_field, sources_by_id, as_of=as_of)
+    if fv.label == TrustLabel.not_available or _money_from_field_value(fv) is not None:
+        return fv
+    if isinstance(fv.value, int | float) and not isinstance(fv.value, bool):
+        return FieldValue(value=None, label=TrustLabel.not_available)
+    # A non-numeric value on a money field (a range string, a structured
+    # claim) is not this function's business -- it carries no currency to
+    # check and is left exactly as `field_value_for` built it.
+    return fv
+
+
+def _charges_currency(components: list[FeeComponent]) -> str | None:
+    """The one currency this pathway's verified charges are published
+    in, or `None` when that is not a single known answer (no usable
+    component, or components in more than one currency).
+
+    SCOPE-4: an amount with no claim of its own -- a stated assumption,
+    a student's typed-in override -- still has to be labelled with SOME
+    currency before it can be shown or added, and the only non-inventing
+    answer available is "the same currency this pathway's fees are
+    published in". `None` here means the caller falls back to
+    `DEFAULT_CURRENCY`, which is what an India-first pilot with no
+    currency-selection UI means by "unspecified" (docs/CONTRACTS.md).
+    """
+    currencies = {
+        money.currency
+        for money in (_money_from_field_value(c.field_value) for c in components)
+        if money is not None
+    }
+    return currencies.pop() if len(currencies) == 1 else None
+
+
 @dataclass(frozen=True)
 class ProgrammeCostBreakdown:
     """Three separate amounts — NEVER merged into one figure (docs/UI.md
@@ -192,39 +278,74 @@ def _estimated_additional_expenses_hint(
     sources_by_id: dict[str, Source],
     *,
     as_of: date,
-) -> int | None:
-    """The numeric value of the "estimated_additional_expenses_hint"
-    claim, run through the same field_value_for() published/synthetic/
-    freshness checks every other field gets — not a raw dict lookup.
-    A hint claim still stuck in draft, or backed by a synthetic source,
-    must never leak its value into a real cost figure just because this
-    field is presentation-labelled TrustLabel.estimate downstream; that
-    would let an unapproved number reach a published result, which
-    CLAUDE.md's maker-checker rule forbids for every field, not just the
-    ones that read as "facts". Returns None when there is no usable
-    hint (no claim, unpublished, or synthetic) — the caller decides what
-    "no hint" means for its own output.
+) -> Money | None:
+    """The "estimated_additional_expenses_hint" claim as `Money`, run
+    through the same field_value_for() published/synthetic/freshness
+    checks every other field gets — not a raw dict lookup. A hint claim
+    still stuck in draft, or backed by a synthetic source, must never
+    leak its value into a real cost figure just because this field is
+    presentation-labelled TrustLabel.estimate downstream; that would let
+    an unapproved number reach a published result, which CLAUDE.md's
+    maker-checker rule forbids for every field, not just the ones that
+    read as "facts". Returns None when there is no usable hint (no
+    claim, unpublished, synthetic, or — SCOPE-4 — published with no
+    currency) — the caller decides what "no hint" means for its own
+    output.
 
-    Rounded to whole rupees (RULES-10: `app/rules/cost.py`'s
-    `to_whole_rupees`) — a claim occasionally quotes a paise-level
-    fraction, and every amount downstream of this function is typed as
-    a whole-rupee `int`.
+    Rounded to whole rupees by `Money` itself (RULES-10:
+    `app/rules/cost.py`'s `to_whole_rupees`) — a claim occasionally
+    quotes a paise-level fraction, and every amount downstream is typed
+    as a whole-unit `int`.
 
-    Deliberately NOT currency-gated like `_money_from_field_value`
-    below: this helper only ever feeds `assemble_cost_breakdown`'s plain
-    numeric `FieldValue` display line, which `app/api/compare.py` and
-    `compare.html` still consume as a bare number (SCOPE-4's job to make
-    currency-aware, not this task's — see docs/CONTRACTS.md "Money and
-    currency"). `assemble_cost_summary`'s own `Money`-typed estimate is
-    built separately, straight from the claim, via
-    `_money_from_field_value`.
+    Currency-gated via `_money_from_field_value` since SCOPE-4: this
+    helper feeds BOTH `assemble_cost_breakdown`'s displayed line and
+    `assemble_cost_summary`'s arithmetic, so the number on screen and
+    the number in the total can no longer disagree about whether a
+    hint counts (it used to be deliberately ungated, which showed a
+    null-currency hint's figure on screen while the total ignored it).
     """
     hint = field_value_for(
         "estimated_additional_expenses_hint", claims_by_field, sources_by_id, as_of=as_of
     )
-    if isinstance(hint.value, int | float) and not isinstance(hint.value, bool):
-        return to_whole_rupees(hint.value)
-    return None
+    return _money_from_field_value(hint)
+
+
+def _additional_expenses(
+    claims_by_field: dict[str, Claim],
+    sources_by_id: dict[str, Source],
+    *,
+    as_of: date,
+    override: float | None,
+    charges_currency: str | None,
+) -> tuple[Money, Money | None]:
+    """`(computed estimate, this request's override or None)` — the two
+    additional-expenses figures, derived ONCE for both the displayed
+    line (`assemble_cost_breakdown`) and the arithmetic
+    (`assemble_cost_summary`). Deriving them twice is how a screen ends
+    up showing one assumption beside a total computed from another.
+
+    The estimate is the published hint, or zero ("assume nothing
+    extra"). SCOPE-4 — currency: the override and the zero have no claim
+    of their own, so they inherit `charges_currency` (falling back to
+    `DEFAULT_CURRENCY`). Before this, both were hard-coded INR, which
+    silently turned every non-INR pathway's total into "mixed
+    currencies" — a GBP fee plus a ₹0 assumption cannot be added, so a
+    perfectly ordinary all-GBP pathway showed no total at all and blamed
+    a currency mix the student never created. A published hint keeps its
+    OWN currency (a claim states its own facts); if that genuinely
+    differs from the charges', `net_to_arrange` still nulls out, which
+    is now a real mismatch rather than an artefact of the default.
+    """
+    hint = _estimated_additional_expenses_hint(claims_by_field, sources_by_id, as_of=as_of)
+    estimate = (
+        hint if hint is not None else Money(amount=0, currency=charges_currency or DEFAULT_CURRENCY)
+    )
+    override_money = (
+        Money(amount=to_whole_rupees(override), currency=charges_currency or DEFAULT_CURRENCY)
+        if override is not None
+        else None
+    )
+    return estimate, override_money
 
 
 def assemble_cost_breakdown(
@@ -232,31 +353,57 @@ def assemble_cost_breakdown(
     sources_by_id: dict[str, Source],
     *,
     as_of: date,
+    estimated_additional_expenses_override: float | None = None,
 ) -> ProgrammeCostBreakdown:
     """Assemble the three-amount cost display for one programme/pathway.
 
     Expects (when present) claims on the fields "verified_charges" and
     "potential_assistance_not_yet_awarded" — each independently
-    provenanced. "estimated_additional_expenses" is always an estimate:
-    it is computed elsewhere from stated assumptions, never backed by a
-    single Claim, so it is assembled directly as a TrustLabel.estimate
-    FieldValue rather than looked up.
+    provenanced, and each read through `_money_field_value`, so a money
+    claim with no stated currency shows as not_available instead of as a
+    confidently-badged number the total refuses to use (SCOPE-4).
+    "estimated_additional_expenses" is always an estimate: it is computed
+    from stated assumptions, never backed by a single Claim, so it is
+    assembled directly as a TrustLabel.estimate FieldValue rather than
+    looked up.
 
     No usable hint claim -> 0 ("assume nothing extra"), the same default
     assemble_cost_summary uses for net_to_arrange below — so the line
     item shown here always matches what the total was actually computed
     from, instead of showing a blank next to a total that silently
-    assumed zero.
+    assumed zero. `estimated_additional_expenses_override` is the same
+    per-request assumption `assemble_cost_summary` takes, accepted here
+    for the same reason: with an override in play the total is computed
+    from the student's figure, so the line above it must show the
+    student's figure too.
+
+    Every money line carries the currency it is denominated in
+    (`FieldValue.currency`), so the display layer can format it with
+    `format_money` and never has to assume rupees.
     """
-    hint_value = _estimated_additional_expenses_hint(claims_by_field, sources_by_id, as_of=as_of)
-    estimate_value = hint_value if hint_value is not None else 0
+    charges_currency = _charges_currency(
+        _fee_components(claims_by_field, sources_by_id, as_of=as_of)
+    )
+    computed_estimate, override = _additional_expenses(
+        claims_by_field,
+        sources_by_id,
+        as_of=as_of,
+        override=estimated_additional_expenses_override,
+        charges_currency=charges_currency,
+    )
+    # Exactly what `CostSummary.effective_additional_expenses` picks for
+    # the arithmetic (app/rules/cost.py) -- the displayed line and the
+    # total are the same figure by construction, not by coincidence.
+    estimate = override if override is not None else computed_estimate
 
     return ProgrammeCostBreakdown(
-        verified_charges=field_value_for(
+        verified_charges=_money_field_value(
             "verified_charges", claims_by_field, sources_by_id, as_of=as_of
         ),
-        estimated_additional_expenses=FieldValue(value=estimate_value, label=TrustLabel.estimate),
-        potential_assistance_not_yet_awarded=field_value_for(
+        estimated_additional_expenses=FieldValue(
+            value=estimate.amount, label=TrustLabel.estimate, currency=estimate.currency
+        ),
+        potential_assistance_not_yet_awarded=_money_field_value(
             "potential_assistance_not_yet_awarded", claims_by_field, sources_by_id, as_of=as_of
         ),
     )
@@ -318,31 +465,6 @@ def _fee_components(
     ]
 
 
-def _money_from_field_value(fv: FieldValue) -> Money | None:
-    """Build a `Money` from one claim-backed `FieldValue`, applying
-    docs/CONTRACTS.md's "Money and currency" rule that a money claim
-    with a null currency renders not_available -- never silently
-    assumed to be INR, which would invent a fact about a real fee
-    (`app/data/models.py`'s `Claim.currency` docstring). A claim already
-    `not_available` (unpublished, stale-and-sourceless, synthetic, ...)
-    has `fv.value is None` by the time it reaches here, so that case
-    falls out of the numeric check below without a separate label test.
-
-    `None` when there is no usable numeric value or no currency -- each
-    caller below decides what "no known amount" means for its own
-    output: `Money(amount=0)` for an estimate with no hint at all,
-    an omitted `AssistanceItem` for potential assistance that should
-    simply not exist.
-    """
-    if (
-        isinstance(fv.value, int | float)
-        and not isinstance(fv.value, bool)
-        and fv.currency is not None
-    ):
-        return Money(amount=to_whole_rupees(fv.value), currency=fv.currency)
-    return None
-
-
 def assemble_cost_summary(
     claims_by_field: dict[str, Claim],
     sources_by_id: dict[str, Source],
@@ -367,12 +489,22 @@ def assemble_cost_summary(
 
     `estimated_additional_expenses_override` is the "assumption editing"
     Build Pack §6/docs/UI.md call for: a caller-supplied value for this
-    one request only — never persisted, never a Claim, and always `INR`
-    (there is no currency-selection UI for a student's own typed-in
-    assumption). Unlike the original wiring, it no longer replaces the
+    one request only — never persisted, never a Claim. There is no
+    currency-selection UI for a student's own typed-in assumption, so it
+    is denominated in the currency this pathway's own charges are
+    published in (`_charges_currency`, falling back to
+    `DEFAULT_CURRENCY`) — SCOPE-4. Treating it as INR regardless, as it
+    was before, made every non-INR pathway's total unavailable-with-a-
+    currency-mismatch the moment a student edited the assumption, which
+    reads as a broken site rather than as the deliberate no-FX rule it
+    was meant to express; the amount is displayed with that currency
+    beside it (`assemble_cost_breakdown`), so what was assumed is on
+    screen rather than implied.
+
+    Unlike the original wiring, the override no longer replaces the
     computed estimate outright: `CostSummary.estimated_additional_expenses`
     always stays the figure this function actually computed (the
-    published hint, or `Money(0)` when there is none), and the override
+    published hint, or a zero when there is none), and the override
     is carried separately as `CostSummary.additional_expenses_override`,
     so a caller/template can show BOTH "our estimate" and "your
     assumption" rather than one silently clobbering the other.
@@ -396,17 +528,14 @@ def assemble_cost_summary(
     module docstring).
     """
     fee_components = _fee_components(claims_by_field, sources_by_id, as_of=as_of)
+    charges_currency = _charges_currency(fee_components)
 
-    hint = field_value_for(
-        "estimated_additional_expenses_hint", claims_by_field, sources_by_id, as_of=as_of
-    )
-    hint_money = _money_from_field_value(hint)
-    estimated_additional_expenses = hint_money if hint_money is not None else Money(amount=0)
-
-    additional_expenses_override = (
-        Money(amount=to_whole_rupees(estimated_additional_expenses_override))
-        if estimated_additional_expenses_override is not None
-        else None
+    estimated_additional_expenses, additional_expenses_override = _additional_expenses(
+        claims_by_field,
+        sources_by_id,
+        as_of=as_of,
+        override=estimated_additional_expenses_override,
+        charges_currency=charges_currency,
     )
 
     potential = field_value_for(

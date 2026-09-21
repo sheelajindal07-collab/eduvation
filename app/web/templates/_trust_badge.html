@@ -119,13 +119,19 @@
      rendered as bare "125000", the estimate line as "30000.0" with a
      trailing ".0" that read like a display bug, while only
      net_to_arrange got real currency formatting -- inconsistency that
-     undercuts "explain verified-cost vs estimate" for the reader) formats
-     a numeric value with a rupee sign and thousands separator, same
-     "{:,.0f}" shape net_to_arrange already used. #}
+     undercuts "explain verified-cost vs estimate" for the reader)
+     formats the value through the `money` filter with the field's OWN
+     currency (SCOPE-4 / docs/CONTRACTS.md "Money and currency"). The
+     rupee sign used to be written here as a literal, which meant a fee
+     published in any other currency was shown to a student as rupees --
+     the most dangerous display bug this screen can have. A field with
+     no stated currency renders "Not available" rather than a guess;
+     `app/planning/comparison.py` already labels such a claim
+     not_available before it ever reaches this macro. #}
   <div>
     {% if fv.label != "not_available" and fv.value is not none %}
       {% if money %}
-        <p class="text-charcoal font-medium">&#8377;{{ "{:,.0f}".format(fv.value) }}</p>
+        <p class="text-charcoal font-medium">{{ fv.value | money(fv.currency) }}</p>
       {% else %}
         <p class="text-charcoal font-medium">{{ fv.value }}</p>
       {% endif %}

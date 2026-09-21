@@ -13,8 +13,11 @@ add up.
 
 from __future__ import annotations
 
+import ast
+import re
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -127,12 +130,92 @@ class TestFormatMoney:
         """docs/CONTRACTS.md: "no currency symbol literal may exist
         outside it" -- the rupee sign appears in this module exactly
         once, inside `format_money` itself."""
-        source = (
-            __import__("pathlib")
-            .Path(__import__("app.i18n.formatting", fromlist=["x"]).__file__)
-            .read_text(encoding="utf-8")
-        )
+        source = FORMATTING_MODULE_PATH.read_text(encoding="utf-8")
         assert source.count('"₹"') == 1
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FORMATTING_MODULE_PATH = REPO_ROOT / "app" / "i18n" / "formatting.py"
+TEMPLATES_DIR = REPO_ROOT / "app" / "web" / "templates"
+
+CURRENCY_SYMBOL_RE = re.compile("₹|&#0*8377;?|&#x0*20b9;?", re.IGNORECASE)
+"""The rupee sign, in every spelling that reaches a reader: the character
+itself and the two HTML numeric entities (`&#8377;`, `&#x20B9;`)."""
+
+JINJA_COMMENT_RE = re.compile(r"\{#.*?#\}", re.DOTALL)
+HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def _docstring_constant_ids(tree: ast.Module) -> set[int]:
+    """The `id()` of every string constant that is a docstring, so prose
+    ABOUT the rupee sign ("never write ₹ here") is not mistaken for a
+    rupee sign being rendered. `#` comments never reach the AST at all."""
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            first = node.body[0] if node.body else None
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                ids.add(id(first.value))
+    return ids
+
+
+class TestTheRupeeSignExistsInExactlyOnePlace:
+    """SCOPE-4 / docs/CONTRACTS.md "Money and currency": "One formatter,
+    `format_money(amount, currency)` -- no currency symbol literal may
+    exist outside it."
+
+    This is the guard, not a one-off grep: `compare.html` and
+    `_trust_badge.html` both used to print `&#8377;` in front of whatever
+    number they were handed, so a fee published in pounds was shown to a
+    student as rupees. A reviewer cannot be expected to remember that
+    rule for every future template -- this test remembers it."""
+
+    def test_no_template_renders_a_rupee_sign_of_its_own(self) -> None:
+        templates = sorted(TEMPLATES_DIR.rglob("*.html"))
+        assert templates, f"No templates found under {TEMPLATES_DIR}"
+        violations: list[str] = []
+        for path in templates:
+            text = path.read_text(encoding="utf-8")
+            # Developer commentary about the rule is not a violation of it
+            # (same convention as tests/unit/test_copy_rules.py).
+            rendered = HTML_COMMENT_RE.sub(" ", JINJA_COMMENT_RE.sub(" ", text))
+            for match in CURRENCY_SYMBOL_RE.finditer(rendered):
+                violations.append(f"{path.relative_to(REPO_ROOT)}: {match.group(0)!r}")
+        assert not violations, (
+            "A template writes a currency symbol itself instead of using the "
+            "`money` filter -- a foreign amount would render as rupees:\n"
+            + "\n".join(violations)
+        )
+
+    def test_no_python_string_literal_outside_the_formatter_holds_a_rupee_sign(self) -> None:
+        violations: list[str] = []
+        for path in sorted((REPO_ROOT / "app").rglob("*.py")):
+            if path == FORMATTING_MODULE_PATH:
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            docstrings = _docstring_constant_ids(tree)
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Constant)
+                    and isinstance(node.value, str)
+                    and id(node) not in docstrings
+                    and CURRENCY_SYMBOL_RE.search(node.value)
+                ):
+                    violations.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
+        assert not violations, (
+            "A currency symbol literal exists outside app/i18n/formatting.py "
+            "(docs/CONTRACTS.md: one formatter only):\n" + "\n".join(violations)
+        )
+
+    def test_the_guard_catches_a_seeded_entity(self) -> None:
+        """Positive control: the patterns really do match what a template
+        author would most plausibly type."""
+        for spelling in ("&#8377;1,000", "&#x20B9;1,000", "₹1,000", "&#8377"):
+            assert CURRENCY_SYMBOL_RE.search(spelling), spelling
 
 
 class TestFormatNumber:
@@ -285,7 +368,7 @@ class TestRegisteredAsJinjaFilters:
         return templating.templates.env.from_string(source).render(**context)
 
     def test_every_filter_is_on_the_one_shared_environment(self) -> None:
-        for name in ("inr", "number", "date", "duration_weeks"):
+        for name in ("inr", "money", "number", "date", "duration_weeks"):
             assert name in templating.templates.env.filters, name
 
     def test_filters_follow_the_pages_locale(self) -> None:
@@ -307,3 +390,57 @@ class TestRegisteredAsJinjaFilters:
 
     def test_an_undefined_variable_does_not_crash_the_page(self) -> None:
         assert self._render("{{ never_set | inr }}") == "Not available"
+
+
+class TestTheMoneyFilter:
+    """SCOPE-4: `{{ amount | money(currency) }}` is how a template shows
+    money now -- amount and currency together, through the one
+    formatter."""
+
+    def _render(self, source: str, **context: object) -> str:
+        return templating.templates.env.from_string(source).render(**context)
+
+    def test_inr_renders_exactly_as_the_inr_filter_always_did(self) -> None:
+        assert self._render("{{ 125000 | money('INR') }}") == f"{RUPEE}1,25,000"
+        assert self._render("{{ 125000 | money('INR') }}") == self._render("{{ 125000 | inr }}")
+
+    def test_a_foreign_currency_never_renders_a_rupee_sign(self) -> None:
+        rendered = self._render("{{ 9500 | money('GBP') }}")
+        assert rendered == "GBP 9,500"
+        assert RUPEE not in rendered
+
+    def test_a_missing_currency_is_not_available_never_assumed_rupees(self) -> None:
+        """The core safety property of this filter: no currency, no
+        number. Assuming INR here is the display bug SCOPE-4 exists to
+        prevent (docs/CONTRACTS.md: "a money claim with a null currency
+        renders not_available")."""
+        for template in (
+            "{{ 9500 | money(none) }}",
+            "{{ 9500 | money('') }}",
+            "{{ 9500 | money('   ') }}",
+            "{{ 9500 | money(never_set) }}",
+            "{{ 9500 | money }}",
+        ):
+            rendered = self._render(template)
+            assert rendered == "Not available", template
+            assert RUPEE not in rendered, template
+
+    def test_a_missing_amount_is_not_available_not_a_bare_currency_code(self) -> None:
+        assert self._render("{{ nothing | money('GBP') }}", nothing=None) == "Not available"
+
+    def test_it_follows_the_pages_locale(self) -> None:
+        assert self._render("{{ nothing | money('INR') }}", nothing=None, lang="hi") == translate(
+            NOT_AVAILABLE_KEY, "hi"
+        )
+        assert self._render("{{ 100000 | money('INR') }}", lang="hi") == f"{RUPEE}1,00,000"
+
+    def test_an_explicit_locale_argument_wins(self) -> None:
+        rendered = self._render("{{ nothing | money('INR', 'hi') }}", nothing=None, lang="en")
+        assert rendered == translate(NOT_AVAILABLE_KEY, "hi")
+
+    def test_a_lowercase_or_padded_code_is_not_mistaken_for_inr(self) -> None:
+        """`format_money` matches `"INR"` exactly; anything else takes the
+        code-and-Western-grouping branch. Padding is stripped so a stray
+        space in a claim's currency column does not turn ₹ into "INR "."""
+        assert self._render("{{ 1000 | money(' INR ') }}") == f"{RUPEE}1,000"
+        assert self._render("{{ 1000 | money('inr') }}") == "inr 1,000"

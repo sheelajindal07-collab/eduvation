@@ -35,19 +35,24 @@
   "source_url": "https://example.invalid/synthetic-source",
   "verification_date": "2026-09-01"
 } %}
+{#- SCOPE-4: every money field carries its own currency, exactly like a
+    real one -- `field_value(..., money=true)` formats with it and shows
+    "Not available" rather than assuming rupees when it is absent. -#}
 {% set SYNTHETIC_MONEY = {
   "value": 125000,
   "label": "institution_reported",
   "source_authority": "SYNTHETIC Example Institute (not a real institution)",
   "source_url": "https://example.invalid/synthetic-fees",
-  "verification_date": "2026-08-15"
+  "verification_date": "2026-08-15",
+  "currency": "INR"
 } %}
 {% set SYNTHETIC_ESTIMATE = {
   "value": 30000,
   "label": "estimate",
   "source_authority": "SYNTHETIC assumption set",
   "source_url": "https://example.invalid/synthetic-assumptions",
-  "verification_date": "2026-08-15"
+  "verification_date": "2026-08-15",
+  "currency": "INR"
 } %}
 {% set SYNTHETIC_MISSING = {
   "value": none,
@@ -343,6 +348,19 @@
               <td>{{ 10000000 | inr("en") }}</td><td>{{ 10000000 | inr("hi") }}</td></tr>
           <tr><td class="py-1">inr (none)</td>
               <td>{{ none | inr("en") }}</td><td>{{ none | inr("hi") }}</td></tr>
+          {#- SCOPE-4: `money` is how a template shows a claim-backed
+              amount -- the figure AND its currency. The last row is the
+              one that matters: no stated currency means no number, never
+              a rupee sign over a foreign fee. -#}
+          <tr><td class="py-1">money (INR)</td>
+              <td>{{ 100000 | money("INR", "en") }}</td>
+              <td>{{ 100000 | money("INR", "hi") }}</td></tr>
+          <tr><td class="py-1">money (GBP)</td>
+              <td>{{ 9500 | money("GBP", "en") }}</td>
+              <td>{{ 9500 | money("GBP", "hi") }}</td></tr>
+          <tr><td class="py-1">money (no currency)</td>
+              <td>{{ 9500 | money(none, "en") }}</td>
+              <td>{{ 9500 | money(none, "hi") }}</td></tr>
           <tr><td class="py-1">date</td>
               <td>{{ "2026-09-21" | date("en") }}</td><td>{{ "2026-09-21" | date("hi") }}</td></tr>
           <tr><td class="py-1">duration_weeks</td>
