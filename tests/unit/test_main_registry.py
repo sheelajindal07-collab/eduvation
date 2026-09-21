@@ -16,6 +16,7 @@ from __future__ import annotations
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import Settings
+from app.core.logging import RequestIdLoggingMiddleware
 from app.main import (
     EXPECTED_MIDDLEWARE_ORDER,
     EXPECTED_ROUTERS,
@@ -67,14 +68,16 @@ class TestMiddlewareOrder:
 
     def test_each_slot_has_the_expected_middleware_class(self) -> None:
         """trusted_host (DEPLOY-18), security_headers and origin_check
-        (SEC-1) are real, installed middleware; the other four remain
-        reserved placeholders for later tasks."""
+        (SEC-1) and request_id_logging (OPS-2) are real, installed
+        middleware; the remaining three stay reserved placeholders for
+        later tasks."""
         slots = build_middleware_slots(Settings(_env_file=None))
         by_name = {slot.name: slot for slot in slots}
         assert by_name["trusted_host"].middleware_class is TrustedHostMiddleware
         assert by_name["security_headers"].middleware_class is SecurityHeadersMiddleware
         assert by_name["origin_check"].middleware_class is OriginCheckMiddleware
-        for reserved_name in ("maintenance", "request_id_logging", "cache_policy", "usage_events"):
+        assert by_name["request_id_logging"].middleware_class is RequestIdLoggingMiddleware
+        for reserved_name in ("maintenance", "cache_policy", "usage_events"):
             assert by_name[reserved_name].middleware_class is _ReservedSlotMiddleware
 
     def test_the_real_app_installs_middleware_in_the_frozen_order(self) -> None:
@@ -85,7 +88,7 @@ class TestMiddlewareOrder:
             TrustedHostMiddleware,
             SecurityHeadersMiddleware,
             _ReservedSlotMiddleware,
-            _ReservedSlotMiddleware,
+            RequestIdLoggingMiddleware,
             _ReservedSlotMiddleware,
             OriginCheckMiddleware,
             _ReservedSlotMiddleware,
