@@ -16,8 +16,7 @@ suitability judgments are made here, in line with project rules — this
 file records what NIRF itself published, nothing more (raw institutional
 scores from NIRF's own methodology, not any BCION-derived judgment).
 
-Research date: 2026-09-21. Researcher: automated agent (session run for
-carohitjin@gmail.com), web search only, no student data used or seen.
+Research date: 2026-09-21. Researcher: automated agent, web search only, no student data used or seen.
 
 ---
 

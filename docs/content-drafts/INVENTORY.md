@@ -17,7 +17,7 @@ Every row counted below comes from **unverified draft research** (see `CLAUDE.md
 - Items listed under a file's own 'Not confirmed' section: **6**
 - Files with no '---' front-matter delimiter: **3**
   - `gujarat-institutions.md`, `gujcet-eligibility.md`, `neet-ug-eligibility.md`
-- Files carrying the researcher-session email marker (see CONTENT-18): **116**
+- Files carrying the researcher-session email marker (see CONTENT-18): **0**
 - Distinct fact-table header variants seen: **5**
   - `Fact | Value | Source | Access date | Confidence`
   - `Fact | Value | Source URL | Access date | Confidence note`
@@ -43,145 +43,145 @@ Every row counted below comes from **unverified draft research** (see `CLAUDE.md
 
 | File | Research date | Fact rows | High | Med | Low | NV | No URL | Not-confirmed | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `afcat-eligibility.md` | 2026-09-21 | 40 | 34 | 1 | 0 | 5 | 27 | 6 | has researcher email marker |
-| `cat-mba-eligibility.md` | 2026-09-21 | 29 | 23 | 2 | 3 | 0 | 21 | 0 | has researcher email marker |
-| `cds-eligibility.md` | 2026-09-21 | 25 | 24 | 1 | 0 | 0 | 24 | 0 | has researcher email marker; 4 non-fact-table row(s) |
-| `clat-eligibility.md` | 2026-09-21 | 19 | 18 | 0 | 0 | 1 | 9 | 0 | has researcher email marker |
-| `cmat-eligibility.md` | 2026-09-21 | 27 | 24 | 2 | 0 | 0 | 25 | 0 | has researcher email marker |
-| `cuet-ug-eligibility.md` | 2026-09-21 | 18 | 6 | 3 | 8 | 1 | 6 | 0 | has researcher email marker |
+| `afcat-eligibility.md` | 2026-09-21 | 40 | 34 | 1 | 0 | 5 | 27 | 6 |  |
+| `cat-mba-eligibility.md` | 2026-09-21 | 29 | 23 | 2 | 3 | 0 | 21 | 0 |  |
+| `cds-eligibility.md` | 2026-09-21 | 25 | 24 | 1 | 0 | 0 | 24 | 0 | 4 non-fact-table row(s) |
+| `clat-eligibility.md` | 2026-09-21 | 19 | 18 | 0 | 0 | 1 | 9 | 0 |  |
+| `cmat-eligibility.md` | 2026-09-21 | 27 | 24 | 2 | 0 | 0 | 25 | 0 |  |
+| `cuet-ug-eligibility.md` | 2026-09-21 | 18 | 6 | 3 | 8 | 1 | 6 | 0 |  |
 | `gujcet-eligibility.md` | — | 5 | 0 | 0 | 0 | 0 | 0 | 0 | no '---' front-matter delimiter; 5 narrative bullet-style fact(s), non-tabular format (not counted in 'no URL' totals) |
-| `ibps-po-eligibility.md` | 2026-09-21 | 36 | 0 | 26 | 7 | 3 | 19 | 0 | has researcher email marker |
-| `icar-aieea-eligibility.md` | 2026-09-21 | 29 | 24 | 2 | 2 | 1 | 25 | 0 | has researcher email marker |
-| `jee-advanced-eligibility.md` | 2026-09-21 | 21 | 8 | 8 | 4 | 1 | 3 | 0 | has researcher email marker |
-| `jee-main-eligibility.md` | 2026-09-21 | 23 | 20 | 1 | 0 | 2 | 19 | 0 | has researcher email marker |
-| `nata-eligibility.md` | 2026-09-21 | 33 | 27 | 3 | 1 | 2 | 29 | 0 | has researcher email marker |
-| `nda-eligibility.md` | 2026-09-21 | 27 | 24 | 1 | 1 | 1 | 26 | 0 | has researcher email marker |
+| `ibps-po-eligibility.md` | 2026-09-21 | 36 | 0 | 26 | 7 | 3 | 19 | 0 |  |
+| `icar-aieea-eligibility.md` | 2026-09-21 | 29 | 24 | 2 | 2 | 1 | 25 | 0 |  |
+| `jee-advanced-eligibility.md` | 2026-09-21 | 21 | 8 | 8 | 4 | 1 | 3 | 0 |  |
+| `jee-main-eligibility.md` | 2026-09-21 | 23 | 20 | 1 | 0 | 2 | 19 | 0 |  |
+| `nata-eligibility.md` | 2026-09-21 | 33 | 27 | 3 | 1 | 2 | 29 | 0 |  |
+| `nda-eligibility.md` | 2026-09-21 | 27 | 24 | 1 | 1 | 1 | 26 | 0 |  |
 | `neet-ug-eligibility.md` | — | 8 | 0 | 0 | 0 | 0 | 0 | 0 | no '---' front-matter delimiter; 8 narrative bullet-style fact(s), non-tabular format (not counted in 'no URL' totals); 5 non-fact-table row(s) |
-| `ssc-cgl-eligibility.md` | 2026-09-21 | 35 | 31 | 2 | 1 | 1 | 34 | 0 | has researcher email marker |
-| `uceed-eligibility.md` | 2026-09-21 | 29 | 15 | 11 | 1 | 2 | 0 | 0 | has researcher email marker |
-| `xat-eligibility.md` | 2026-09-21 | 31 | 9 | 18 | 1 | 3 | 1 | 0 | has researcher email marker |
+| `ssc-cgl-eligibility.md` | 2026-09-21 | 35 | 31 | 2 | 1 | 1 | 34 | 0 |  |
+| `uceed-eligibility.md` | 2026-09-21 | 29 | 15 | 11 | 1 | 2 | 0 | 0 |  |
+| `xat-eligibility.md` | 2026-09-21 | 31 | 9 | 18 | 1 | 3 | 1 | 0 |  |
 
 ### Foreign pathways
 
 | File | Research date | Fact rows | High | Med | Low | NV | No URL | Not-confirmed | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `foreign-pathway-australia.md` | 2026-09-21 | 30 | 15 | 4 | 10 | 1 | 18 | 0 | has researcher email marker |
-| `foreign-pathway-canada.md` | 2026-09-21 | 26 | 17 | 4 | 4 | 1 | 11 | 0 | has researcher email marker |
-| `foreign-pathway-france.md` | 2026-09-21 | 28 | 24 | 1 | 1 | 2 | 12 | 0 | has researcher email marker |
-| `foreign-pathway-germany.md` | 2026-09-21 | 21 | 8 | 8 | 2 | 0 | 5 | 0 | has researcher email marker |
-| `foreign-pathway-ireland.md` | 2026-09-21 | 28 | 17 | 6 | 1 | 1 | 7 | 0 | has researcher email marker |
-| `foreign-pathway-japan.md` | 2026-09-21 | 29 | 24 | 2 | 0 | 3 | 21 | 0 | has researcher email marker |
-| `foreign-pathway-netherlands.md` | 2026-09-21 | 23 | 7 | 10 | 0 | 6 | 12 | 0 | has researcher email marker |
-| `foreign-pathway-new-zealand.md` | 2026-09-21 | 20 | 11 | 4 | 0 | 5 | 9 | 0 | has researcher email marker |
-| `foreign-pathway-singapore.md` | 2026-09-21 | 29 | 14 | 8 | 2 | 4 | 3 | 0 | has researcher email marker |
-| `foreign-pathway-uae.md` | 2026-09-21 | 23 | 8 | 9 | 2 | 4 | 9 | 0 | has researcher email marker |
-| `foreign-pathway-uk.md` | 2026-09-21 | 20 | 12 | 6 | 1 | 0 | 3 | 0 | has researcher email marker |
-| `foreign-pathways-comparison-summary.md` | 2026-09-21 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | has researcher email marker; 3 non-fact-table row(s) |
+| `foreign-pathway-australia.md` | 2026-09-21 | 30 | 15 | 4 | 10 | 1 | 18 | 0 |  |
+| `foreign-pathway-canada.md` | 2026-09-21 | 26 | 17 | 4 | 4 | 1 | 11 | 0 |  |
+| `foreign-pathway-france.md` | 2026-09-21 | 28 | 24 | 1 | 1 | 2 | 12 | 0 |  |
+| `foreign-pathway-germany.md` | 2026-09-21 | 21 | 8 | 8 | 2 | 0 | 5 | 0 |  |
+| `foreign-pathway-ireland.md` | 2026-09-21 | 28 | 17 | 6 | 1 | 1 | 7 | 0 |  |
+| `foreign-pathway-japan.md` | 2026-09-21 | 29 | 24 | 2 | 0 | 3 | 21 | 0 |  |
+| `foreign-pathway-netherlands.md` | 2026-09-21 | 23 | 7 | 10 | 0 | 6 | 12 | 0 |  |
+| `foreign-pathway-new-zealand.md` | 2026-09-21 | 20 | 11 | 4 | 0 | 5 | 9 | 0 |  |
+| `foreign-pathway-singapore.md` | 2026-09-21 | 29 | 14 | 8 | 2 | 4 | 3 | 0 |  |
+| `foreign-pathway-uae.md` | 2026-09-21 | 23 | 8 | 9 | 2 | 4 | 9 | 0 |  |
+| `foreign-pathway-uk.md` | 2026-09-21 | 20 | 12 | 6 | 1 | 0 | 3 | 0 |  |
+| `foreign-pathways-comparison-summary.md` | 2026-09-21 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 3 non-fact-table row(s) |
 
 ### Institutions / NIRF
 
 | File | Research date | Fact rows | High | Med | Low | NV | No URL | Not-confirmed | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `gujarat-institutions.md` | 2026-09-19 | 13 | 0 | 1 | 1 | 1 | 2 | 0 | no '---' front-matter delimiter |
-| `maharashtra-government-institution.md` | 2026-09-21 | 13 | 7 | 3 | 0 | 3 | 0 | 0 | has researcher email marker |
-| `nirf-top-architecture-institutions.md` | 2026-09-21 | 14 | 0 | 12 | 0 | 2 | 1 | 0 | has researcher email marker |
-| `nirf-top-engineering-institutions.md` | 2026-09-21 | 25 | 21 | 3 | 1 | 0 | 15 | 0 | has researcher email marker |
-| `nirf-top-law-institutions.md` | 2026-09-21 | 15 | 9 | 3 | 0 | 3 | 9 | 0 | has researcher email marker |
-| `nirf-top-management-institutions.md` | 2026-09-21 | 3 | 1 | 2 | 0 | 0 | 0 | 0 | has researcher email marker; 19 non-fact-table row(s) |
-| `nirf-top-medical-institutions.md` | 2026-09-21 | 29 | 10 | 11 | 8 | 0 | 21 | 0 | has researcher email marker |
-| `nirf-top-pharmacy-institutions.md` | 2026-09-21 | 22 | 1 | 17 | 0 | 4 | 16 | 0 | has researcher email marker |
-| `notable-private-universities-overview.md` | 2026-09-21 | 14 | 9 | 0 | 1 | 4 | 3 | 0 | has researcher email marker |
-| `tamil-nadu-government-institution.md` | 2026-09-21 | 33 | 25 | 1 | 2 | 5 | 27 | 0 | has researcher email marker |
+| `maharashtra-government-institution.md` | 2026-09-21 | 13 | 7 | 3 | 0 | 3 | 0 | 0 |  |
+| `nirf-top-architecture-institutions.md` | 2026-09-21 | 14 | 0 | 12 | 0 | 2 | 1 | 0 |  |
+| `nirf-top-engineering-institutions.md` | 2026-09-21 | 25 | 21 | 3 | 1 | 0 | 15 | 0 |  |
+| `nirf-top-law-institutions.md` | 2026-09-21 | 15 | 9 | 3 | 0 | 3 | 9 | 0 |  |
+| `nirf-top-management-institutions.md` | 2026-09-21 | 3 | 1 | 2 | 0 | 0 | 0 | 0 | 19 non-fact-table row(s) |
+| `nirf-top-medical-institutions.md` | 2026-09-21 | 29 | 10 | 11 | 8 | 0 | 21 | 0 |  |
+| `nirf-top-pharmacy-institutions.md` | 2026-09-21 | 22 | 1 | 17 | 0 | 4 | 16 | 0 |  |
+| `notable-private-universities-overview.md` | 2026-09-21 | 14 | 9 | 0 | 1 | 4 | 3 | 0 |  |
+| `tamil-nadu-government-institution.md` | 2026-09-21 | 33 | 25 | 1 | 2 | 5 | 27 | 0 |  |
 
 ### Scholarships
 
 | File | Research date | Fact rows | High | Med | Low | NV | No URL | Not-confirmed | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `aicte-pragati-saksham-scholarships.md` | 2026-09-21 | 33 | 32 | 1 | 0 | 0 | 28 | 0 | has researcher email marker |
-| `gujarat-scholarships.md` | 2026-09-19 | 24 | 9 | 11 | 2 | 2 | 7 | 0 | has researcher email marker |
-| `maharashtra-post-matric-scholarship.md` | 2026-09-21 | 29 | 10 | 8 | 9 | 2 | 21 | 0 | has researcher email marker |
-| `nmmss-scholarship.md` | 2026-09-21 | 21 | 19 | 0 | 1 | 0 | 17 | 0 | has researcher email marker |
-| `nsp-scheme-catalog-index.md` | 2026-09-21 | 50 | 46 | 3 | 0 | 1 | 48 | 0 | has researcher email marker |
-| `scholarship-aicte-swanath.md` | 2026-09-21 | 38 | 34 | 3 | 1 | 0 | 33 | 0 | has researcher email marker |
-| `scholarship-central-sector-st.md` | 2026-09-21 | 29 | 29 | 0 | 0 | 0 | 27 | 0 | has researcher email marker |
-| `scholarship-inspire.md` | 2026-09-21 | 28 | 26 | 1 | 0 | 1 | 25 | 0 | has researcher email marker |
-| `scholarship-ishan-uday.md` | 2026-09-21 | 14 | 9 | 0 | 1 | 4 | 11 | 0 | has researcher email marker |
-| `scholarship-national-fellowship-obc.md` | 2026-09-21 | 31 | 24 | 2 | 0 | 5 | 26 | 0 | has researcher email marker |
-| `scholarship-national-overseas.md` | 2026-09-21 | 43 | 42 | 1 | 0 | 0 | 39 | 0 | has researcher email marker |
-| `scholarship-ntse.md` | 2026-09-21 | 26 | 21 | 2 | 2 | 1 | 17 | 0 | has researcher email marker |
-| `scholarship-pm-special-jk-ladakh.md` | 2026-09-21 | 34 | 21 | 8 | 1 | 2 | 22 | 0 | has researcher email marker |
-| `scholarship-post-matric-minorities.md` | 2026-09-21 | 28 | 19 | 6 | 1 | 2 | 26 | 0 | has researcher email marker |
-| `scholarship-top-class-sc.md` | 2026-09-21 | 34 | 30 | 1 | 2 | 1 | 29 | 0 | has researcher email marker |
-| `tamil-nadu-post-matric-scholarship.md` | 2026-09-21 | 26 | 16 | 4 | 1 | 5 | 16 | 0 | has researcher email marker |
+| `aicte-pragati-saksham-scholarships.md` | 2026-09-21 | 33 | 32 | 1 | 0 | 0 | 28 | 0 |  |
+| `gujarat-scholarships.md` | 2026-09-19 | 24 | 9 | 11 | 2 | 2 | 7 | 0 |  |
+| `maharashtra-post-matric-scholarship.md` | 2026-09-21 | 29 | 10 | 8 | 9 | 2 | 21 | 0 |  |
+| `nmmss-scholarship.md` | 2026-09-21 | 21 | 19 | 0 | 1 | 0 | 17 | 0 |  |
+| `nsp-scheme-catalog-index.md` | 2026-09-21 | 50 | 46 | 3 | 0 | 1 | 48 | 0 |  |
+| `scholarship-aicte-swanath.md` | 2026-09-21 | 38 | 34 | 3 | 1 | 0 | 33 | 0 |  |
+| `scholarship-central-sector-st.md` | 2026-09-21 | 29 | 29 | 0 | 0 | 0 | 27 | 0 |  |
+| `scholarship-inspire.md` | 2026-09-21 | 28 | 26 | 1 | 0 | 1 | 25 | 0 |  |
+| `scholarship-ishan-uday.md` | 2026-09-21 | 14 | 9 | 0 | 1 | 4 | 11 | 0 |  |
+| `scholarship-national-fellowship-obc.md` | 2026-09-21 | 31 | 24 | 2 | 0 | 5 | 26 | 0 |  |
+| `scholarship-national-overseas.md` | 2026-09-21 | 43 | 42 | 1 | 0 | 0 | 39 | 0 |  |
+| `scholarship-ntse.md` | 2026-09-21 | 26 | 21 | 2 | 2 | 1 | 17 | 0 |  |
+| `scholarship-pm-special-jk-ladakh.md` | 2026-09-21 | 34 | 21 | 8 | 1 | 2 | 22 | 0 |  |
+| `scholarship-post-matric-minorities.md` | 2026-09-21 | 28 | 19 | 6 | 1 | 2 | 26 | 0 |  |
+| `scholarship-top-class-sc.md` | 2026-09-21 | 34 | 30 | 1 | 2 | 1 | 29 | 0 |  |
+| `tamil-nadu-post-matric-scholarship.md` | 2026-09-21 | 26 | 16 | 4 | 1 | 5 | 16 | 0 |  |
 
 ### States/UTs
 
 | File | Research date | Fact rows | High | Med | Low | NV | No URL | Not-confirmed | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `state-admission-rules-andaman-and-nicobar-islands.md` | 2026-09-21 | 26 | 21 | 3 | 0 | 0 | 18 | 0 | has researcher email marker |
-| `state-admission-rules-andhra-pradesh.md` | 2026-09-21 | 22 | 11 | 4 | 4 | 0 | 7 | 0 | has researcher email marker |
-| `state-admission-rules-arunachal-pradesh.md` | 2026-09-21 | 31 | 17 | 8 | 6 | 0 | 10 | 0 | has researcher email marker |
-| `state-admission-rules-assam.md` | 2026-09-21 | 20 | 9 | 6 | 4 | 0 | 3 | 0 | has researcher email marker |
-| `state-admission-rules-bihar.md` | 2026-09-21 | 16 | 4 | 4 | 5 | 2 | 7 | 0 | has researcher email marker |
-| `state-admission-rules-chandigarh.md` | 2026-09-21 | 20 | 6 | 6 | 3 | 3 | 5 | 0 | has researcher email marker |
-| `state-admission-rules-chhattisgarh.md` | 2026-09-21 | 18 | 7 | 3 | 2 | 6 | 10 | 0 | has researcher email marker |
-| `state-admission-rules-dadra-and-nagar-haveli-and-daman-and-diu.md` | 2026-09-21 | 15 | 6 | 1 | 1 | 7 | 4 | 0 | has researcher email marker |
-| `state-admission-rules-delhi-nct.md` | 2026-09-21 | 18 | 4 | 4 | 4 | 6 | 6 | 0 | has researcher email marker |
-| `state-admission-rules-goa.md` | 2026-09-21 | 18 | 4 | 5 | 8 | 1 | 10 | 0 | has researcher email marker |
-| `state-admission-rules-haryana.md` | 2026-09-21 | 18 | 5 | 7 | 6 | 0 | 7 | 0 | has researcher email marker |
-| `state-admission-rules-himachal-pradesh.md` | 2026-09-21 | 25 | 9 | 6 | 10 | 0 | 12 | 0 | has researcher email marker |
-| `state-admission-rules-jammu-and-kashmir.md` | 2026-09-21 | 32 | 29 | 0 | 1 | 2 | 29 | 0 | has researcher email marker |
-| `state-admission-rules-jharkhand.md` | 2026-09-21 | 20 | 5 | 9 | 6 | 0 | 13 | 0 | has researcher email marker |
-| `state-admission-rules-kerala.md` | 2026-09-21 | 30 | 26 | 1 | 2 | 1 | 24 | 0 | has researcher email marker |
-| `state-admission-rules-ladakh.md` | 2026-09-21 | 31 | 11 | 10 | 9 | 1 | 17 | 0 | has researcher email marker |
-| `state-admission-rules-lakshadweep.md` | 2026-09-21 | 22 | 11 | 9 | 0 | 2 | 9 | 0 | has researcher email marker |
-| `state-admission-rules-madhya-pradesh.md` | 2026-09-21 | 27 | 10 | 10 | 3 | 4 | 8 | 0 | has researcher email marker |
-| `state-admission-rules-manipur.md` | 2026-09-21 | 17 | 10 | 2 | 2 | 2 | 4 | 0 | has researcher email marker |
-| `state-admission-rules-meghalaya.md` | 2026-09-21 | 21 | 4 | 12 | 3 | 1 | 12 | 0 | has researcher email marker |
-| `state-admission-rules-mizoram.md` | 2026-09-21 | 22 | 9 | 5 | 1 | 7 | 4 | 0 | has researcher email marker |
-| `state-admission-rules-nagaland.md` | 2026-09-21 | 20 | 10 | 4 | 0 | 1 | 7 | 0 | has researcher email marker |
-| `state-admission-rules-odisha.md` | 2026-09-21 | 21 | 15 | 1 | 0 | 5 | 2 | 0 | has researcher email marker |
-| `state-admission-rules-puducherry.md` | 2026-09-21 | 20 | 7 | 9 | 1 | 3 | 6 | 0 | has researcher email marker |
-| `state-admission-rules-punjab.md` | 2026-09-21 | 19 | 5 | 7 | 4 | 3 | 9 | 0 | has researcher email marker |
-| `state-admission-rules-rajasthan.md` | 2026-09-21 | 22 | 2 | 8 | 8 | 4 | 5 | 0 | has researcher email marker |
-| `state-admission-rules-sikkim.md` | 2026-09-21 | 16 | 8 | 3 | 0 | 4 | 10 | 0 | has researcher email marker |
-| `state-admission-rules-telangana.md` | 2026-09-21 | 17 | 9 | 2 | 0 | 6 | 6 | 0 | has researcher email marker |
-| `state-admission-rules-tripura.md` | 2026-09-21 | 19 | 10 | 4 | 0 | 5 | 2 | 0 | has researcher email marker |
-| `state-admission-rules-uttar-pradesh.md` | 2026-09-21 | 15 | 5 | 3 | 2 | 5 | 8 | 0 | has researcher email marker |
-| `state-admission-rules-uttarakhand.md` | 2026-09-21 | 25 | 19 | 1 | 0 | 5 | 3 | 0 | has researcher email marker |
-| `state-admission-rules-west-bengal.md` | 2026-09-21 | 27 | 14 | 3 | 1 | 1 | 14 | 0 | has researcher email marker |
-| `state-institutions-scholarships-andaman-and-nicobar-islands.md` | 2026-09-21 | 17 | 13 | 1 | 0 | 3 | 14 | 0 | has researcher email marker |
-| `state-institutions-scholarships-andhra-pradesh.md` | 2026-09-21 | 24 | 17 | 2 | 2 | 2 | 4 | 0 | has researcher email marker |
-| `state-institutions-scholarships-arunachal-pradesh.md` | 2026-09-21 | 24 | 18 | 0 | 4 | 2 | 14 | 0 | has researcher email marker |
-| `state-institutions-scholarships-assam.md` | 2026-09-21 | 20 | 11 | 3 | 3 | 3 | 9 | 0 | has researcher email marker |
-| `state-institutions-scholarships-bihar.md` | 2026-09-21 | 17 | 8 | 3 | 1 | 4 | 12 | 0 | has researcher email marker |
-| `state-institutions-scholarships-chandigarh.md` | 2026-09-21 | 14 | 7 | 0 | 0 | 7 | 3 | 0 | has researcher email marker |
-| `state-institutions-scholarships-chhattisgarh.md` | 2026-09-21 | 18 | 9 | 3 | 3 | 3 | 1 | 0 | has researcher email marker |
-| `state-institutions-scholarships-dadra-and-nagar-haveli-and-daman-and-diu.md` | 2026-09-21 | 18 | 7 | 7 | 0 | 4 | 4 | 0 | has researcher email marker |
-| `state-institutions-scholarships-delhi-nct.md` | 2026-09-21 | 12 | 4 | 2 | 0 | 6 | 1 | 0 | has researcher email marker |
-| `state-institutions-scholarships-goa.md` | 2026-09-21 | 18 | 15 | 1 | 0 | 2 | 11 | 0 | has researcher email marker |
-| `state-institutions-scholarships-haryana.md` | 2026-09-21 | 15 | 6 | 3 | 3 | 3 | 1 | 0 | has researcher email marker |
-| `state-institutions-scholarships-himachal-pradesh.md` | 2026-09-21 | 13 | 7 | 3 | 1 | 2 | 1 | 0 | has researcher email marker |
-| `state-institutions-scholarships-jammu-and-kashmir.md` | 2026-09-21 | 20 | 10 | 1 | 0 | 9 | 1 | 0 | has researcher email marker |
-| `state-institutions-scholarships-jharkhand.md` | 2026-09-21 | 14 | 7 | 2 | 2 | 3 | 3 | 0 | has researcher email marker |
-| `state-institutions-scholarships-kerala.md` | 2026-09-21 | 16 | 6 | 2 | 4 | 4 | 7 | 0 | has researcher email marker |
-| `state-institutions-scholarships-ladakh.md` | 2026-09-21 | 16 | 5 | 6 | 1 | 4 | 8 | 0 | has researcher email marker |
-| `state-institutions-scholarships-lakshadweep.md` | 2026-09-21 | 11 | 2 | 3 | 2 | 4 | 5 | 0 | has researcher email marker |
-| `state-institutions-scholarships-madhya-pradesh.md` | 2026-09-21 | 18 | 7 | 8 | 1 | 2 | 2 | 0 | has researcher email marker |
-| `state-institutions-scholarships-manipur.md` | 2026-09-21 | 19 | 10 | 2 | 2 | 5 | 9 | 0 | has researcher email marker |
-| `state-institutions-scholarships-meghalaya.md` | 2026-09-21 | 13 | 8 | 1 | 0 | 4 | 6 | 0 | has researcher email marker |
-| `state-institutions-scholarships-mizoram.md` | 2026-09-21 | 24 | 16 | 4 | 1 | 3 | 11 | 0 | has researcher email marker |
-| `state-institutions-scholarships-nagaland.md` | 2026-09-21 | 17 | 11 | 1 | 0 | 5 | 6 | 0 | has researcher email marker |
-| `state-institutions-scholarships-odisha.md` | 2026-09-21 | 18 | 13 | 2 | 0 | 3 | 6 | 0 | has researcher email marker |
-| `state-institutions-scholarships-puducherry.md` | 2026-09-21 | 20 | 12 | 0 | 4 | 4 | 15 | 0 | has researcher email marker |
-| `state-institutions-scholarships-punjab.md` | 2026-09-21 | 17 | 11 | 2 | 0 | 4 | 8 | 0 | has researcher email marker |
-| `state-institutions-scholarships-rajasthan.md` | 2026-09-21 | 14 | 5 | 3 | 1 | 5 | 5 | 0 | has researcher email marker |
-| `state-institutions-scholarships-sikkim.md` | 2026-09-21 | 22 | 9 | 8 | 1 | 4 | 6 | 0 | has researcher email marker |
-| `state-institutions-scholarships-telangana.md` | 2026-09-21 | 18 | 15 | 0 | 2 | 1 | 2 | 0 | has researcher email marker |
-| `state-institutions-scholarships-tripura.md` | 2026-09-21 | 25 | 17 | 4 | 1 | 3 | 13 | 0 | has researcher email marker |
-| `state-institutions-scholarships-uttar-pradesh.md` | 2026-09-21 | 16 | 11 | 1 | 0 | 4 | 3 | 0 | has researcher email marker |
-| `state-institutions-scholarships-uttarakhand.md` | 2026-09-21 | 21 | 12 | 5 | 0 | 4 | 13 | 0 | has researcher email marker |
-| `state-institutions-scholarships-west-bengal.md` | 2026-09-21 | 16 | 10 | 2 | 1 | 3 | 0 | 0 | has researcher email marker; 6 non-fact-table row(s) |
+| `state-admission-rules-andaman-and-nicobar-islands.md` | 2026-09-21 | 26 | 21 | 3 | 0 | 0 | 18 | 0 |  |
+| `state-admission-rules-andhra-pradesh.md` | 2026-09-21 | 22 | 11 | 4 | 4 | 0 | 7 | 0 |  |
+| `state-admission-rules-arunachal-pradesh.md` | 2026-09-21 | 31 | 17 | 8 | 6 | 0 | 10 | 0 |  |
+| `state-admission-rules-assam.md` | 2026-09-21 | 20 | 9 | 6 | 4 | 0 | 3 | 0 |  |
+| `state-admission-rules-bihar.md` | 2026-09-21 | 16 | 4 | 4 | 5 | 2 | 7 | 0 |  |
+| `state-admission-rules-chandigarh.md` | 2026-09-21 | 20 | 6 | 6 | 3 | 3 | 5 | 0 |  |
+| `state-admission-rules-chhattisgarh.md` | 2026-09-21 | 18 | 7 | 3 | 2 | 6 | 10 | 0 |  |
+| `state-admission-rules-dadra-and-nagar-haveli-and-daman-and-diu.md` | 2026-09-21 | 15 | 6 | 1 | 1 | 7 | 4 | 0 |  |
+| `state-admission-rules-delhi-nct.md` | 2026-09-21 | 18 | 4 | 4 | 4 | 6 | 6 | 0 |  |
+| `state-admission-rules-goa.md` | 2026-09-21 | 18 | 4 | 5 | 8 | 1 | 10 | 0 |  |
+| `state-admission-rules-haryana.md` | 2026-09-21 | 18 | 5 | 7 | 6 | 0 | 7 | 0 |  |
+| `state-admission-rules-himachal-pradesh.md` | 2026-09-21 | 25 | 9 | 6 | 10 | 0 | 12 | 0 |  |
+| `state-admission-rules-jammu-and-kashmir.md` | 2026-09-21 | 32 | 29 | 0 | 1 | 2 | 29 | 0 |  |
+| `state-admission-rules-jharkhand.md` | 2026-09-21 | 20 | 5 | 9 | 6 | 0 | 13 | 0 |  |
+| `state-admission-rules-kerala.md` | 2026-09-21 | 30 | 26 | 1 | 2 | 1 | 24 | 0 |  |
+| `state-admission-rules-ladakh.md` | 2026-09-21 | 31 | 11 | 10 | 9 | 1 | 17 | 0 |  |
+| `state-admission-rules-lakshadweep.md` | 2026-09-21 | 22 | 11 | 9 | 0 | 2 | 9 | 0 |  |
+| `state-admission-rules-madhya-pradesh.md` | 2026-09-21 | 27 | 10 | 10 | 3 | 4 | 8 | 0 |  |
+| `state-admission-rules-manipur.md` | 2026-09-21 | 17 | 10 | 2 | 2 | 2 | 4 | 0 |  |
+| `state-admission-rules-meghalaya.md` | 2026-09-21 | 21 | 4 | 12 | 3 | 1 | 12 | 0 |  |
+| `state-admission-rules-mizoram.md` | 2026-09-21 | 22 | 9 | 5 | 1 | 7 | 4 | 0 |  |
+| `state-admission-rules-nagaland.md` | 2026-09-21 | 20 | 10 | 4 | 0 | 1 | 7 | 0 |  |
+| `state-admission-rules-odisha.md` | 2026-09-21 | 21 | 15 | 1 | 0 | 5 | 2 | 0 |  |
+| `state-admission-rules-puducherry.md` | 2026-09-21 | 20 | 7 | 9 | 1 | 3 | 6 | 0 |  |
+| `state-admission-rules-punjab.md` | 2026-09-21 | 19 | 5 | 7 | 4 | 3 | 9 | 0 |  |
+| `state-admission-rules-rajasthan.md` | 2026-09-21 | 22 | 2 | 8 | 8 | 4 | 5 | 0 |  |
+| `state-admission-rules-sikkim.md` | 2026-09-21 | 16 | 8 | 3 | 0 | 4 | 10 | 0 |  |
+| `state-admission-rules-telangana.md` | 2026-09-21 | 17 | 9 | 2 | 0 | 6 | 6 | 0 |  |
+| `state-admission-rules-tripura.md` | 2026-09-21 | 19 | 10 | 4 | 0 | 5 | 2 | 0 |  |
+| `state-admission-rules-uttar-pradesh.md` | 2026-09-21 | 15 | 5 | 3 | 2 | 5 | 8 | 0 |  |
+| `state-admission-rules-uttarakhand.md` | 2026-09-21 | 25 | 19 | 1 | 0 | 5 | 3 | 0 |  |
+| `state-admission-rules-west-bengal.md` | 2026-09-21 | 27 | 14 | 3 | 1 | 1 | 14 | 0 |  |
+| `state-institutions-scholarships-andaman-and-nicobar-islands.md` | 2026-09-21 | 17 | 13 | 1 | 0 | 3 | 14 | 0 |  |
+| `state-institutions-scholarships-andhra-pradesh.md` | 2026-09-21 | 24 | 17 | 2 | 2 | 2 | 4 | 0 |  |
+| `state-institutions-scholarships-arunachal-pradesh.md` | 2026-09-21 | 24 | 18 | 0 | 4 | 2 | 14 | 0 |  |
+| `state-institutions-scholarships-assam.md` | 2026-09-21 | 20 | 11 | 3 | 3 | 3 | 9 | 0 |  |
+| `state-institutions-scholarships-bihar.md` | 2026-09-21 | 17 | 8 | 3 | 1 | 4 | 12 | 0 |  |
+| `state-institutions-scholarships-chandigarh.md` | 2026-09-21 | 14 | 7 | 0 | 0 | 7 | 3 | 0 |  |
+| `state-institutions-scholarships-chhattisgarh.md` | 2026-09-21 | 18 | 9 | 3 | 3 | 3 | 1 | 0 |  |
+| `state-institutions-scholarships-dadra-and-nagar-haveli-and-daman-and-diu.md` | 2026-09-21 | 18 | 7 | 7 | 0 | 4 | 4 | 0 |  |
+| `state-institutions-scholarships-delhi-nct.md` | 2026-09-21 | 12 | 4 | 2 | 0 | 6 | 1 | 0 |  |
+| `state-institutions-scholarships-goa.md` | 2026-09-21 | 18 | 15 | 1 | 0 | 2 | 11 | 0 |  |
+| `state-institutions-scholarships-haryana.md` | 2026-09-21 | 15 | 6 | 3 | 3 | 3 | 1 | 0 |  |
+| `state-institutions-scholarships-himachal-pradesh.md` | 2026-09-21 | 13 | 7 | 3 | 1 | 2 | 1 | 0 |  |
+| `state-institutions-scholarships-jammu-and-kashmir.md` | 2026-09-21 | 20 | 10 | 1 | 0 | 9 | 1 | 0 |  |
+| `state-institutions-scholarships-jharkhand.md` | 2026-09-21 | 14 | 7 | 2 | 2 | 3 | 3 | 0 |  |
+| `state-institutions-scholarships-kerala.md` | 2026-09-21 | 16 | 6 | 2 | 4 | 4 | 7 | 0 |  |
+| `state-institutions-scholarships-ladakh.md` | 2026-09-21 | 16 | 5 | 6 | 1 | 4 | 8 | 0 |  |
+| `state-institutions-scholarships-lakshadweep.md` | 2026-09-21 | 11 | 2 | 3 | 2 | 4 | 5 | 0 |  |
+| `state-institutions-scholarships-madhya-pradesh.md` | 2026-09-21 | 18 | 7 | 8 | 1 | 2 | 2 | 0 |  |
+| `state-institutions-scholarships-manipur.md` | 2026-09-21 | 19 | 10 | 2 | 2 | 5 | 9 | 0 |  |
+| `state-institutions-scholarships-meghalaya.md` | 2026-09-21 | 13 | 8 | 1 | 0 | 4 | 6 | 0 |  |
+| `state-institutions-scholarships-mizoram.md` | 2026-09-21 | 24 | 16 | 4 | 1 | 3 | 11 | 0 |  |
+| `state-institutions-scholarships-nagaland.md` | 2026-09-21 | 17 | 11 | 1 | 0 | 5 | 6 | 0 |  |
+| `state-institutions-scholarships-odisha.md` | 2026-09-21 | 18 | 13 | 2 | 0 | 3 | 6 | 0 |  |
+| `state-institutions-scholarships-puducherry.md` | 2026-09-21 | 20 | 12 | 0 | 4 | 4 | 15 | 0 |  |
+| `state-institutions-scholarships-punjab.md` | 2026-09-21 | 17 | 11 | 2 | 0 | 4 | 8 | 0 |  |
+| `state-institutions-scholarships-rajasthan.md` | 2026-09-21 | 14 | 5 | 3 | 1 | 5 | 5 | 0 |  |
+| `state-institutions-scholarships-sikkim.md` | 2026-09-21 | 22 | 9 | 8 | 1 | 4 | 6 | 0 |  |
+| `state-institutions-scholarships-telangana.md` | 2026-09-21 | 18 | 15 | 0 | 2 | 1 | 2 | 0 |  |
+| `state-institutions-scholarships-tripura.md` | 2026-09-21 | 25 | 17 | 4 | 1 | 3 | 13 | 0 |  |
+| `state-institutions-scholarships-uttar-pradesh.md` | 2026-09-21 | 16 | 11 | 1 | 0 | 4 | 3 | 0 |  |
+| `state-institutions-scholarships-uttarakhand.md` | 2026-09-21 | 21 | 12 | 5 | 0 | 4 | 13 | 0 |  |
+| `state-institutions-scholarships-west-bengal.md` | 2026-09-21 | 16 | 10 | 2 | 1 | 3 | 0 | 0 | 6 non-fact-table row(s) |
 
 ## Regenerating
 

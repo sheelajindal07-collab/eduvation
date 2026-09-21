@@ -14,8 +14,7 @@ row below directly into the facts/records tables. No rank predictions,
 suitability judgments, or personality-type labels are made here, in line
 with project rules.
 
-Research date: 2026-09-21. Researcher: automated agent (session run for
-carohitjin@gmail.com), web search only, no student data used or seen.
+Research date: 2026-09-21. Researcher: automated agent, web search only, no student data used or seen.
 
 Method note: this session's WebSearch budget was already exhausted before
 this task began, so this draft relies entirely on direct WebFetch reads of

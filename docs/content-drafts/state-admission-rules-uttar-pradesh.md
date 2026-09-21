@@ -16,8 +16,7 @@ suitability judgments, or guarantees are made here, in line with project
 rules — this file states named assumptions and ranges only where a range
 was found.
 
-Research date: 2026-09-21. Researcher: automated agent (session run for
-carohitjin@gmail.com), web search only, no student data used or seen.
+Research date: 2026-09-21. Researcher: automated agent, web search only, no student data used or seen.
 
 Scope note: this mirrors the depth of `docs/content-drafts/gujarat-institutions.md`
 and `gujcet-eligibility.md` — state admissions *infrastructure* (which
