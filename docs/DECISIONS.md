@@ -5,6 +5,44 @@ never deleted.
 
 ---
 
+## 2026-09-22 — Declarative cross-user access matrix (QA-6); a real thread leak found and fixed at its source
+**Event:** `tests/db/access_matrix.py` + `tests/db/test_access_matrix.py`
+turn CLAUDE.md's "cross-user access is tested every time auth, RLS or
+publication changes" into a standing, self-enforcing guard: 224 cells
+(14 public tables — 7 more than the task's original inventory line
+named, since `0004`/`0007`/`0009`/`0010` each added tables since it was
+written — × guest/student A/student B/reviewer × select/insert/update/
+delete), each citing the exact migration and policy it comes from, plus
+a psycopg check that fails the run outright if any public table has RLS
+disabled or has zero matrix rows. A table a future migration adds and
+nobody documents here can no longer pass by silent omission. Two
+placeholder cells (export, storage) are `xfail(strict=True)` — they turn
+red the day either capability is actually built, rather than staying
+silently absent forever.
+**Verified, not assumed:** every cell was read out of the actual SQL
+first; the one cell where a live run disagreed with that reading
+(`guardian_consents`/insert/student A) was investigated to a real,
+documented explanation (PostgREST applies a table's SELECT policies to
+an `INSERT ... RETURNING` row; that table deliberately has none) rather
+than edited to match. The guard itself was proven both ways: a fake
+extra table correctly reports zero coverage; a shrunk `careers` entry
+correctly lists every missing cell.
+**A real bug found along the way, fixed at its source, not just worked
+around:** every RLS-scoped test client that signs a user in starts a
+refresh-token background thread that keeps the client alive past its
+test (not garbage; `gc.collect()` cannot touch it). At 500+ tests this
+exhausted file descriptors and crashed the whole `tests/db` run
+(`OSError: Too many open files`), which -- fixed only inside QA-6's own
+new file at first -- would have kept happening to every other test file
+the moment enough of them ran together. Fixed properly in
+`tests/db/conftest.py`'s four role fixtures (`student_a`/`student_b`/
+`reviewer`/`second_reviewer`), which every file in the directory shares.
+**Verified live:** `tests/db` went from 303 passed (before QA-6) to 548
+passed + 8 xfailed, 0 skipped, 0 failed (after QA-6 and the conftest.py
+fix, and after SEC-2's own new tests on top) — run twice, once inside
+the implementing agent's own worktree and once again against the shared
+local stack after merge.
+
 ## 2026-09-22 — CSRF for cookie sessions: Origin check, Referer fallback, fail closed
 **Decision.** A state-changing request (POST/PUT/PATCH/DELETE) that carries one
 of this app's session cookies is rejected with 403 unless every origin-declaring

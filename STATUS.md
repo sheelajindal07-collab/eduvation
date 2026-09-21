@@ -107,31 +107,39 @@ model/token/daily-cap names) and `PUB-5` (split `reviewer_pages.py` into
 `app/web/reviewer/{auth,queue}.py` plus stubs for future console lanes,
 zero behaviour change, unblocks the `SEC-2 → DEPLOY-15 → A11Y-4` chain
 that all three serialise on) are also merged. 790 unit tests passing.
-**`DEPLOY-3` merged** — real Dockerfile (non-root, hash-checked install
-from `requirements.lock`, no Node stage), `make build` wired for real,
-a `build-image` CI job (verified green on GitHub's own runner, not just
-locally). **In flight now** (2 of the original parallel lanes still
-running): `A11Y-2` (state macros, `base.html` landmarks, moves
-`explore.html`'s inline script to a static file — exclusive use of
-`base.html`/`_components.html` while it runs), `QA-6` (declarative
-cross-user access matrix + an RLS-coverage guard). `RULES-10`'s first
-pass (multi-component fee sums, estimate-vs-override split) is done but
-being extended before merge: `docs/CONTRACTS.md`'s frozen "Money and
-currency" section settles that RULES-10, not a later task, introduces a
-real `Money(amount, currency)` type — missed in the original task card
-(written from a stale planning-inventory line that only said "integer
-rupees"), caught from the agent's own report, now being fixed on the
-same branch rather than merged as a known-incomplete contract.
-**Next after these land:** `SEC-2` (CSRF contract,
-now unblocked by PUB-5), then `DEPLOY-15`, then `A11Y-4`, in that order
-(all three touch `app/web/reviewer/auth.py`); `DEPLOY-4`/`DEPLOY-6`
-once `DEPLOY-2`+`DEPLOY-3` are both in; `DEPLOY-2` itself is blocked on
-`DEPLOY-1` (owner: record the real Oracle VM facts — the substance
-already lives in this file's "Infrastructure" table, just not yet
-copied into a `docs/DECISIONS.md` entry the way DEPLOY-1 wants it).
+**All six of that day's parallel lanes now merged and CI-green**:
+`DEPLOY-3` (real Dockerfile, non-root, hash-checked install, `make
+build` wired, a `build-image` CI job verified on GitHub's own runner),
+`A11Y-2` (state macros, `base.html` landmarks, `explore.html`'s inline
+script moved to a static file), `RULES-10` (multi-component fee sums,
+plus — a genuine gap in the original task card, caught from the
+agent's own report before merge — the full `Money(amount, currency)`
+type `docs/CONTRACTS.md` had already settled was RULES-10's job; a real
+live-DB test failure this surfaced was found and fixed by running the
+full suite before pushing, not trusting the merge), `SEC-2` (CSRF
+Origin/Referer check for reviewer cookie POSTs, fixed error codes
+replacing reflected free text — revert-to-prove verified: without the
+guard, a forged cross-origin POST really does publish a claim), `QA-6`
+(224-cell declarative cross-user access matrix + an RLS-coverage guard
+— also found and fixed, at its source in `tests/db/conftest.py`, a real
+thread leak that would have crashed `tests/db` under enough concurrent
+tests). `tests/db`: 548 passed, 8 xfailed, 0 skipped, 0 failed.
+`tests/unit`: 903 passed. Full details, including every real bug found
+along the way, in `docs/DECISIONS.md`'s 2026-09-22 entries.
+**Next:** `A11Y-4` (Cache-Control middleware — depends only on `A11Y-1`,
+done; SEC-2 merging clears the file-serial rule the plan put it behind).
+`DEPLOY-15` is next in that same file-serial chain but its OWN real
+dependency (`DEPLOY-2`, not just SEC-1) is still blocked: `DEPLOY-2`
+needs `DEPLOY-1` (owner: record the real Oracle VM facts — the
+substance already lives in this file's "Infrastructure" table, just not
+yet copied into a `docs/DECISIONS.md` entry the way `DEPLOY-1` wants
+it). `DEPLOY-4`/`DEPLOY-6` are behind the same `DEPLOY-2` gate.
 `QA-12` (sweeping test residue from the **live** project) and `DATA-10a`
-are owner-run, not agent work, by design. See `docs/TESTING.md` (new,
-QA-4) for the local-stack contract every parallel lane follows.
+are owner-run, not agent work, by design. `SCOPE-4` (currency-aware
+cost display, closing the display gap RULES-10 disclosed) is unblocked
+now (`SCOPE-3`, `I18N-2` both done) and queued next. See
+`docs/TESTING.md` (new, QA-4) for the local-stack contract every
+parallel lane follows.
 
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.

@@ -42,7 +42,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] QA-3 - Run-tagged fixtures, sweeper, xdist (exclusive window on tests/db and tests/e2e) [W1]
 - [x] DESIGN-5 - Three journeys plus the teacher demonstration journey [W1]
 - [x] SCOPE-3 - Migration 0008: jurisdiction, cycle, currency columns, freeze-trigger update [W2]
-- [ ] QA-6 - Cross-user access matrix with a table guard [W2]
+- [x] QA-6 - Cross-user access matrix with a table guard [W2]
 - [ ] SEC-6 - Migration 0013: grants and exposure hardening, catalogue test [W4]
 
 ## Step 5 Private staging (M1) - PARTIAL (app on the VM, localhost only)
