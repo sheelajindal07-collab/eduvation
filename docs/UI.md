@@ -85,11 +85,18 @@ source — the interface side of the public correction log (DPR §11).
 - **Institutions / coaching / lenders / employers:** no student-facing
   controls; corrections enter the review workflow.
 
-## Component set (frozen at Step 7 / M2, per Lite Build Pack §5)
+## Component set (frozen v1, 2026-09-21)
 Cards, source labels, inputs, alerts, comparison sections, reminder opt-in,
 "what changed" list. Contextual "Ask BCION" entry points use canned prompts
 over retrieved records (fixed template — this is also the Tier-0/Tier-1
 cost control from the national DPR §9), never a blank chat box.
+
+Naming this list "frozen at Step 7 / M2" was inaccurate before this freeze
+existed: Step 7 (Build Pack §9) covers Compare and calculators, not a
+component-freeze event, and several items on this exact list (reminder
+opt-in, "what changed" list) still have no implementation. "Component and
+state contract v1" below is what actually freezes, and what actually
+exists today, per component — see that section for status.
 
 ## Usability rounds
 - **Round 1** (after Step 7 / week 5, on a clickable prototype, before the
@@ -100,3 +107,101 @@ cost control from the national DPR §9), never a blank chat box.
   explain verified-cost vs estimate; locate an official source; save a next
   action; change a preference; recognise uncertainty rather than treat the
   system as an authority.
+
+## Component and state contract v1 (frozen v1, 2026-09-21)
+
+This section is the shared contract other screens are built against — the
+mapping from each build-pack component (per the "Component set" list
+above) to its actual class or macro name and file today, plus the state
+vocabulary every component in this app follows. It is additive: it
+freezes what exists now and names what is still missing; it does not
+change any of the sections above. Amendments after usability round 1
+(DESIGN-6) are v1.1, additive-only over this table, never a silent
+rewrite of a row.
+
+### Component inventory
+
+Statuses are checked directly against the current templates and styles
+(`app/web/templates/`, `app/web/styles/input.css`) as of this freeze —
+not against the plan.
+
+| Component | Class / macro | File | Status |
+| --- | --- | --- | --- |
+| Cards | `.card` | `app/web/styles/input.css` | Exists |
+| Source label (with cycle and report slot) | `evidence_line()` macro | `app/web/templates/_trust_badge.html` | Partial — renders source authority, official link and verification date today; has no `applicable_cycle` or "Report an issue" slot yet (planned: DESIGN-18's extension of `evidence_line`) |
+| Inputs | `.field-input` (**canonical**, see declaration below) | `app/web/styles/input.css` | Exists |
+| Alerts | `.alert` + `.alert--caution`, `.alert--neutral`, `.alert--error` | `app/web/styles/input.css` | Exists (three variants only; no positive/success variant yet) |
+| Comparison section | no macro yet — markup is written inline in `compare.html`; planned `comparison_section` macro | `app/web/templates/compare.html`; planned `app/web/templates/_components.html` | Missing as a reusable component. The screen itself works; it is not yet a component another screen could reuse without copying markup |
+| Reminder opt-in | none; planned `reminder_opt_in` macro | planned `app/web/templates/_components.html` | Missing |
+| "What changed" list | none; planned `what_changed_list` macro | planned `app/web/templates/_components.html` | Missing — the My Plan screen it belongs under does not exist yet either |
+| Career card | none distinct — `explore.html` currently lists careers inside the plain `.card` component, not a dedicated career-card layout; planned `career_card` macro (four questions plus reality check) | planned `app/web/templates/_components.html` | Missing |
+| Why-seeing-this | none; planned `why_seeing_this` macro | planned `app/web/templates/_components.html` | Missing |
+| Ask BCION entry | none; planned `ask_bcion_entry` macro (canned prompts only, hidden when AI is off) | planned `app/web/templates/_components.html` | Missing. `app/ai/grounding.py` and `app/ai/budget.py` implement the grounded-answer and budget logic this component will call; no template or route renders it yet |
+| Nav shell | `<header>`/`<nav>` in `base.html` | `app/web/templates/base.html` | Partial — today it is a wordmark link to `/explore` plus one link to `/timeline/view`. It does not yet implement `docs/PRODUCT.md`'s four-destination model (Explore / Compare / My Plan / Saved) or the utility menu (account, language, privacy); My Plan and Saved have no route to link to yet |
+
+The five items marked "planned `_components.html`" all come from the same
+not-yet-built file (DESIGN-18's task). Until it exists, treat every macro
+name in this table as reserved, not available to import.
+
+### `.field-input` is canonical
+
+`app/web/styles/input.css` currently defines **two** input styles:
+
+- `.field-input` — used by `requirements.html` and `timeline_calculator.html`.
+  Padding clears the 44–48px touch-target minimum (`input.css`'s own
+  comment on this class documents the fix and the reviewer finding behind
+  it).
+- `.input` — used only by `reviewer_sign_in.html`. `input.css`'s own
+  comment on `.field-input` notes that `.input`'s shorter padding computes
+  to roughly 42px, under the minimum.
+
+**`.field-input` is the canonical input class for v1.** Every new screen
+uses `.field-input`. `.input` is a pre-existing duplicate, not a second
+approved option; migrating `reviewer_sign_in.html` off `.input` is a
+follow-up implementation task, not part of this docs-only freeze (this
+section changes no code).
+
+### Foreign-currency and visa slots: not in v1
+
+**Not in v1.** `docs/DECISIONS.md`'s 2026-09-21 entry ("Pilot scope
+widened: all-India admission rules, foreign pathways for Indian students
+added") added foreign/study-abroad pathways to pilot scope, but recorded
+in the same entry that "foreign pathways add a second content category
+(foreign fee currencies, visa/entry requirements, non-Indian source
+verification) with no schema support yet." `docs/CONTRACTS.md`'s "Money
+and currency" section is still an empty skeleton (`<SCOPE-2 / RULES-1>`).
+Concretely: `field_value()` and `evidence_line()` (`_trust_badge.html`)
+have no currency-code or visa-specific field today — a foreign pathway
+rendered on the Compare screen right now would show its cost with the
+same bare `₹` formatting as a domestic one, which is a known gap, not a
+feature. A currency/visa slot is a new component, not a variant of an
+existing one, and needs its own task and its own row in this table before
+any foreign pathway reaches a comparison screen. Until then, a foreign
+pathway shown anywhere in this app should be treated the same as any
+other pathway with an out-of-scope field: the field is either omitted or
+shown as `not_available`, never invented in a display currency.
+
+### State-pattern table
+
+The state a component is in is never conveyed by colour alone (`docs/UI.md`
+"Visual direction"); every row below pairs a state with the concrete
+mechanism this app already uses for it, or names the gap.
+
+| State | When it applies | Visual pattern | Implemented today in |
+| --- | --- | --- | --- |
+| Has a value | A field has a real, published value | Plain text value + the relevant trust badge below it | `field_value()`, `_trust_badge.html` |
+| Not available | No record exists for this field at all | `trust_badge(not_available)`: dashed border, em-dash icon, text "Not available" — never a blank space | `_trust_badge.html` |
+| Needs rechecking | A published fact's verification is overdue or evidence changed | `trust_badge(needs_rechecking)`: caution colour + warning icon + text | `_trust_badge.html` |
+| Insufficient information | Some input exists but not enough to give a definite eligibility or AI answer | `eligibility_outcome_badge(insufficient_information)`; `app/ai/grounding.py`'s `AIAnswerStatus.insufficient_information` (not yet rendered by any template — see Ask BCION entry above) | `_trust_badge.html`; `app/ai/grounding.py` |
+| Empty (no results for this user/filter) | A list has nothing to show | `.alert--neutral` + icon + plain-language copy (`docs/COPY.md` `global.difficult_state.no_matching_result`, or a screen's own empty copy such as `explore.html`'s "No careers published yet") | `explore.html`, `requirements.html` |
+| User-actionable error | A request failed in a way the user can retry or route around (bad link, missing pathway) | `.alert--caution` + icon + explanation + a way back | `compare.html`, `requirements.html` |
+| System/workflow error | A conflict the user cannot fix by retrying (two reviewers racing a claim, an invalid transition) | `.alert--error` + icon + `role="alert"` | `reviewer_queue.html` |
+| One of the eight difficult states | See the "Difficult states" table above | Alert or badge per state, exact copy from `docs/COPY.md`'s `global.difficult_state.*` keys | Mixed — see each key's Status column in `docs/COPY.md` |
+| Disabled | An input is temporarily unavailable (e.g. a checkbox once 3 pathways are already selected) | `disabled` attribute + a visible text change in a live region, never a colour-only dim | `explore.html`'s compare-selection script |
+| Loading (a request is in flight) | N/A for v1 | Not implemented anywhere and not needed yet: every current screen is a full server-rendered response with zero client-side async fetch. A future screen that adds one (e.g. Ask BCION) must define this row for real rather than inherit this placeholder | none |
+
+Every touch target in every state above keeps the 44–48px minimum already
+established by `.btn-primary`, `.btn-secondary` and `.field-input`; a
+disabled or empty state is exempt from nothing here. Motion, where any
+exists, keeps respecting `prefers-reduced-motion` (`input.css`'s global
+media query) in every state row, including states not yet built.
