@@ -89,26 +89,48 @@ def is_minor(date_of_birth: date, *, as_of: date) -> bool:
 
 @lru_cache(maxsize=1)
 def guardian_consent_schema_is_live() -> bool:
-    """Whether `db/migrations/0004_guardian_consent.sql` has been applied
-    to the connected Supabase project yet — probed once per process via
-    the migration's own marker function (mirrors `tests/db/conftest.py`'s
-    `_maker_checker_migration_applied()` exactly, and cached the same way
-    `app.core.config.get_settings()` is: this is not expected to flip
-    true mid-process, only across a restart after the owner applies it).
+    """Whether BOTH `db/migrations/0004_guardian_consent.sql` AND
+    `db/migrations/0005_guardian_consent_request_rpc.sql` have been
+    applied to the connected Supabase project yet — probed once per
+    process via each migration's own marker function (mirrors
+    `tests/db/conftest.py`'s `_maker_checker_migration_applied()`
+    exactly, and cached the same way `app.core.config.get_settings()`
+    is: this is not expected to flip true mid-process, only across a
+    restart after the owner applies each one).
 
-    **Why this exists at all**: until the owner actually runs this
-    migration (same manual step as 0001-0003 — see db/migrations/
-    README.md), `student_accounts`/`guardian_consents` do not exist.
-    Without this check, EVERY sign-in — not just a self-declared minor's
-    — would 500 the moment `enforce_guardian_consent_gate` tried to query
-    a table that doesn't exist yet, which would be a severe regression
-    for the adult accounts this task explicitly must not regress. This
-    check lets the gate degrade to "not enforceable yet" (the same
-    baseline STATUS.md already documents: sign-up with no age/consent
-    gate) instead, while everything else in the app keeps working.
-    See STATUS.md for the exact owner action needed."""
+    **Why BOTH, not just 0004** (adversarial review, 2026-09-21,
+    MEDIUM, closing a gap found the moment 0005 existed but 0004 was
+    already live somewhere real): `create_guardian_consent_request`
+    below calls 0005's `create_guardian_consent_request` RPC
+    unconditionally whenever this function reports `True`. If only
+    0004's marker were checked, applying 0004 alone (a real, live
+    sequence — 0004 was applied to production before 0005 even
+    existed) would make this report `True` while the RPC 0005 defines
+    still doesn't exist, and the very first self-declared-minor
+    sign-up/sign-in would 500 on `could not find function
+    create_guardian_consent_request` — the identical class of bug this
+    whole 0005 migration exists to close, just relocated. Requiring
+    both markers means the gate correctly stays "not enforceable yet"
+    (safe, same fail-closed 503 as before 0004 existed at all) for the
+    entire window between the owner applying 0004 and applying 0005,
+    rather than silently trading one crash for another.
+
+    **Why this exists at all**: until the owner actually runs these
+    migrations (same manual step as 0001-0003 — see db/migrations/
+    README.md), `student_accounts`/`guardian_consents` (0004) or the
+    RPC (0005) do not exist. Without this check, EVERY sign-in — not
+    just a self-declared minor's — would 500 the moment
+    `enforce_guardian_consent_gate` tried to query a table or call a
+    function that doesn't exist yet, which would be a severe
+    regression for the adult accounts this task explicitly must not
+    regress. This check lets the gate degrade to "not enforceable yet"
+    (the same baseline STATUS.md already documents: sign-up with no
+    age/consent gate) instead, while everything else in the app keeps
+    working. See STATUS.md for the exact owner action needed."""
     try:
-        get_anon_client().rpc("guardian_consent_schema_version", {}).execute()
+        client = get_anon_client()
+        client.rpc("guardian_consent_schema_version", {}).execute()
+        client.rpc("guardian_consent_request_rpc_schema_version", {}).execute()
         return True
     except Exception:  # noqa: BLE001 — any error here means "not ready yet"
         return False
@@ -130,78 +152,85 @@ def create_guardian_consent_request(
     """Creates the `student_accounts` row (status
     `pending_guardian_consent`) and the `guardian_consents` row, then
     emails the guardian via `sender`. `client` must already be scoped to
-    `student_id`'s own session (`client.postgrest.auth(access_token)`) —
-    both inserts are own-row RLS-protected (see the migration), so this
-    fails loudly with a 403-shaped `APIError` from Postgres if it isn't.
+    `student_id`'s own session (`client.postgrest.auth(access_token)`).
+
+    Delegates both inserts to the `create_guardian_consent_request` SQL
+    function (`db/migrations/0005_guardian_consent_request_rpc.sql`)
+    rather than doing them as two plain `client.table(...).insert(...)`
+    calls. **Why an RPC, not a direct insert:** supabase-py's
+    `.insert().execute()` defaults to `Prefer: return=representation`,
+    asking PostgREST to return the inserted row via `INSERT ...
+    RETURNING`. Postgres applies a table's SELECT policies to rows
+    returned this way, not just the INSERT policy's WITH CHECK to the
+    write itself — and `guardian_consents` deliberately has NO SELECT
+    policy at all, for anyone (see db/migrations/0004_guardian_consent.sql's
+    module-level design note: the token is a bearer credential that must
+    never be readable through the normal API, not even by the owning
+    student). That combination meant the direct-insert form used to fail
+    outright with "new row violates row-level security policy for table
+    guardian_consents" — a real, previously-live bug that broke the
+    guardian-consent gate for every self-declared minor. The RPC does the
+    insert and reads back the value INSERT itself produced in the same
+    statement, server-side, as the function owner — no RETURNING-through-
+    REST round trip, so no SELECT policy is ever needed. See the
+    migration's own module-level comment for the full explanation.
+
+    The RPC determines the calling student from `auth.uid()` internally
+    (there is no `student_id` parameter to send it — `student_id` is kept
+    on THIS function's own signature only for logging and because
+    existing callers pass it).
 
     Idempotent against a concurrent duplicate call (two sign-in requests
-    racing the same lazy-create path): a unique-violation on the
-    `student_accounts` insert is treated as "already created by another
-    request", not an error — the caller (the gate below) still ends up
-    correctly blocked either way, just without a second email sent. A
-    unique-violation on the `guardian_consents` insert itself (the
-    `guardian_consents_one_pending_per_student` partial unique index,
-    db/migrations/0004_guardian_consent.sql — adversarial review,
-    2026-09-21) is handled the same way for the same reason: this
-    function's own two inserts are not atomic with each other, so a
-    caller racing a direct-API duplicate could in principle hit this
-    second unique constraint instead of the first one.
+    racing the same lazy-create path) and against a genuinely
+    still-pending request from earlier — but **only the
+    `guardian_consents` insert's own outcome decides the return value**
+    (adversarial review, 2026-09-21, MEDIUM, correcting an earlier,
+    inaccurate version of this docstring that claimed a
+    `student_accounts` conflict alone also produced `NULL`): the RPC's
+    `student_accounts` insert uses `ON CONFLICT (id) DO NOTHING` and
+    always proceeds regardless of whether that row already existed;
+    only the SEPARATE `ON CONFLICT (student_id) WHERE status='pending'
+    DO NOTHING` on `guardian_consents` determines whether `NULL` comes
+    back. So a `student_accounts` row already existing (e.g. from an
+    earlier call) but no currently-*pending* `guardian_consents` row
+    (e.g. a prior request expired) still produces a real, fresh token —
+    not `NULL`. Both of today's callers (`app.api.auth.sign_up` and
+    this module's own `enforce_guardian_consent_gate`) only ever reach
+    this function when no `student_accounts` row exists yet, so that
+    combination is unreachable today, but a future "resend the
+    guardian email" feature would hit it and must not assume `NULL`
+    means "nothing happened" — "already existed, not an error, no
+    second email sent" is enforced database-side rather than by
+    catching a unique-violation exception here, but specifically for
+    the `guardian_consents` row, not the account row.
 
     **The `token` itself is never chosen here** (adversarial review,
     2026-09-21, closing a complete bypass — see the migration's own
     docstring): a BEFORE INSERT trigger on `guardian_consents`
     unconditionally server-generates `token` and `expires_at`, silently
-    overwriting anything this call sends (nothing is sent for either
-    field, on purpose, so there is nothing here that could look like it
-    matters and not actually be used). The confirmation email is built
-    from the token this INSERT's own response reports was actually
-    written — never from a value generated in this process — the same
-    "read back what the database actually did" pattern
-    `app.api.auth._migrate_pending_plan` already uses for a saved plan's
-    generated id.
+    overwriting anything this call sends. The confirmation email is built
+    from the token the RPC reports was actually written — never from a
+    value generated in this process — the same "read back what the
+    database actually did" pattern `app.api.auth._migrate_pending_plan`
+    already uses for a saved plan's generated id.
     """
-    try:
-        client.table("student_accounts").insert(
-            {
-                "id": student_id,
-                "date_of_birth": date_of_birth.isoformat(),
-                "account_status": "pending_guardian_consent",
-            }
-        ).execute()
-    except APIError as exc:
-        if exc.code == _UNIQUE_VIOLATION:
-            logger.info(
-                "student_accounts row for user_id=%s already existed "
-                "(concurrent creation) — not an error.",
-                student_id,
-            )
-            return
-        raise
+    result = client.rpc(
+        "create_guardian_consent_request",
+        {
+            "p_date_of_birth": date_of_birth.isoformat(),
+            "p_guardian_email": guardian_email,
+        },
+    ).execute()
+    token = cast("str | None", result.data)
 
-    try:
-        result = (
-            client.table("guardian_consents")
-            .insert(
-                {
-                    "student_id": student_id,
-                    "guardian_email": guardian_email,
-                }
-            )
-            .execute()
+    if token is None:
+        logger.info(
+            "guardian_consents row for student_id=%s already existed "
+            "(concurrent creation, or a still-pending request from "
+            "earlier) — not an error, no second email sent.",
+            student_id,
         )
-    except APIError as exc:
-        if exc.code == _UNIQUE_VIOLATION:
-            logger.info(
-                "guardian_consents row for student_id=%s already existed "
-                "(concurrent creation, or a still-pending request from "
-                "earlier) — not an error, no second email sent.",
-                student_id,
-            )
-            return
-        raise
-
-    rows = cast("list[dict[str, Any]]", result.data)
-    token = rows[0]["token"]
+        return
 
     subject, body = build_guardian_consent_email(
         confirm_url=_confirm_url(token), expiry_hours=GUARDIAN_CONSENT_EXPIRY_HOURS

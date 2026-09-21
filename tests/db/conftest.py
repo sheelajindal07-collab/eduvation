@@ -89,11 +89,21 @@ def _guardian_consent_migration_applied() -> bool:
     """Same marker-function pattern as `_maker_checker_migration_applied`
     — 0004 adds new tables too (`student_accounts`/`guardian_consents`),
     but also functions/triggers a bare table-existence check wouldn't
-    cover, so it gets its own marker the same way 0003 does."""
+    cover, so it gets its own marker the same way 0003 does.
+
+    Checks BOTH 0004's and 0005's markers (mirrors
+    `app.api.guardian_consent.guardian_consent_schema_is_live`'s
+    identical fix, same day, same reasoning): 0005 adds the RPC this
+    test file's RPC-specific tests call directly, so if only 0004's
+    marker were checked here, those tests would attempt to run (and
+    fail noisily) rather than cleanly skip in the real, live window
+    where 0004 is applied but 0005 isn't yet."""
     from app.db import get_anon_client
 
     try:
-        get_anon_client().rpc("guardian_consent_schema_version", {}).execute()
+        client = get_anon_client()
+        client.rpc("guardian_consent_schema_version", {}).execute()
+        client.rpc("guardian_consent_request_rpc_schema_version", {}).execute()
         return True
     except Exception:  # noqa: BLE001 — any error here means "not ready yet"
         return False
