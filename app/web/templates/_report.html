@@ -9,13 +9,20 @@
    "Report an issue" control on every consequential fact in the app --
    with no edit to any screen template.
 
-   WHY IT RENDERS NOTHING TODAY: docs/UI.md requires every consequential
-   fact to show "Report an issue", and the Build Pack lists it as a
-   phase-1 requirement -- but a link needs somewhere to go. A control
-   that looks live and silently does nothing is worse for a usability
-   round than an honest gap, and the gap is already tracked. So: no URL,
-   no link. Never a `#` placeholder href, never a `mailto:` nobody
-   monitors.
+   WHAT DESIGN-18 ADDED, AND WHAT IS STILL MISSING: this now renders a
+   real control -- but only when a caller hands it a real `url`. It
+   never invents one. Nothing in the app passes one yet, because the
+   endpoint does not exist, so nothing renders on any screen today;
+   `components_gallery.html` is the only place that supplies a URL, and
+   that page is never served.
+
+   That split is deliberate. docs/UI.md requires every consequential
+   fact to offer "Report an issue" and the Build Pack makes it a
+   phase-1 requirement, so the markup should not be the thing blocking
+   it -- but a control that looks live and silently drops what a reader
+   typed is worse for a usability round than an honest gap, and the gap
+   is already tracked. So: no URL, no link. Never a `#` placeholder
+   href, never a `mailto:` nobody monitors.
 
    Signature frozen by UI-1 — see docs/UI.md "Shell and stub macro
    contract". Every argument is optional so today's single caller does
@@ -37,5 +44,18 @@
       is wrong". They are identifiers, never personal data -- whatever
       the reader types belongs in the form this links to, never in a
       URL (docs/CONTRACTS.md: "Every personal input ... is POST-only").
+
+      The caller builds `url` server-side, ids included. This macro does
+      not assemble a query string: it would have to guess the endpoint's
+      parameter names, and a URL built in a template is a URL nobody
+      validates.
   -#}
+  {% if url %}
+    <p class="report-issue">
+      <a href="{{ url }}" class="report-issue__link">
+        {{ label or "Report an issue" }}
+        {%- if field %}<span class="sr-only"> with {{ field }}</span>{% endif -%}
+      </a>
+    </p>
+  {% endif %}
 {% endmacro %}

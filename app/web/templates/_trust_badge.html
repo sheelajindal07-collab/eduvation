@@ -33,7 +33,8 @@
   {% endif %}
 {% endmacro %}
 
-{% macro evidence_line(source_authority, source_url, verification_date, label=none) %}
+{% macro evidence_line(source_authority, source_url, verification_date, label=none,
+                       applicable_cycle=none, report_issue_url=none) %}
   {# The "source authority ... official link, verification date" line
      docs/UI.md requires per fact -- factored out of field_value() below
      so a caller with the same three evidence fields but no FieldValue
@@ -41,7 +42,26 @@
      the exact same evidence-display pattern instead of a second,
      drifting copy of it. `label` is optional and only changes the
      trailing qualifier text (matches field_value's own behaviour when
-     it had this inline). #}
+     it had this inline).
+
+     DESIGN-18 added the last two arguments, both optional and both
+     rendering NOTHING when absent -- so every existing caller is
+     unchanged:
+
+       applicable_cycle  the admission/fee cycle this fact belongs to
+                         ("2026-27"). docs/UI.md's per-fact requirement
+                         has always listed it; without it "verified
+                         2026-09-01" cannot tell a reader WHICH year's
+                         fee they are looking at, which is the single
+                         most misleading thing a stale fee can do.
+       report_issue_url  passed straight through to `report_issue()`.
+                         No report control appears without a real URL
+                         behind it -- see `_report.html`.
+
+     Neither is wired into a screen yet: no table stores a cycle
+     (docs/CONTRACTS.md's scope columns landed, the cycle did not) and
+     no report endpoint exists. The slots are here so the screen
+     templates never have to change when either lands. #}
   {% if source_url %}
     <p class="text-xs text-neutral mt-1">
       <a href="{{ source_url }}" class="underline hover:text-accent" target="_blank" rel="noopener noreferrer">
@@ -50,13 +70,20 @@
         {%- if label == "needs_rechecking" %} (recheck due){% endif -%}
         <span class="sr-only"> (opens in a new tab)</span>
       </a>
+      {% if applicable_cycle %} &middot; {{ applicable_cycle }} cycle{% endif %}
       {% if verification_date %} &middot; verified {{ verification_date }}{% endif %}
     </p>
   {% endif %}
+  {# Known gap, left alone deliberately: with no `source_url` this whole
+     block renders nothing, so a fact whose URL is missing (or was
+     rejected for an unsafe scheme by _safe_source_url) hides its
+     verification date and cycle too. Changing that would change what
+     every existing caller renders, which DESIGN-18 is explicitly not
+     allowed to do -- it needs its own task and its own test. #}
   {# The report slot sits OUTSIDE the `source_url` guard on purpose: a
      fact with no official link is exactly the kind a reader is most
-     likely to want to dispute. Renders nothing today. #}
-  {{ report_issue() }}
+     likely to want to dispute. Renders nothing without a real URL. #}
+  {{ report_issue(url=report_issue_url, field=none) }}
 {% endmacro %}
 
 {% macro eligibility_outcome_badge(outcome, overall=false) %}

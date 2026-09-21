@@ -1,0 +1,374 @@
+{# DESIGN-18 — every shared macro, rendered once at 360px and once at
+   full width, for a visual review pass.
+
+   THIS PAGE HAS NO ROUTE, ON PURPOSE. Everything on it is synthetic
+   (CLAUDE.md: synthetic fixtures are clearly labelled and NEVER
+   published as verified facts), so it is never served to anyone. It is
+   rendered to a local file when somebody wants to look at it — see
+   docs/UI.md "Components gallery" for the one-line command.
+
+   Every value below is made up and is labelled as made up: the page
+   carries a standing banner, and each fixture's own trust badge and
+   source authority say "Synthetic" in the text a reader would read.
+   Nothing here is a claim about a real institution, fee or exam.
+
+   It does not extend base.html: the point is to look at the components
+   on their own, without the app shell competing for attention, and to
+   be openable straight from disk. #}
+{% from "_components.html" import ask_bcion_entry, career_card, comparison_section,
+                                  pathway_detail_link, reminder_opt_in,
+                                  what_changed_list, why_seeing_this %}
+{% from "_trust_badge.html" import eligibility_outcome_badge, evidence_line,
+                                   field_value, trust_badge %}
+{% from "_report.html" import report_issue %}
+{% from "_ask.html" import ask_bcion %}
+{% from "_why.html" import why_am_i_seeing_this %}
+{% from "_save.html" import save_action %}
+{% import "_nav.html" as nav %}
+
+{#- One synthetic field value, reused. `SYNTHETIC` is in the authority
+    name so the label is visible in the rendered page, not just here. -#}
+{% set SYNTHETIC_VERIFIED = {
+  "value": "Class 12 with Physics, Chemistry and Biology",
+  "label": "checked_against_official_source",
+  "source_authority": "SYNTHETIC Example Board (not a real authority)",
+  "source_url": "https://example.invalid/synthetic-source",
+  "verification_date": "2026-09-01"
+} %}
+{% set SYNTHETIC_MONEY = {
+  "value": 125000,
+  "label": "institution_reported",
+  "source_authority": "SYNTHETIC Example Institute (not a real institution)",
+  "source_url": "https://example.invalid/synthetic-fees",
+  "verification_date": "2026-08-15"
+} %}
+{% set SYNTHETIC_ESTIMATE = {
+  "value": 30000,
+  "label": "estimate",
+  "source_authority": "SYNTHETIC assumption set",
+  "source_url": "https://example.invalid/synthetic-assumptions",
+  "verification_date": "2026-08-15"
+} %}
+{% set SYNTHETIC_MISSING = {
+  "value": none,
+  "label": "not_available",
+  "source_authority": none,
+  "source_url": none,
+  "verification_date": none
+} %}
+{% set SYNTHETIC_CAREER = {
+  "name": "SYNTHETIC Example Career",
+  "description": "A made-up career, here only to show the card's layout. Nothing on this page describes any real occupation."
+} %}
+{% set SYNTHETIC_WHY = {
+  "reasons": [
+    "You said you want to start work sooner (synthetic answer).",
+    "This route has published fees and entry requirements (synthetic records)."
+  ],
+  "preferences": ["start work sooner", "near home"],
+  "unknowns": ["your marks", "which state you will apply from"],
+  "change_preferences_url": "https://example.invalid/synthetic-preferences"
+} %}
+{% set SYNTHETIC_REALITY = {
+  "misunderstandings": ["That one entrance exam is the only way in (synthetic)."],
+  "hard_parts": ["Long hours during the first two years (synthetic)."],
+  "try_first": ["Talk to someone two years ahead of you (synthetic)."],
+  "compare_with": ["A second synthetic route", "A third synthetic route"]
+} %}
+{% set SYNTHETIC_CHANGES = [
+  {
+    "field": "Tuition fee (synthetic)",
+    "old_value": "1,20,000",
+    "new_value": "1,25,000",
+    "date": "2026-08-15",
+    "source_authority": "SYNTHETIC Example Institute",
+    "source_url": "https://example.invalid/synthetic-fees"
+  },
+  {
+    "field": "Application deadline (synthetic)",
+    "old_value": "2026-05-30",
+    "new_value": "2026-06-14",
+    "date": "2026-09-01",
+    "source_authority": "SYNTHETIC Example Board",
+    "source_url": "https://example.invalid/synthetic-source"
+  }
+] %}
+{% set SYNTHETIC_PROMPTS = [
+  {"id": "cost_breakdown", "label": "What makes up this cost?"},
+  {"id": "eligibility_gap", "label": "What am I missing for this route?"}
+] %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Component gallery (synthetic) &mdash; BCION Lite</title>
+  {# Two links on purpose: the served path for when a route ever renders
+     this, and a repo-root-relative one so the file opens styled straight
+     from disk. The one that does not apply is a harmless 404. #}
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="app/static/css/app.css" />
+</head>
+<body class="min-h-screen">
+  <div class="max-w-5xl mx-auto px-4 py-8 space-y-10">
+
+    <header>
+      <h1 class="text-2xl font-semibold text-charcoal mb-2">Component gallery</h1>
+      <div class="alert alert--caution" role="alert">
+        <span aria-hidden="true">&#9888;</span>
+        <span>
+          <strong>Every value on this page is synthetic.</strong>
+          No fee, requirement, date, source or institution below is real, and
+          none of it has been verified by anyone. This page exists for visual
+          review of the component set only. It has no route and is never served.
+        </span>
+      </div>
+      <p class="text-sm text-neutral mt-3">
+        Each component is shown twice: once inside a 360px frame (the narrowest
+        phone this pilot targets) and once at full width. Check both before
+        signing anything off.
+      </p>
+    </header>
+
+    {% macro gallery_item(title, note=none) %}
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-charcoal border-b border-charcoal/10 pb-1">
+          {{ title }}
+        </h2>
+        {% if note %}<p class="text-sm text-neutral">{{ note }}</p>{% endif %}
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-[360px_1fr]">
+          <div>
+            <p class="text-xs uppercase tracking-wide text-neutral mb-1">360px</p>
+            <div class="w-[360px] max-w-full border border-dashed border-neutral/50 p-3">
+              {{ caller() }}
+            </div>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-wide text-neutral mb-1">Full width</p>
+            <div class="border border-dashed border-neutral/50 p-3">
+              {{ caller() }}
+            </div>
+          </div>
+        </div>
+      </section>
+    {% endmacro %}
+
+    {% call gallery_item("Trust labels — trust_badge()") %}
+      <div class="space-y-2">
+        {{ trust_badge("checked_against_official_source") }}
+        {{ trust_badge("institution_reported") }}
+        {{ trust_badge("estimate") }}
+        {{ trust_badge("needs_rechecking") }}
+        {{ trust_badge("not_available") }}
+      </div>
+    {% endcall %}
+
+    {% call gallery_item("Eligibility outcomes — eligibility_outcome_badge()") %}
+      <div class="space-y-2">
+        {{ eligibility_outcome_badge("meets", overall=true) }}
+        {{ eligibility_outcome_badge("meets") }}
+        {{ eligibility_outcome_badge("does_not_meet") }}
+        {{ eligibility_outcome_badge("insufficient_information") }}
+      </div>
+    {% endcall %}
+
+    {% call gallery_item(
+      "Source label — evidence_line()",
+      "Three states: as it renders today; with DESIGN-18's applicable_cycle;
+       and with a report URL. The last one is the only place in this repo
+       that passes report_issue_url, because no endpoint exists yet.") %}
+      <div class="space-y-3">
+        {{ evidence_line(
+             SYNTHETIC_VERIFIED.source_authority,
+             SYNTHETIC_VERIFIED.source_url,
+             SYNTHETIC_VERIFIED.verification_date) }}
+        {{ evidence_line(
+             SYNTHETIC_VERIFIED.source_authority,
+             SYNTHETIC_VERIFIED.source_url,
+             SYNTHETIC_VERIFIED.verification_date,
+             applicable_cycle="2026-27") }}
+        {{ evidence_line(
+             SYNTHETIC_VERIFIED.source_authority,
+             SYNTHETIC_VERIFIED.source_url,
+             SYNTHETIC_VERIFIED.verification_date,
+             label="institution_reported",
+             applicable_cycle="2026-27",
+             report_issue_url="https://example.invalid/synthetic-report") }}
+        <p class="text-xs text-neutral">
+          And with no URL at all, which must render no report link:
+        </p>
+        {{ report_issue() }}
+      </div>
+    {% endcall %}
+
+    {% call gallery_item("Field value — field_value()") %}
+      <div class="space-y-4">
+        {{ field_value(SYNTHETIC_VERIFIED) }}
+        {{ field_value(SYNTHETIC_MONEY, money=true) }}
+        {{ field_value(SYNTHETIC_MISSING) }}
+      </div>
+    {% endcall %}
+
+    {% call gallery_item("Comparison section — comparison_section()") %}
+      <div class="space-y-4">
+        {{ comparison_section("Entry requirements", SYNTHETIC_VERIFIED) }}
+        {{ comparison_section("Total cost", SYNTHETIC_MONEY, money=true, divider=true,
+             note="Verified charges only. Estimated extras are shown separately.") }}
+        {% call comparison_section("Cost breakdown", divider=true) %}
+          <div class="space-y-3">
+            {{ field_value(SYNTHETIC_MONEY, money=true) }}
+            {{ field_value(SYNTHETIC_ESTIMATE, money=true) }}
+            {{ field_value(SYNTHETIC_MISSING) }}
+          </div>
+        {% endcall %}
+        {{ comparison_section("Work realities") }}
+      </div>
+    {% endcall %}
+
+    {% call gallery_item(
+      "Career card — career_card()",
+      "Four questions in the Build Pack's order, then the reality check.") %}
+      {{ career_card(
+           SYNTHETIC_CAREER,
+           entry_routes=[
+             {"label": "A synthetic degree route", "href": "https://example.invalid/route"},
+             {"label": "A synthetic diploma route", "href": none}
+           ],
+           investigate=[
+             "What the fees actually cover (synthetic)",
+             "Whether the entrance exam is held in your state (synthetic)"
+           ],
+           why=SYNTHETIC_WHY,
+           reality_check=SYNTHETIC_REALITY,
+           detail_url=none) }}
+    {% endcall %}
+
+    {% call gallery_item(
+      "Career card — every section empty",
+      "A card with nothing published must SAY so, not silently shrink.") %}
+      {{ career_card({"name": "SYNTHETIC Career with no records", "description": none}) }}
+    {% endcall %}
+
+    {% call gallery_item("Why am I seeing this — why_seeing_this()") %}
+      {{ why_seeing_this(
+           reasons=SYNTHETIC_WHY.reasons,
+           preferences=SYNTHETIC_WHY.preferences,
+           unknowns=SYNTHETIC_WHY.unknowns,
+           change_preferences_url=SYNTHETIC_WHY.change_preferences_url) }}
+    {% endcall %}
+
+    {% call gallery_item("What changed — what_changed_list()") %}
+      <div class="space-y-4">
+        {{ what_changed_list(SYNTHETIC_CHANGES) }}
+        {{ what_changed_list([], heading="What changed (nothing yet)") }}
+      </div>
+    {% endcall %}
+
+    {% call gallery_item(
+      "Reminder opt-in — reminder_opt_in()",
+      "Off unless the student turns it on, one deadline at a time. With no
+       action_url it renders nothing, which is why only one shows here.") %}
+      <div class="space-y-4">
+        {{ reminder_opt_in(
+             "SYNTHETIC application deadline",
+             action_url="https://example.invalid/synthetic-reminder",
+             channel="WhatsApp",
+             deadline="2026-06-14") }}
+        {{ reminder_opt_in(
+             "SYNTHETIC deadline you already follow",
+             action_url="https://example.invalid/synthetic-reminder",
+             opted_in=true,
+             channel="Email",
+             deadline="2026-06-14") }}
+        {{ reminder_opt_in("SYNTHETIC deadline with no route yet") }}
+      </div>
+    {% endcall %}
+
+    {% call gallery_item(
+      "Ask BCION entry — ask_bcion_entry()",
+      "Canned prompts only; there is no free-text input anywhere in this
+       component. Forced on here to show the markup — with AI_ENABLED off,
+       which is its default and the pilot's starting state, it renders
+       nothing at all.") %}
+      <div class="space-y-4">
+        {{ ask_bcion_entry(SYNTHETIC_PROMPTS, pathway_id="synthetic-pathway-id",
+                           ai_enabled=true) }}
+        <p class="text-xs text-neutral">With AI off (nothing should appear below):</p>
+        {{ ask_bcion_entry(SYNTHETIC_PROMPTS, pathway_id="synthetic-pathway-id",
+                           ai_enabled=false) }}
+      </div>
+    {% endcall %}
+
+    {% call gallery_item("App shell — _nav.html") %}
+      <div class="space-y-4">
+        {{ nav.student_nav("/compare/view") }}
+        {{ nav.utility_menu("/compare/view") }}
+        {{ nav.session_state("guest") }}
+        {{ nav.session_state("account", detail="Signed in as a synthetic account") }}
+      </div>
+    {% endcall %}
+
+    {% call gallery_item("Difficult states — the alert variants") %}
+      <div class="space-y-3">
+        <div class="alert alert--neutral">
+          <span aria-hidden="true">&#8505;</span>
+          <span>{{ t("global.difficult_state.no_matching_result") }}</span>
+        </div>
+        <div class="alert alert--caution">
+          <span aria-hidden="true">&#9888;</span>
+          <span>{{ t("global.difficult_state.weak_connection") }}</span>
+        </div>
+        <div class="alert alert--error" role="alert">
+          <span aria-hidden="true">&#9888;</span>
+          <span>{{ t("global.difficult_state.permission_denied") }}</span>
+        </div>
+        <p class="text-sm text-charcoal">{{ t("global.difficult_state.ai_unavailable") }}</p>
+        <p class="text-sm text-charcoal">{{ t("global.difficult_state.save_failed") }}</p>
+      </div>
+    {% endcall %}
+
+    {% call gallery_item(
+      "Formatting filters — I18N-2",
+      "Both locales side by side. Latin digits in both, always.") %}
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-neutral">
+            <th class="py-1">Filter</th><th class="py-1">English</th><th class="py-1">हिंदी</th>
+          </tr>
+        </thead>
+        <tbody class="text-charcoal">
+          <tr><td class="py-1">inr</td>
+              <td>{{ 100000 | inr("en") }}</td><td>{{ 100000 | inr("hi") }}</td></tr>
+          <tr><td class="py-1">inr (crore)</td>
+              <td>{{ 10000000 | inr("en") }}</td><td>{{ 10000000 | inr("hi") }}</td></tr>
+          <tr><td class="py-1">inr (none)</td>
+              <td>{{ none | inr("en") }}</td><td>{{ none | inr("hi") }}</td></tr>
+          <tr><td class="py-1">date</td>
+              <td>{{ "2026-09-21" | date("en") }}</td><td>{{ "2026-09-21" | date("hi") }}</td></tr>
+          <tr><td class="py-1">duration_weeks</td>
+              <td>{{ 78 | duration_weeks("en") }}</td>
+              <td>{{ 78 | duration_weeks("hi") }}</td></tr>
+          <tr><td class="py-1">duration_weeks (1)</td>
+              <td>{{ 1 | duration_weeks("en") }}</td><td>{{ 1 | duration_weeks("hi") }}</td></tr>
+        </tbody>
+      </table>
+    {% endcall %}
+
+    {% call gallery_item(
+      "Stub partials — nothing should render below",
+      "Each of these has a call site in a real screen today and an owner
+       who will fill it in. If anything appears here, a stub has gained a
+       body without its docs/UI.md row being updated.") %}
+      <div class="space-y-2">
+        <p class="text-xs text-neutral">ask_bcion / why_am_i_seeing_this /
+          save_action / pathway_detail_link:</p>
+        {{ ask_bcion("cost_breakdown", pathway_id="synthetic-pathway-id") }}
+        {{ why_am_i_seeing_this(reasons=SYNTHETIC_WHY.reasons) }}
+        {{ save_action("pathway", "synthetic-pathway-id") }}
+        {{ pathway_detail_link("synthetic-pathway-id", label="A synthetic pathway") }}
+      </div>
+    {% endcall %}
+
+  </div>
+</body>
+</html>

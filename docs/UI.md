@@ -157,6 +157,18 @@ stays readable.
 | Row | New status | Changed by |
 | --- | --- | --- |
 | Nav shell | **Exists.** `base.html` + `_nav.html` implement the four destinations (Explore, Compare, My Plan, Saved) and the utility menu. My Plan and Saved have no route yet and render as unavailable rather than as dead links | UI-1, 2026-09-22 |
+| Comparison section | **Exists as a macro** — `comparison_section()` in `_components.html`. `compare.html` still has its own inline markup; migrating that screen onto the macro is a separate task, so the two must be kept in step until it happens | DESIGN-18, 2026-09-22 |
+| Reminder opt-in | **Exists** — `reminder_opt_in()`. Renders nothing without an `action_url`, and no route provides one yet | DESIGN-18, 2026-09-22 |
+| "What changed" list | **Exists** — `what_changed_list()`. The My Plan screen it belongs under still does not exist | DESIGN-18, 2026-09-22 |
+| Career card | **Exists** — `career_card()`, four questions plus the reality check. No screen renders it yet | DESIGN-18, 2026-09-22 |
+| Why-seeing-this | **Exists** — `why_seeing_this()` (the component) and `_why.html`'s `why_am_i_seeing_this()` (the per-screen slot, still empty). Renders nothing with nothing to explain | DESIGN-18, 2026-09-22 |
+| Ask BCION entry | **Exists** — `ask_bcion_entry()`, canned prompts only, no input element of any kind, and entirely absent when `AI_ENABLED` is off. `/ask` itself is UI-11 | DESIGN-18, 2026-09-22 |
+| Source label (with cycle and report slot) | **Slots exist** — `evidence_line()` takes `applicable_cycle` and `report_issue_url`, both optional and both rendering nothing when absent. Neither is wired to a screen: no table stores a cycle, and no report endpoint exists | DESIGN-18, 2026-09-22 |
+
+Three of these render nothing on every real screen today, by design: the
+component exists, the data or the route behind it does not. That is the
+honest state — a control that looks live and does nothing is the one
+outcome docs/UI.md's difficult-states table exists to prevent.
 
 ### `.field-input` is canonical
 
@@ -297,6 +309,9 @@ path before any redirect uses it.
 
 ### Content components — `_components.html`
 
+Bodies filled by DESIGN-18, except `pathway_detail_link`, which is still
+a stub waiting on its own screen's route.
+
 | Macro | Signature |
 | --- | --- |
 | `comparison_section` | `comparison_section(heading, field=none, money=false, note=none, divider=false)` |
@@ -317,6 +332,27 @@ would I do; how could I enter; what should I investigate; why am I
 seeing this — plus the reality check (common misunderstandings, hard
 parts, what to try before committing, routes worth comparing).
 
+Two rules run through all of them:
+
+1. **A missing section says it is missing.** Every one of these macros
+   renders the `not_available` trust badge plus a plain sentence for a
+   section with nothing published, rather than dropping it — a card
+   that silently shrinks reads as complete when it is not.
+2. **No control that goes nowhere.** `reminder_opt_in` renders nothing
+   without an `action_url`; `ask_bcion_entry` renders nothing when
+   `ai_enabled` is false or there are no prompts; `pathway_detail_link`
+   renders nothing at all until its route exists. Each is absent, not
+   greyed out.
+
+`what_changed_list` is the deliberate exception to rule 1: an empty list
+still renders, because "nothing has changed" is itself what a student
+checking a saved plan came to find out.
+
+`comparison_section` accepts a `{% call %}` body for a section that is
+not one field (the Compare cost card is four numbers). `compare.html`
+has not been migrated onto it — the macro and that screen's inline
+markup must be kept in step until a task does that.
+
 ### Source label — `evidence_line` (extended, DESIGN-18)
 
 `evidence_line(source_authority, source_url, verification_date, label=none, applicable_cycle=none, report_issue_url=none)`
@@ -327,7 +363,16 @@ is the admission/fee cycle a fact belongs to ("2026–27"); without it,
 "verified 2026-09-01" cannot tell a reader which year's fee they are
 looking at. `report_issue_url` is passed straight through to
 `report_issue()` — so no report control can appear without a real URL
-behind it.
+behind it, and the caller builds that URL server-side rather than a
+template guessing the endpoint's parameter names.
+
+Neither is wired to a screen yet: no table stores an applicable cycle,
+and there is no report endpoint. **Known gap, left deliberately:** with
+no `source_url` the whole evidence line still renders nothing, so a
+fact whose URL is missing or was rejected for an unsafe scheme hides its
+verification date and cycle too. Fixing that changes what existing
+callers render, which DESIGN-18 is not allowed to do — it needs its own
+task and its own test.
 
 ### i18n inside a macro — `t()` and the formatting filters
 
@@ -347,6 +392,11 @@ Each takes an optional explicit locale — `{{ d \| date("hi") }}` — which
 only the components gallery needs; every real screen inherits the
 reader's locale. `None` and anything unrenderable become the catalogue's
 "Not available" string, never a blank or a raw `None`.
+
+`{{ ai_enabled }}` is in every template's context too (the same context
+processor reads `app/core/config.py`'s fail-closed `AI_ENABLED`), so a
+template can pass `ai_enabled=ai_enabled` to `ask_bcion_entry` without
+its route having to remember the flag.
 
 Template text itself is still hardcoded English: extracting it into
 `t()` keys, and setting `<html lang="{{ lang }}">`, is I18N-3's task,

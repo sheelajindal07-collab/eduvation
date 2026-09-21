@@ -58,6 +58,7 @@ import jinja2
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
+from app.core.config import get_settings
 from app.i18n import DEFAULT_LOCALE, LOCALE_COOKIE_NAME, resolve_locale, translate
 from app.i18n.formatting import format_date, format_duration_weeks, format_inr, format_number
 
@@ -82,10 +83,18 @@ def locale_for_request(request: Request) -> str:
 def _locale_context(request: Request) -> dict[str, Any]:
     """Starlette context processor: one resolution per response, shared
     by `{{ lang }}` (I18N-3 sets `<html lang="...">` from it) and by
-    every `t()`/filter call in that render."""
+    every `t()`/filter call in that render.
+
+    `ai_enabled` rides along (DESIGN-18) so a template can hide an AI
+    entry point without every route having to remember to pass the
+    flag. It is `app/core/config.py`'s `AI_ENABLED`, which is
+    fail-closed: a missing var, an empty string or a typo all parse as
+    off. Read here rather than captured at import so flipping the
+    kill switch does not need a redeploy of this module's state.
+    """
     lang = locale_for_request(request)
     _current_locale.set(lang)
-    return {"lang": lang}
+    return {"lang": lang, "ai_enabled": get_settings().ai_enabled}
 
 
 def locale_from_context(context: jinja2.runtime.Context) -> str:
