@@ -6,6 +6,7 @@
 {% from "_why.html" import why_am_i_seeing_this %}
 {% from "_save.html" import save_action %}
 {% from "_components.html" import pathway_detail_link %}
+{% from "_states.html" import empty_state %}
 {% block title %}Explore careers &mdash; BCION Lite{% endblock %}
 {% block content %}
   <h1 class="text-2xl font-semibold text-charcoal mb-2">Explore</h1>
@@ -18,10 +19,7 @@
   {{ why_am_i_seeing_this() }}
 
   {% if not careers_with_pathways %}
-    <div class="alert alert--neutral">
-      <span aria-hidden="true">&#8505;</span>
-      <span>No careers published yet. Check back soon.</span>
-    </div>
+    {{ empty_state("No careers published yet. Check back soon.") }}
   {% else %}
     <form action="/compare/view" method="get" id="compare-form">
       <div class="space-y-6">
@@ -82,7 +80,11 @@
 
       <div class="mt-6 flex items-center gap-4">
         <button type="submit" class="btn-primary">Compare selected pathways</button>
-        <p class="text-sm text-neutral" id="selection-count">Pick 2 or 3 to compare.</p>
+        {# A11Y-2: aria-live so a screen-reader user hears the count
+           change as checkboxes are toggled, not just sighted users. #}
+        <p class="text-sm text-neutral" id="selection-count" aria-live="polite">
+          Pick 2 or 3 to compare.
+        </p>
       </div>
     </form>
 
@@ -91,23 +93,13 @@
        connection: lightweight content" -- the core journey must not
        depend on a script loading). This just caps the selection at 3
        and gives a live count; without it, /compare/view itself still
-       rejects anything outside 2-3 with a clear message. #}
-    <script>
-      (function () {
-        var MAX = 3;
-        var boxes = document.querySelectorAll(".compare-checkbox");
-        var countEl = document.getElementById("selection-count");
-        function update() {
-          var checked = document.querySelectorAll(".compare-checkbox:checked");
-          countEl.textContent = checked.length + " of " + MAX + " selected (pick 2 or 3).";
-          boxes.forEach(function (box) {
-            box.disabled = checked.length >= MAX && !box.checked;
-          });
-        }
-        boxes.forEach(function (box) {
-          box.addEventListener("change", update);
-        });
-      })();
-    </script>
+       rejects anything outside 2-3 with a clear message.
+
+       A11Y-2: moved from an inline <script> to this static file --
+       app/main.py's CSP comment on `_CONTENT_SECURITY_POLICY` names this
+       exact tag as the reason `script-src` still allows 'unsafe-inline';
+       tightening that policy is app/main.py's own follow-up, not owned
+       by this task. #}
+    <script src="/static/js/explore-select.js"></script>
   {% endif %}
 {% endblock %}

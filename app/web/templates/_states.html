@@ -1,0 +1,137 @@
+{# A11Y-2 -- the shared "difficult state" vocabulary.
+
+   Every macro below renders through the one `alert()` primitive, so the
+   `<div class="alert ...">` markup, the icon-plus-text convention
+   (docs/UI.md "Visual direction": a state is never colour alone) and the
+   role choice all live in exactly one place -- never copy this markup
+   into a screen by hand again.
+
+   docs/UI.md's "Difficult states" table and "State-pattern table" name
+   the state vocabulary this file follows; docs/COPY.md's
+   `global.difficult_state.*` keys (already in `app/i18n/en.json` and
+   `app/i18n/hi.json`, both locales) are A11Y-1's frozen wording for six
+   of these seven. This file invents no new copy for those six -- it only
+   gives each one a reusable macro that calls `t()` itself, so a screen
+   never re-types or forwards the English inline
+   (docs/CONTRACTS.md "Difficult states and cache class").
+   `session_expired` is the one state with no `global.difficult_state.*`
+   key yet -- docs/CONTRACTS.md's "Error shape, sessions, guest state,
+   flags" section only quotes a fragment ("a 'your session ended'
+   notice"), it is not one of A11Y-1's eight frozen keys -- so its text
+   below is plain, hardcoded English, same as every other template's text
+   before I18N-3 extracts it; this is not a new i18n mechanism.
+
+   Role choice (this task's own requirement, matching docs/UI.md's
+   State-pattern table): a variant that means something went wrong --
+   "caution" (a user-actionable error) or "error" (a system/workflow
+   error) -- gets role="alert". "neutral" -- informational, nothing
+   failed -- gets role="status". `alert()` derives this automatically;
+   pass `role` explicitly only when a screen has a real reason to
+   differ. #}
+
+
+{% macro alert(message, variant="caution", role=none, class_names=none) %}
+  {#- The one alert primitive. Every other macro in this file is a thin
+      wrapper over this -- never duplicate this markup elsewhere.
+
+        message      the plain-language text. Already translated (via
+                     `t()`) or built by the caller -- this macro does not
+                     call `t()` itself; the named wrappers below do.
+        variant      "caution" | "neutral" | "error" -- input.css's three
+                     existing `.alert--*` classes (docs/UI.md component
+                     inventory: "no positive/success variant yet").
+        role         "alert" | "status", overriding the variant-derived
+                     default below.
+        class_names  extra utility classes (e.g. "mb-6"), appended as-is.
+
+      A `{% call %}` body renders straight after `message`, inside the
+      same `<span>` -- e.g. a "Back to explore" link on the same line,
+      matching how this app's screens already hand-wrote these errors
+      before this macro existed. -#}
+  {% set role = role or ("status" if variant == "neutral" else "alert") %}
+  <div class="alert alert--{{ variant }}{% if class_names %} {{ class_names }}{% endif %}" role="{{ role }}">
+    <span aria-hidden="true">{% if variant == "neutral" %}&#8505;{% else %}&#9888;{% endif %}</span>
+    <span>{{ message }}{% if caller %} {{ caller() }}{% endif %}</span>
+  </div>
+{% endmacro %}
+
+
+{% macro empty_state(message=none, class_names=none) %}
+  {#- docs/UI.md State-pattern table, "Empty (no results for this
+      user/filter)": `.alert--neutral` + icon + plain-language copy --
+      either `docs/COPY.md`'s `global.difficult_state.no_matching_result`
+      (the default below) or a screen's own empty copy passed as
+      `message`, exactly as that row already allows. Nothing failed:
+      role="status". -#}
+  {{ alert(message or t("global.difficult_state.no_matching_result"), variant="neutral", class_names=class_names) }}
+{% endmacro %}
+
+
+{% macro information_changed(field=none, date=none, class_names=none) %}
+  {#- The "what changed" BANNER: a short, page-top notice that something
+      changed. Distinct from `what_changed_list()` (`_components.html`),
+      which is the full field/old-value/new-value/date/source list under
+      My Plan -- this is the shorter difficult-state notice docs/UI.md's
+      "Information changed" row describes: "Say what changed and which
+      saved plans may be affected." Copy:
+      `global.difficult_state.information_changed`, "{field} changed on
+      {date}. Check whether it affects a plan you saved." Nothing failed
+      for the student here either: role="status". -#}
+  {% if field and date %}
+    {% set message = t("global.difficult_state.information_changed", field=field, date=date) %}
+  {% elif field %}
+    {% set message = t("global.difficult_state.information_changed", field=field) %}
+  {% elif date %}
+    {% set message = t("global.difficult_state.information_changed", date=date) %}
+  {% else %}
+    {% set message = t("global.difficult_state.information_changed") %}
+  {% endif %}
+  {{ alert(message, variant="neutral", class_names=class_names) }}
+{% endmacro %}
+
+
+{% macro save_failed(class_names=none) %}
+  {#- docs/UI.md difficult state "Save failed": "Keep the draft visible;
+      never say 'Saved'." Keeping the draft visible is the caller's own
+      job (never rendering a success message alongside this one) -- this
+      macro only renders the notice itself. A real failure the student
+      can retry: role="alert". -#}
+  {{ alert(t("global.difficult_state.save_failed"), variant="caution", class_names=class_names) }}
+{% endmacro %}
+
+
+{% macro ai_unavailable(class_names=none) %}
+  {#- docs/UI.md difficult state "AI unavailable / budget exhausted":
+      "You can still compare routes and use the calculators." Nothing
+      failed for the student -- the rest of the app still works --
+      so this is informational: role="status", not role="alert". -#}
+  {{ alert(t("global.difficult_state.ai_unavailable"), variant="neutral", class_names=class_names) }}
+{% endmacro %}
+
+
+{% macro permission_denied(class_names=none) %}
+  {#- docs/UI.md difficult state "Permission denied": "Explain the
+      boundary without exposing another user's data." The fixed
+      catalogue copy is deliberately generic for exactly that reason --
+      never pass per-request detail (another user's id, field, or
+      reason) into this macro. A boundary the student cannot simply
+      retry past: `.alert--error`, role="alert". -#}
+  {{ alert(t("global.difficult_state.permission_denied"), variant="error", class_names=class_names) }}
+{% endmacro %}
+
+
+{% macro session_expired(sign_in_url=none, class_names=none) %}
+  {#- docs/CONTRACTS.md "Error shape, sessions, guest state, flags": "No
+      refresh token in Phase 1: expiry means re-sign-in behind a 'your
+      session ended' notice." Not one of A11Y-1's eight
+      `global.difficult_state.*` keys, so the text below is plain,
+      hardcoded English -- same state every other template's text is in
+      before I18N-3 extracts it, not a new mechanism this task invents.
+      `sign_in_url` is optional: with nothing to link to, this still
+      renders the notice alone rather than a link to nowhere
+      (`_components.html`'s "no control that goes nowhere" rule). A
+      session the student cannot simply continue past: role="alert". -#}
+  {% call alert("Your session ended. Sign in again to continue.", variant="caution", class_names=class_names) %}
+    {% if sign_in_url %}<a href="{{ sign_in_url }}" class="underline">Sign in again</a>{% endif %}
+  {% endcall %}
+{% endmacro %}
