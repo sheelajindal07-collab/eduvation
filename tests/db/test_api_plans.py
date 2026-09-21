@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from supabase import Client
 
 from app.main import app
+from tests.db.conftest import run_name
 
 client = TestClient(app)
 
@@ -27,7 +28,7 @@ client = TestClient(app)
 def seeded_pathway_for_plans(admin_client: Client) -> Iterator[dict[str, Any]]:
     career = (
         admin_client.table("careers")
-        .insert({"name": "Plans test career (SYNTHETIC)"})
+        .insert({"name": run_name("Plans test career (SYNTHETIC)")})
         .execute()
         .data[0]
     )
@@ -36,7 +37,7 @@ def seeded_pathway_for_plans(admin_client: Client) -> Iterator[dict[str, Any]]:
         .insert(
             {
                 "career_id": career["id"],
-                "name": "Plans test pathway (SYNTHETIC)",
+                "name": run_name("Plans test pathway (SYNTHETIC)"),
                 "description": "Seeded by tests/db/test_api_plans.py",
             }
         )

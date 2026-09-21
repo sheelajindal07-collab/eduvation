@@ -24,6 +24,11 @@ dev = [
     "pytest>=9.0.3,<10.0",  # PYSEC-2026-1845 fixed in 9.0.3; CI's pip-audit caught 8.4.2
     "pytest-asyncio>=1.0,<2.0",  # 0.23.x-0.26.x crash on collection under pytest 9 (pluggy API break, verified locally)
     "pytest-playwright>=0.9,<1.0",
+    # QA-3 — `pytest -n N` against tests/db: real parallel workers on one
+    # local Supabase stack, not just sequential CI runs. QA-2 pip-installed
+    # this by hand just to take a one-off measurement; this is it properly
+    # declared as a dependency.
+    "pytest-xdist>=3.6,<4.0",
     "ruff>=0.5,<1.0",
     "mypy>=1.10,<2.0",
     # SEC-7 — dependency audit, run in CI against requirements-dev.lock.

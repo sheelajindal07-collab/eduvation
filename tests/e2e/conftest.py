@@ -60,14 +60,19 @@ from app.core.config import get_settings
 # what the `live_server` fixture below silently depends on, since it
 # hands its own os.environ straight to the uvicorn subprocess.
 from tests.db.conftest import (  # noqa: F401
+    RUN_ID,
+    _announce_run_id,
     _mark_unavailable,
     _register_bcion_markers,
+    _run_end_sweep,
     _service_role_configured,
     _target_guard_problem,
     admin_client,
     fail_if_unavailable,
     guest_client,
     reviewer,
+    run_email,
+    run_name,
     second_reviewer,
     student_a,
     student_b,
@@ -101,10 +106,24 @@ def pytest_configure(config: pytest.Config) -> None:
     problem = _target_guard_problem()
     if problem is not None:
         raise pytest.UsageError(problem)
+    _announce_run_id(config)
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
     fail_if_unavailable(item)
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Same QA-3 end-of-run sweep as tests/db/conftest.py, over the SAME
+    RUN_ID (this module's `from tests.db.conftest import RUN_ID` above
+    already forces that module to be imported, and with it its own
+    `RUN_ID = _compute_run_id()` -- Python caches the module, so this is
+    the identical value, not a second independently-generated one, even
+    when tests/db and tests/e2e run in the same `pytest` invocation).
+    Duplicated as a thin wrapper rather than imported as a hook for the
+    same reason `pytest_configure` above already is -- see this module's
+    docstring."""
+    _run_end_sweep(session)
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:

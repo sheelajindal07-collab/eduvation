@@ -25,6 +25,8 @@ import pytest
 from playwright.sync_api import Page, expect
 from supabase import Client
 
+from tests.db.conftest import run_email, run_name
+
 
 @pytest.fixture
 def two_seeded_pathways(admin_client: Client) -> Iterator[dict[str, Any]]:
@@ -35,14 +37,17 @@ def two_seeded_pathways(admin_client: Client) -> Iterator[dict[str, Any]]:
     proving the zero-JS explore -> compare journey works in a real
     browser, not re-proving field-level correctness."""
     career = (
-        admin_client.table("careers").insert({"name": "E2E smoke test career"}).execute().data[0]
+        admin_client.table("careers")
+        .insert({"name": run_name("E2E smoke test career")})
+        .execute()
+        .data[0]
     )
     pathway_a = (
         admin_client.table("pathways")
         .insert(
             {
                 "career_id": career["id"],
-                "name": "E2E smoke test pathway A",
+                "name": run_name("E2E smoke test pathway A"),
                 "description": "Seeded by tests/e2e/test_smoke.py",
             }
         )
@@ -54,7 +59,7 @@ def two_seeded_pathways(admin_client: Client) -> Iterator[dict[str, Any]]:
         .insert(
             {
                 "career_id": career["id"],
-                "name": "E2E smoke test pathway B",
+                "name": run_name("E2E smoke test pathway B"),
                 "description": "Seeded by tests/e2e/test_smoke.py",
             }
         )
@@ -75,7 +80,12 @@ def reviewer_credentials(admin_client: Client) -> Iterator[dict[str, str]]:
     whose password is never exposed). Needed here because the sign-in
     test below POSTs credentials through the real HTML form, not an API
     token."""
-    email = f"bcion-e2e-{uuid.uuid4().hex[:12]}@example.com"
+    # QA-3: moved off @example.com to @example.invalid, matching every
+    # other real-user fixture in this suite (tests/db/conftest.py's
+    # `_create_test_user`) -- RFC 2606 reserves .invalid specifically so
+    # a domain like this can never resolve or accept real mail, unlike
+    # .com, which merely happens to be unregistered today.
+    email = run_email("e2e")
     password = uuid.uuid4().hex
     created = admin_client.auth.admin.create_user(
         {"email": email, "password": password, "email_confirm": True}
@@ -107,7 +117,7 @@ def seeded_draft_claim(
                 "value": 424242,
                 "source_id": synthetic_source,
                 "verification_date": "2026-09-01",
-                "verifier": "e2e-smoke-test-fixture",
+                "verifier": run_name("e2e-smoke-test-fixture"),
                 "review_due_date": "2099-01-01",
                 "status": "draft",
                 "created_by": reviewer_credentials["user_id"],
@@ -184,7 +194,7 @@ def eligibility_pathway(admin_client: Client) -> Iterator[dict[str, Any]]:
         admin_client.table("sources")
         .insert(
             {
-                "authority_name": "E2E TEST ELIGIBILITY SOURCE (fixture)",
+                "authority_name": run_name("E2E TEST ELIGIBILITY SOURCE (fixture)"),
                 "official_url": "https://example.invalid/e2e-eligibility-source",
                 "source_type": "official",
             }
@@ -194,7 +204,7 @@ def eligibility_pathway(admin_client: Client) -> Iterator[dict[str, Any]]:
     )
     career = (
         admin_client.table("careers")
-        .insert({"name": "E2E eligibility test career"})
+        .insert({"name": run_name("E2E eligibility test career")})
         .execute()
         .data[0]
     )
@@ -203,7 +213,7 @@ def eligibility_pathway(admin_client: Client) -> Iterator[dict[str, Any]]:
         .insert(
             {
                 "career_id": career["id"],
-                "name": "E2E eligibility test pathway",
+                "name": run_name("E2E eligibility test pathway"),
                 "description": "Seeded by tests/e2e/test_smoke.py",
             }
         )
@@ -220,7 +230,7 @@ def eligibility_pathway(admin_client: Client) -> Iterator[dict[str, Any]]:
                 "value": "17",
                 "source_id": official_source["id"],
                 "verification_date": "2026-09-01",
-                "verifier": "e2e-smoke-test-fixture",
+                "verifier": run_name("e2e-smoke-test-fixture"),
                 "status": "published",
                 "review_due_date": "2099-01-01",
             }

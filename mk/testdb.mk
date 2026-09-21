@@ -47,7 +47,7 @@ SUPABASE_ENV_NAMES := \
 SUPABASE_ENV_KEEP := ^(SUPABASE_URL|SUPABASE_PUBLISHABLE_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_JWT_SECRET|DATABASE_URL)=
 
 .PHONY: test-db-up test-db-down test-db-reset test-db-status test-db-env \
-        test-db-migrate verify
+        test-db-migrate verify test-db-parallel test-db-sweep
 
 ## test-db-up — bring the local stack up, apply migrations, write .env.test.
 # Safe to re-run: `supabase start` attaches to an already-running stack,
@@ -162,6 +162,37 @@ test-db-migrate:
 conn = psycopg.connect(os.environ['DATABASE_URL'], autocommit=True); \
 conn.execute(sql.SQL('notify pgrst, {}').format(sql.Literal('reload schema'))); \
 print('PostgREST schema cache reloaded')"
+
+# ---------------------------------------------------------------------
+# Concurrent runs (QA-3)
+# ---------------------------------------------------------------------
+# tests/db/conftest.py tags every seeded row/user this run creates with a
+# RUN_ID (printed at the start of every `pytest tests/db`), so two whole
+# invocations of `make test-db`/`pytest tests/db` against this SAME stack
+# at once -- or one invocation split across pytest-xdist workers, below
+# -- can never collide, and each cleans up only its own rows/users when
+# it finishes (tests/db/conftest.py's `pytest_sessionfinish`).
+
+## test-db-parallel — tests/db under pytest-xdist, N workers on this one
+# local stack. `-n auto` picks a worker count from the machine's CPUs;
+# override with e.g. `make test-db-parallel N=4`.
+N ?= auto
+test-db-parallel:
+	pytest -n $(N) tests/db
+
+## test-db-sweep — finish cleaning up an INTERRUPTED run by hand.
+# A normal run cleans up its own RUN_ID-tagged rows/users automatically
+# when it finishes (tests/db/conftest.py's `pytest_sessionfinish`) — this
+# is only needed when a run was killed before that could happen (Ctrl-C,
+# an OOM, a crashed worker). Every `pytest tests/db` run prints its own
+# `BCION_RUN_ID=...` at the start; pass that value here to finish the job.
+# Usage: make test-db-sweep RUN_ID=<the printed run id>
+test-db-sweep:
+	@if [ -z "$(RUN_ID)" ]; then \
+		echo "usage: make test-db-sweep RUN_ID=<run id printed at the start of the interrupted run>"; \
+		exit 1; \
+	fi
+	BCION_RUN_ID=$(RUN_ID) python -c "from tests.db.conftest import sweep_run_id; sweep_run_id()"
 
 # ---------------------------------------------------------------------
 # make verify

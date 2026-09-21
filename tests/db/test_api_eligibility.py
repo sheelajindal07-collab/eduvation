@@ -16,8 +16,16 @@ from fastapi.testclient import TestClient
 from supabase import Client
 
 from app.main import app
+from tests.db.conftest import run_name
 
 client = TestClient(app)
+
+# QA-3: these two literals are asserted verbatim further down (not read
+# back off the fixture's own returned dict, unlike every career/pathway
+# name in this file), so each is tagged exactly once, here, and reused —
+# never re-typed — everywhere it must match.
+_ELIGIBILITY_SOURCE_NAME = run_name("API TEST ELIGIBILITY SOURCE (fixture)")
+_MALICIOUS_SOURCE_NAME = run_name("MALICIOUS SOURCE (test)")
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -36,7 +44,7 @@ def eligibility_pathway(
         admin_client.table("sources")
         .insert(
             {
-                "authority_name": "API TEST ELIGIBILITY SOURCE (fixture)",
+                "authority_name": _ELIGIBILITY_SOURCE_NAME,
                 "official_url": "https://example.invalid/eligibility-source",
                 "source_type": "official",
             }
@@ -46,7 +54,7 @@ def eligibility_pathway(
     )
     career = (
         admin_client.table("careers")
-        .insert({"name": "Eligibility test career (SYNTHETIC)"})
+        .insert({"name": run_name("Eligibility test career (SYNTHETIC)")})
         .execute()
         .data[0]
     )
@@ -55,7 +63,7 @@ def eligibility_pathway(
         .insert(
             {
                 "career_id": career["id"],
-                "name": "Eligibility test pathway (SYNTHETIC)",
+                "name": run_name("Eligibility test pathway (SYNTHETIC)"),
                 "description": "Seeded by tests/db/test_api_eligibility.py",
             }
         )
@@ -81,7 +89,7 @@ def eligibility_pathway(
                     "value": value,
                     "source_id": official_source["id"],
                     "verification_date": "2026-09-01",
-                    "verifier": "test-fixture-reviewer",
+                    "verifier": run_name("test-fixture-reviewer"),
                     "status": "published",
                     "review_due_date": "2099-01-01",
                 }
@@ -118,10 +126,7 @@ class TestEligibilityEndpoint:
         # ux-qa-reviewer finding, 2026-09-19: a bare claim UUID has
         # nowhere to get "source authority ... official link,
         # verification date" from (docs/UI.md) -- now resolved.
-        assert all(
-            c["source_authority"] == "API TEST ELIGIBILITY SOURCE (fixture)"
-            for c in body["criteria"]
-        )
+        assert all(c["source_authority"] == _ELIGIBILITY_SOURCE_NAME for c in body["criteria"])
         assert all(
             c["source_url"] == "https://example.invalid/eligibility-source"
             for c in body["criteria"]
@@ -162,7 +167,7 @@ class TestEligibilityEndpoint:
         'insufficient_information' about rules nobody ever stated."""
         career = (
             admin_client.table("careers")
-            .insert({"name": "No-criteria test career (SYNTHETIC)"})
+            .insert({"name": run_name("No-criteria test career (SYNTHETIC)")})
             .execute()
             .data[0]
         )
@@ -171,7 +176,7 @@ class TestEligibilityEndpoint:
             .insert(
                 {
                     "career_id": career["id"],
-                    "name": "No-criteria test pathway (SYNTHETIC)",
+                    "name": run_name("No-criteria test pathway (SYNTHETIC)"),
                     "description": "No eligibility claims at all",
                 }
             )
@@ -205,7 +210,7 @@ class TestDangerousSourceUrlSchemeIsNeverRendered:
             admin_client.table("sources")
             .insert(
                 {
-                    "authority_name": "MALICIOUS SOURCE (test)",
+                    "authority_name": _MALICIOUS_SOURCE_NAME,
                     "official_url": "javascript:alert(document.cookie)",
                     "source_type": "official",
                 }
@@ -215,7 +220,7 @@ class TestDangerousSourceUrlSchemeIsNeverRendered:
         )
         career = (
             admin_client.table("careers")
-            .insert({"name": "Dangerous-URL test career (SYNTHETIC)"})
+            .insert({"name": run_name("Dangerous-URL test career (SYNTHETIC)")})
             .execute()
             .data[0]
         )
@@ -224,7 +229,7 @@ class TestDangerousSourceUrlSchemeIsNeverRendered:
             .insert(
                 {
                     "career_id": career["id"],
-                    "name": "Dangerous-URL test pathway (SYNTHETIC)",
+                    "name": run_name("Dangerous-URL test pathway (SYNTHETIC)"),
                     "description": "Seeded by tests/db/test_api_eligibility.py",
                 }
             )
@@ -241,7 +246,7 @@ class TestDangerousSourceUrlSchemeIsNeverRendered:
                     "value": "17",
                     "source_id": dangerous_source["id"],
                     "verification_date": "2026-09-01",
-                    "verifier": "test-fixture-reviewer",
+                    "verifier": run_name("test-fixture-reviewer"),
                     "status": "published",
                     "review_due_date": "2099-01-01",
                 }
@@ -258,7 +263,7 @@ class TestDangerousSourceUrlSchemeIsNeverRendered:
             assert len(body["criteria"]) == 1
             # The authority name (plain text, safe) still shows; the
             # dangerous URL itself must never reach the response.
-            assert body["criteria"][0]["source_authority"] == "MALICIOUS SOURCE (test)"
+            assert body["criteria"][0]["source_authority"] == _MALICIOUS_SOURCE_NAME
             assert body["criteria"][0]["source_url"] is None
         finally:
             admin_client.table("claims").delete().eq("id", claim["id"]).execute()
@@ -281,7 +286,7 @@ def pathway_with_a_draft_criterion(
         admin_client.table("sources")
         .insert(
             {
-                "authority_name": "API TEST DRAFT-CRITERION SOURCE (fixture)",
+                "authority_name": run_name("API TEST DRAFT-CRITERION SOURCE (fixture)"),
                 "official_url": "https://example.invalid/draft-criterion-source",
                 "source_type": "official",
             }
@@ -291,7 +296,7 @@ def pathway_with_a_draft_criterion(
     )
     career = (
         admin_client.table("careers")
-        .insert({"name": "Draft-criterion test career (SYNTHETIC)"})
+        .insert({"name": run_name("Draft-criterion test career (SYNTHETIC)")})
         .execute()
         .data[0]
     )
@@ -300,7 +305,7 @@ def pathway_with_a_draft_criterion(
         .insert(
             {
                 "career_id": career["id"],
-                "name": "Draft-criterion test pathway (SYNTHETIC)",
+                "name": run_name("Draft-criterion test pathway (SYNTHETIC)"),
                 "description": "Seeded by tests/db/test_api_eligibility.py",
             }
         )
@@ -317,7 +322,7 @@ def pathway_with_a_draft_criterion(
                 "value": "17",
                 "source_id": official_source["id"],
                 "verification_date": "2026-09-01",
-                "verifier": "test-fixture-reviewer",
+                "verifier": run_name("test-fixture-reviewer"),
                 "status": "published",
                 "review_due_date": "2099-01-01",
             }
@@ -333,7 +338,7 @@ def pathway_with_a_draft_criterion(
                 "value": "90",
                 "source_id": official_source["id"],
                 "verification_date": "2026-09-01",
-                "verifier": "test-fixture-reviewer",
+                "verifier": run_name("test-fixture-reviewer"),
                 "status": "draft",
                 "review_due_date": "2099-01-01",
             }

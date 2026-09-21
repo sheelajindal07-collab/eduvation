@@ -29,6 +29,7 @@ import re
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
@@ -108,6 +109,220 @@ def _load_test_env() -> list[str]:
 
 
 LOADED_TEST_ENV_FILES = _load_test_env()
+
+
+# --------------------------------------------------------------------
+# RUN_ID and end-of-run cleanup (QA-3)
+# --------------------------------------------------------------------
+# Two things changed that made the previous "just use uuid4() per row"
+# story incomplete: (1) genuinely CONCURRENT runs against the SAME local
+# stack are now a real usage pattern (two `make test-db` invocations at
+# once, or `pytest -n N`), not just sequential CI runs one after another,
+# and (2) QA-2 confirmed the local stack has no GoTrue rate limit to work
+# around, so every user-creating fixture is (and must stay) function-
+# scoped rather than shared across a module to conserve sign-ups — see
+# each fixture below. Neither of those changes anything about how a
+# single test creates rows; what they DO require is a way to tell "my
+# run's rows" apart from "some other, concurrently-running invocation's
+# rows" well enough that a crash can be cleaned up after the fact without
+# ever touching a still-running sibling's data.
+#
+# RUN_ID is that tag: a short id, embedded in every seeded name/email
+# this suite creates (test_*.py files, tests/e2e/test_smoke.py), shared
+# by every pytest-xdist WORKER of one `pytest -n N` invocation (they are
+# separate OS processes, but all descend from the same controller
+# process, so they inherit whatever is already in os.environ at the
+# moment xdist spawns them) and DIFFERENT between two independent
+# `pytest`/`make test-db` invocations (each starts from its own shell
+# environment, so each generates its own).
+def _compute_run_id() -> str:
+    """The active run's tag. Reuses `BCION_RUN_ID` if already set in the
+    environment — that is both how xdist workers pick up the SAME value
+    the controller already generated (see module docstring above) and
+    the documented way to point the standalone sweeper at a specific,
+    already-finished run (`sweep_run_id` below; `make test-db-sweep
+    RUN_ID=...`). Otherwise generates a fresh one and exports it, so any
+    subprocess this process itself goes on to spawn — xdist workers,
+    tests/e2e/conftest.py's own `live_server` uvicorn — inherits it too.
+    """
+    existing = os.environ.get("BCION_RUN_ID", "").strip()
+    if existing:
+        return existing
+    generated = uuid.uuid4().hex[:12]
+    os.environ["BCION_RUN_ID"] = generated
+    return generated
+
+
+RUN_ID: str = _compute_run_id()
+
+# Appended, verbatim, to every seeded name/email below — distinctive
+# enough that `_sweep_leftover_rows` below can never mistake ordinary
+# app data (or another run's own tag) for this run's.
+_RUN_TAG = f"[run:{RUN_ID}]"
+
+
+def run_email(tag: str, domain: str = "example.invalid") -> str:
+    """A run-tagged, per-call-unique email for a throwaway test user.
+    Every email this suite creates is built through this (never a bare
+    `uuid4()`), so `_sweep_leftover_rows` can find and delete every user
+    this run created, and two concurrent runs' users can never collide
+    even if they otherwise picked the same local-part."""
+    return f"bcion-{tag}-{RUN_ID}-{uuid.uuid4().hex[:10]}@{domain}"
+
+
+def run_name(label: str) -> str:
+    """A run-tagged seeded row name/title (careers, pathways, sources,
+    claims.verifier, ...) — same purpose as `run_email` above, for rows
+    that aren't a Supabase Auth user."""
+    return f"{label} {_RUN_TAG}"
+
+
+def _build_admin_client() -> Client | None:
+    """Service-role client, or None if the stack isn't configured. Split
+    out of the `admin_client` fixture so `sweep_run_id`/`pytest_
+    sessionfinish` below can build one too without depending on a
+    fixture (they run outside, or after, normal fixture teardown)."""
+    settings = get_settings()
+    key = _TestOnlySettings().supabase_service_role_key
+    if not settings.supabase_url or not key:
+        return None
+    return create_client(settings.supabase_url, key)
+
+
+def _paginated_users(admin: Client) -> Iterator[Any]:
+    """Every Supabase Auth user, not just GoTrue's default first page.
+    `admin.auth.admin.list_users()` (no args) silently truncates past
+    its default per_page — fine for the rest of this suite, which always
+    filters by one already-known email, but a sweep genuinely needs
+    every user that might carry this run's tag."""
+    page = 1
+    per_page = 200
+    while True:
+        batch = admin.auth.admin.list_users(page=page, per_page=per_page)
+        if not batch:
+            return
+        yield from batch
+        if len(batch) < per_page:
+            return
+        page += 1
+
+
+def _sweep_leftover_rows(admin: Client, run_id: str) -> None:
+    """Best-effort cleanup of every row/user tagged with `run_id` that
+    ordinary fixture teardown did not reach — the safety net for an
+    interrupted run (Ctrl-C, a crashed worker, a fixture that raised
+    before its own `yield`). Every fixture in this suite already deletes
+    its own rows in the success path (each `test_*.py`'s own try/finally
+    or fixture teardown); this only mops up what that could not.
+
+    Order matters: `claims.created_by`/`reviewed_by` reference
+    `auth.users(id)` with no `on delete cascade` (db/migrations/
+    0001_init.sql), so a tagged claim must go before the user that made
+    it. `pathways.career_id` and every guardian-consent/student table DO
+    cascade from their own parent (careers, auth.users respectively —
+    db/migrations 0001/0002/0004), so deleting the tagged career/user is
+    enough for those; no separate pathway/student_profiles/reviewers/
+    saved_plans/guardian_consents/student_accounts pass is needed.
+
+    Users are matched on the bare `run_id`, NOT the bracketed
+    `[run:...]` tag `run_name` uses for everything else: an email
+    address's local-part can't safely carry literal `[`/`]` (RFC 5322
+    requires quoting), so `run_email` embeds `RUN_ID` plain — matching
+    on the same bare value here is what actually finds those users
+    (confirmed live, 2026-09-21: the bracketed-tag check here originally
+    matched zero users, ever, regardless of whether cleanup ran, because
+    no real email could ever contain it — every "0 leftover users"
+    reading it produced was true only by accident, since ordinary
+    fixture teardown deletes its own user directly in the non-interrupted
+    case; the orphan-simulation check below is what exposed it).
+    """
+    tag = f"[run:{run_id}]"
+
+    for row in admin.table("claims").select("id, verifier").execute().data:
+        if tag in (row.get("verifier") or ""):
+            admin.table("claims").delete().eq("id", row["id"]).execute()
+
+    for row in admin.table("careers").select("id, name").execute().data:
+        if tag in (row.get("name") or ""):
+            admin.table("careers").delete().eq("id", row["id"]).execute()
+
+    for row in admin.table("sources").select("id, authority_name").execute().data:
+        if tag in (row.get("authority_name") or ""):
+            admin.table("sources").delete().eq("id", row["id"]).execute()
+
+    for user in _paginated_users(admin):
+        if run_id in (user.email or ""):
+            # Any claim this user made/reviewed that wasn't itself
+            # tagged (so the pass above missed it) would otherwise fail
+            # this delete outright via the FK noted above — defensive,
+            # since every claims-seeding fixture in this suite already
+            # tags `verifier` via `run_name`/its own literal.
+            admin.table("claims").delete().eq("created_by", user.id).execute()
+            admin.table("claims").delete().eq("reviewed_by", user.id).execute()
+            admin.auth.admin.delete_user(user.id)
+
+
+def sweep_run_id(run_id: str | None = None) -> None:
+    """Standalone entry point: `python -c "from tests.db.conftest import
+    sweep_run_id; sweep_run_id()"` (with `BCION_RUN_ID` set), or `make
+    test-db-sweep RUN_ID=...` (mk/testdb.mk). For finishing the cleanup
+    of a run that was interrupted before `pytest_sessionfinish` below
+    ever got to run — that hook handles every normal (uninterrupted) run
+    automatically.
+
+    Re-applies the same local-only target guard `pytest_configure` below
+    enforces for a normal test run: this deletes real rows by service-
+    role, so it must refuse exactly like the suite itself would rather
+    than trust that whoever invokes it by hand already checked
+    SUPABASE_URL (CLAUDE.md: real student data is never a test fixture).
+    """
+    problem = _target_guard_problem()
+    if problem is not None:
+        raise SystemExit(problem)
+    target = (run_id or RUN_ID).strip()
+    if not target:
+        raise SystemExit("sweep_run_id: no RUN_ID given and BCION_RUN_ID is unset.")
+    admin = _build_admin_client()
+    if admin is None:
+        raise SystemExit(_SKIP_REASON)
+    _sweep_leftover_rows(admin, target)
+    print(f"[tests/db] swept every row/user tagged [run:{target}]")  # noqa: T201
+
+
+def _run_end_sweep(session: pytest.Session) -> None:
+    """Shared body of `pytest_sessionfinish`; also called from
+    tests/e2e/conftest.py's own copy of that hook (same reasoning as
+    `fail_if_unavailable` above: a hook function is only ever discovered
+    in a conftest.py's OWN namespace, never via a plain import, so each
+    directory needs its own thin wrapper calling this).
+
+    Runs exactly once per whole `pytest` invocation — never inside an
+    xdist worker. Every worker of one `pytest -n N` invocation shares
+    this run's RUN_ID by construction (see `_compute_run_id`), so
+    sweeping from a worker's own sessionfinish (which fires the moment
+    THAT worker's slice of the work finishes, at a different wall-clock
+    time than its siblings) would delete rows a still-running sibling
+    worker is actively using. `session.config.workerinput` exists only
+    on a worker (pytest-xdist's own documented distinction) — its
+    absence is what "the controller, or a plain non-xdist run" means.
+    """
+    if hasattr(session.config, "workerinput"):
+        return
+    if _target_guard_problem() is not None:
+        return  # never touched a live stack in the first place
+    if not (get_settings().db_configured and _service_role_configured()):
+        return
+    admin = _build_admin_client()
+    if admin is None:
+        return
+    try:
+        _sweep_leftover_rows(admin, RUN_ID)
+    except Exception as exc:  # noqa: BLE001 — never fail the run over cleanup
+        print(f"[tests/db] end-of-run sweep for [run:{RUN_ID}] hit an error: {exc}")  # noqa: T201
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    _run_end_sweep(session)
 
 
 # --------------------------------------------------------------------
@@ -352,6 +567,27 @@ def pytest_configure(config: pytest.Config) -> None:
     problem = _target_guard_problem()
     if problem is not None:
         raise pytest.UsageError(problem)
+    _announce_run_id(config)
+
+
+def _announce_run_id(config: pytest.Config) -> None:
+    """Print this run's RUN_ID once, so an interrupted run can be swept
+    later (`make test-db-sweep RUN_ID=...`, QA-3) without having to guess
+    it. Controller/plain-run only — see `_run_end_sweep`'s docstring for
+    why an xdist worker must never repeat what the controller already
+    did; every worker shares the same RUN_ID anyway, so printing it
+    again would be noise, not new information."""
+    if hasattr(config, "workerinput"):
+        return
+    reporter = config.pluginmanager.get_plugin("terminalreporter")
+    message = (
+        f"[tests/db] BCION_RUN_ID={RUN_ID} — if this run is interrupted, "
+        f"finish cleanup with `make test-db-sweep RUN_ID={RUN_ID}`"
+    )
+    if reporter is not None:
+        reporter.write_line(message)
+    else:
+        print(message)  # noqa: T201 — no terminalreporter (e.g. -p no:terminal)
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
@@ -405,19 +641,31 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 def admin_client() -> Client:
     """Service-role client. TEST SETUP/TEARDOWN ONLY — never used to make
     an assertion about what a real user can or can't do; that would defeat
-    the point of testing RLS."""
-    settings = get_settings()
-    key = _TestOnlySettings().supabase_service_role_key
-    assert settings.supabase_url is not None
-    assert key is not None
-    return create_client(settings.supabase_url, key)
+    the point of testing RLS.
+
+    Module-scoped for the CLIENT WRAPPER ONLY (a stateless REST/HTTP
+    handle, cheap to share within one module's tests) — never mistake
+    this for a shared/reused USER: every fixture below that actually
+    creates a real Supabase Auth user (`student_a`, `student_b`,
+    `reviewer`, `second_reviewer`, `synthetic_source`'s row) stays
+    function-scoped, on purpose (QA-3). `student_profiles.id` and
+    `reviewers.user_id` are the user's own id AS their primary key, so
+    two tests sharing one real user (module/session-scoped) would
+    collide on that PK the moment both tried to create their own
+    profile/reviewer row — a real risk now that QA-2 confirmed the local
+    stack has no sign-up rate limit to justify sharing one for
+    efficiency, unlike the old cloud target.
+    """
+    admin = _build_admin_client()
+    assert admin is not None
+    return admin
 
 
 def _create_test_user(admin: Client) -> tuple[str, Client]:
     """Creates a throwaway confirmed user, returns (user_id, a client
     authenticated as that user via a fresh password sign-in)."""
     settings = get_settings()
-    email = f"bcion-test-{uuid.uuid4().hex[:12]}@example.invalid"
+    email = run_email("test")
     password = uuid.uuid4().hex
     created = admin.auth.admin.create_user(
         {"email": email, "password": password, "email_confirm": True}
@@ -491,7 +739,7 @@ def synthetic_source(admin_client: Client) -> Iterator[str]:
         admin_client.table("sources")
         .insert(
             {
-                "authority_name": "TEST FIXTURE — not a real authority",
+                "authority_name": run_name("TEST FIXTURE — not a real authority"),
                 "official_url": "https://example.invalid/not-a-real-source",
                 "source_type": "synthetic",
             }

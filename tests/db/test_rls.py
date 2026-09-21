@@ -11,11 +11,13 @@ from typing import Any
 
 from supabase import Client
 
+from tests.db.conftest import run_name
+
 
 def _career_row(admin: Client) -> dict[str, Any]:
     result = (
         admin.table("careers")
-        .insert({"name": "RLS test career (SYNTHETIC)"})
+        .insert({"name": run_name("RLS test career (SYNTHETIC)")})
         .execute()
     )
     return result.data[0]
@@ -49,7 +51,7 @@ class TestPublicKnowledgeBaseReads:
                     "value": "should not be visible to a guest",
                     "source_id": synthetic_source,
                     "verification_date": "2026-01-01",
-                    "verifier": "test-fixture",
+                    "verifier": run_name("test-fixture"),
                     "status": "draft",
                     "review_due_date": "2099-01-01",
                 }
@@ -87,7 +89,11 @@ class TestWriteAccess:
 
     def test_reviewer_can_insert_career(self, reviewer: tuple[str, Client]) -> None:
         _user_id, client = reviewer
-        result = client.table("careers").insert({"name": "RLS test career (SYNTHETIC)"}).execute()
+        result = (
+            client.table("careers")
+            .insert({"name": run_name("RLS test career (SYNTHETIC)")})
+            .execute()
+        )
         career_id = result.data[0]["id"]
         client.table("careers").delete().eq("id", career_id).execute()
 
