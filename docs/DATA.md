@@ -4,6 +4,8 @@ Source: `docs/BCION-Lite-Build-Pack.md` §6 (data and rules contracts) and
 §5 (trust labels), plus DPR Section 10 (national data architecture). This
 is the authoritative claims model for Lite.
 
+Frozen cross-lane contracts (money, dates and cycle, eligibility outcomes, evidence states, publishing, entity vocabulary, sessions and flags) live in `docs/CONTRACTS.md`; consent and safeguarding in `docs/CONSENT.md`.
+
 ## Core principle
 A fact without provenance cannot be published. "Last fetched" is never
 displayed as "verified." A changed source is not automatically a changed
