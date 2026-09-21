@@ -161,4 +161,263 @@
   .field-hint {
     @apply text-xs text-neutral mt-1;
   }
+
+  /* ------------------------------------------------------------------
+     UI-1 — the app shell (base.html, _nav.html).
+
+     Zero JavaScript and usable at 375px: the four destinations are
+     plain links that wrap rather than overflow, and the utility menu
+     is a native <details> disclosure. Every interactive element here
+     keeps the 44-48px touch target docs/UI.md requires (min-h-11 =
+     44px), and no state is carried by colour alone -- the active
+     destination gets aria-current plus an underline, and an
+     unavailable one carries the word "soon" next to its label.
+     ------------------------------------------------------------------ */
+
+  /* Visible only when focused: the first Tab on any page lands here
+     and skips the nav (docs/UI.md's accessibility floor). */
+  .skip-link {
+    @apply sr-only;
+  }
+  .skip-link:focus {
+    @apply not-sr-only absolute left-4 top-4 z-50 rounded-md bg-accent px-4 py-2.5
+           text-white font-medium focus:outline-none focus:ring-2 focus:ring-accent
+           focus:ring-offset-2;
+  }
+
+  .site-header {
+    @apply border-b border-charcoal/10 bg-white;
+  }
+  .site-header__bar {
+    @apply max-w-5xl mx-auto px-4 pt-3 flex items-center justify-between gap-3;
+  }
+  .site-header__wordmark {
+    @apply text-lg font-semibold text-charcoal inline-flex items-center min-h-11;
+  }
+  .site-header__actions {
+    @apply flex items-center gap-3;
+  }
+
+  .site-nav {
+    /* flex-wrap, not overflow-x-auto: docs/UI.md bans a sideways-
+       scrolling comparison table, and the same reasoning applies to
+       navigation a 360px phone must not hide off-screen. */
+    @apply max-w-5xl mx-auto px-4 pb-1 flex flex-wrap items-center gap-x-4 gap-y-1;
+  }
+  .nav-link {
+    @apply inline-flex items-center min-h-11 text-sm font-medium text-charcoal
+           border-b-2 border-transparent;
+  }
+  a.nav-link:hover {
+    @apply text-accent;
+  }
+  .nav-link--active {
+    /* Text weight + an underline + aria-current in the markup: three
+       signals, none of them colour alone. */
+    @apply text-accent border-accent;
+  }
+  .nav-link--unavailable {
+    @apply text-neutral;
+  }
+  .nav-link__note {
+    @apply ml-1.5 rounded-full bg-neutral-bg px-1.5 py-0.5 text-[0.625rem] font-normal
+           uppercase tracking-wide text-neutral;
+  }
+
+  .utility-menu {
+    @apply relative;
+  }
+  .utility-menu__summary {
+    /* list-none + the marker rule below drop the default disclosure
+       triangle; the control still opens on click and on Enter/Space
+       because it is a real <summary>, not a div pretending to be one. */
+    @apply inline-flex items-center min-h-11 px-2 text-sm font-medium text-charcoal
+           cursor-pointer list-none rounded-md hover:bg-charcoal/5
+           focus:outline-none focus:ring-2 focus:ring-accent;
+  }
+  .utility-menu__summary::-webkit-details-marker {
+    display: none;
+  }
+  .utility-menu__list {
+    @apply absolute right-0 z-40 mt-1 w-56 rounded-md border border-charcoal/15 bg-white
+           p-1 shadow-sm;
+  }
+  .utility-menu__link {
+    @apply flex items-center min-h-11 rounded-md px-3 text-sm text-charcoal;
+  }
+  a.utility-menu__link:hover {
+    @apply bg-charcoal/5 text-accent;
+  }
+  .utility-menu__link--unavailable {
+    @apply text-neutral;
+  }
+
+  .session-state {
+    @apply inline-flex items-center gap-1.5 text-xs text-neutral;
+  }
+  .session-state--guest {
+    @apply text-neutral;
+  }
+  .session-state--account {
+    @apply text-positive;
+  }
+  .session-state__detail {
+    @apply text-charcoal;
+  }
+
+  /* ------------------------------------------------------------------
+     DESIGN-18 — the content components in `_components.html`
+     (comparison section, career card, why-seeing-this, what changed,
+     reminder opt-in, Ask BCION entry) plus the report-issue slot in
+     `_report.html`.
+
+     Appended, not interleaved: the rules above are UI-1's shell and
+     the ones above that are the original component set, and keeping
+     each task's block contiguous keeps a later diff readable.
+     ------------------------------------------------------------------ */
+
+  /* The shared "nothing published here yet" treatment. Reuses the
+     not_available trust badge in markup (_components.html), so a
+     missing SECTION and a missing FIELD read as the same thing to a
+     student rather than as two invented vocabularies. */
+  .component-empty {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .component-empty__note {
+    @apply text-sm text-neutral;
+  }
+
+  .comparison-section {
+    @apply space-y-1;
+  }
+  .comparison-section--divided {
+    @apply border-t border-charcoal/10 pt-4;
+  }
+  .comparison-section__heading {
+    @apply text-sm font-semibold text-neutral uppercase tracking-wide mb-1;
+  }
+  .comparison-section__note {
+    @apply text-xs text-neutral mt-1;
+  }
+
+  .career-card {
+    @apply bg-white rounded-lg shadow-sm border border-neutral/20 p-5 space-y-5;
+  }
+  .career-card__title {
+    @apply text-lg font-semibold text-charcoal;
+  }
+  .career-card__section {
+    @apply space-y-1;
+  }
+  .career-card__question {
+    @apply text-sm font-semibold text-neutral uppercase tracking-wide;
+  }
+  .career-card__body {
+    @apply text-sm text-charcoal;
+  }
+  .career-card__body--muted {
+    @apply text-neutral;
+  }
+  .career-card__list {
+    @apply list-disc pl-5 text-sm text-charcoal space-y-1;
+  }
+  /* The reality check is visually separated because it is the part a
+     prospectus leaves out (Build Pack: "common misunderstandings, hard
+     parts, what to try before committing, routes worth comparing").
+     Neutral, never alarming -- it is honesty, not a warning. */
+  .career-card__reality {
+    @apply rounded-md bg-neutral-bg p-4 space-y-3;
+  }
+  .career-card__reality-part {
+    @apply space-y-1;
+  }
+  .career-card__reality-heading {
+    @apply text-xs font-semibold text-charcoal;
+  }
+  .career-card__more {
+    @apply text-sm;
+  }
+
+  .why-block {
+    @apply rounded-md border border-accent/20 bg-accent/5 p-4 space-y-2;
+  }
+  .why-block__heading {
+    @apply text-sm font-semibold text-charcoal;
+  }
+  .why-block__list {
+    @apply list-disc pl-5 text-sm text-charcoal space-y-1;
+  }
+  .why-block__line {
+    @apply text-sm text-charcoal;
+  }
+  .why-block__label {
+    @apply text-neutral;
+  }
+
+  .what-changed {
+    @apply space-y-3;
+  }
+  .what-changed__heading {
+    @apply text-sm font-semibold text-charcoal;
+  }
+  .what-changed__list {
+    @apply space-y-3;
+  }
+  .what-changed__row {
+    @apply border-l-2 border-caution/40 pl-3 space-y-1;
+  }
+  .what-changed__field {
+    @apply text-sm font-medium text-charcoal;
+  }
+  .what-changed__values {
+    @apply flex flex-wrap items-center gap-2 text-sm;
+  }
+  /* line-through plus the arrow plus a screen-reader "changed to": the
+     old value's status is never carried by styling alone. */
+  .what-changed__old {
+    @apply text-neutral line-through;
+  }
+  .what-changed__new {
+    @apply text-charcoal font-medium;
+  }
+  .what-changed__date {
+    @apply text-xs text-neutral;
+  }
+
+  .reminder-opt-in {
+    @apply rounded-md border border-charcoal/15 p-4 space-y-2;
+  }
+  .reminder-opt-in__heading {
+    @apply text-sm font-semibold text-charcoal;
+  }
+  .reminder-opt-in__deadline {
+    @apply text-sm text-charcoal;
+  }
+  .reminder-opt-in__note {
+    @apply text-xs text-neutral;
+  }
+
+  .ask-entry {
+    @apply rounded-md border border-accent/20 p-3 space-y-2;
+  }
+  .ask-entry__heading {
+    @apply text-sm font-semibold text-charcoal;
+  }
+  .ask-entry__list {
+    @apply space-y-1;
+  }
+  /* A canned prompt is a link, and it looks like one. Nothing here may
+     look like a text box: docs/UI.md forbids a blank chat box, and a
+     chat-shaped affordance is the first step towards one. */
+  .ask-entry__prompt {
+    @apply inline-flex items-center min-h-11 text-sm text-accent underline;
+  }
+
+  .report-issue {
+    @apply mt-1;
+  }
+  .report-issue__link {
+    @apply inline-flex items-center min-h-11 text-xs text-neutral underline
+           hover:text-accent;
+  }
 }

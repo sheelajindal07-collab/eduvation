@@ -1,0 +1,46 @@
+{# UI-1 stub partial — "Save as an option".
+
+   OWNER: the saved-items task (UI-16 / AUTH-6): a `saved_items` table
+   with own-row RLS, a /saved destination and zero-JS save toggles. Call
+   sites exist as of UI-1 on `explore.html` (per pathway in the list)
+   and `compare.html` (per compared pathway).
+
+   THE RULES THIS MACRO CARRIES:
+
+   - Zero JS. A save is a plain `<form method="post">`, never a fetch
+     from a script — the core journey must work with no script at all
+     (docs/UI.md "Weak connection").
+   - Never say "Saved" unless it saved. docs/COPY.md's
+     `global.difficult_state.save_failed` ("This didn't save. Nothing
+     here is lost — try again.") is the failure path, and it must keep
+     the draft visible.
+   - Copy is fixed: "Save as an option", never ranking language
+     (docs/COPY.md section 4).
+   - A save belongs to one account or one guest session and is
+     protected by RLS, not by this macro. `saved` is a rendering input,
+     never an authorisation decision.
+
+   WHY IT RENDERS NOTHING TODAY: there is no saved_items table, no
+   route and no student session to own a save. A control that appears to
+   save and does not is the one thing docs/UI.md's save-failed state
+   exists to forbid.
+
+   Signature frozen by UI-1 — see docs/UI.md. #}
+
+{% macro save_action(item_type, item_id, saved=false, label=none, return_to=none) %}
+  {#- Arguments:
+
+        item_type  "pathway" / "career" / "source" — what is being
+                   saved (docs/PRODUCT.md's Saved destination:
+                   "Careers, programmes and sources to revisit")
+        item_id    that record's id
+        saved      is it already saved for this viewer? Drives the
+                   toggle's direction and its accessible name
+        label      override for the visible text
+        return_to  path to come back to after the POST, so a save from
+                   Compare returns to Compare rather than to /saved.
+                   MUST be validated server-side as a local path before
+                   it is used in a redirect — an open redirect is the
+                   obvious way to get this wrong.
+  -#}
+{% endmacro %}

@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% from "_trust_badge.html" import eligibility_outcome_badge, evidence_line, trust_badge %}
+{# UI-1 pre-wires UI-11's eligibility-line "Ask BCION" entry here. It
+   renders nothing today; this screen's own content is unchanged. #}
+{% from "_ask.html" import ask_bcion %}
 {% block title %}Requirements &mdash; BCION Lite{% endblock %}
 {# FIX 8 (nitpick): the generic name.replace('_', ' ')|capitalize
    treatment reads naturally for every criterion except "domicile_in"
@@ -113,6 +116,7 @@
             </div>
             <p class="text-sm text-charcoal mt-2">{{ c.explanation }}</p>
             {{ evidence_line(c.source_authority, c.source_url, c.verification_date) }}
+            {{ ask_bcion("eligibility_gap", pathway_id=pathway_id) }}
           </section>
         {% endfor %}
       </div>

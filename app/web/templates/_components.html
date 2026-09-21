@@ -1,0 +1,380 @@
+{# UI-1 froze these signatures; DESIGN-18 filled the bodies. The macros
+   named in docs/UI.md's component set live here -- see docs/UI.md
+   "Shell and stub macro contract" before changing any signature:
+   additive optional keyword arguments only, never a rename, a reorder
+   or a removal.
+
+   Everything here is presentation only. No macro fetches, decides or
+   computes anything: a caller passes already-published, already-checked
+   values (app/planning/*, app/api/*), and a macro renders them. A value
+   whose trust label is `not_available` is never rendered as a value --
+   `field_value()` in `_trust_badge.html` is the one place that rule is
+   enforced, and these macros go through it rather than re-deciding it.
+
+   Two rules run through every macro below:
+
+   1. A missing section SAYS it is missing. Dropping an empty section
+      silently would make a card read as complete when it is not
+      (CLAUDE.md: "No record -> answer is 'not verified'").
+   2. No control that goes nowhere. A link whose route does not exist
+      yet, or a form with no action, renders nothing at all rather than
+      looking live and doing nothing. #}
+{% from "_trust_badge.html" import evidence_line, field_value, trust_badge %}
+
+
+{% macro _not_published(message=none) %}
+  {#- The shared "this section has nothing published yet" treatment:
+      the same not_available badge a missing field gets, so one
+      vocabulary covers a missing value and a missing section. -#}
+  <p class="component-empty">
+    {{ trust_badge("not_available") }}
+    {% if message %}<span class="component-empty__note">{{ message }}</span>{% endif %}
+  </p>
+{% endmacro %}
+
+
+{% macro comparison_section(heading, field=none, money=false, note=none, divider=false) %}
+  {#- One labelled section inside a pathway column on the Compare
+      screen: a heading, one published field (via `field_value`, so the
+      trust badge and the evidence line come with it), and an optional
+      plain-language note under it.
+
+        heading   the section label ("Entry requirements", "Time", ...)
+        field     a FieldValueOut-shaped value, or none when the body
+                  comes from a `{% call %}` block
+        money     format the value as rupees
+        note      plain-language qualifier under the value
+        divider   draw the top rule that separates the cost block from
+                  the fields above it
+
+      Called with `{% call %}` when a section's body is not one field --
+      the Compare cost card is four numbers, not one.
+
+      docs/UI.md's field ORDER for the Compare screen stays the
+      caller's business: this macro renders one section, and the screen
+      decides the sequence. -#}
+  <div class="comparison-section{% if divider %} comparison-section--divided{% endif %}">
+    <h3 class="comparison-section__heading">{{ heading }}</h3>
+    {% if field is not none %}
+      {{ field_value(field, money=money) }}
+    {% endif %}
+    {% if caller %}{{ caller() }}{% endif %}
+    {% if field is none and not caller %}
+      {{ _not_published() }}
+    {% endif %}
+    {% if note %}
+      <p class="comparison-section__note">{{ note }}</p>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+
+{% macro career_card(career, entry_routes=none, investigate=none, why=none,
+                     reality_check=none, detail_url=none) %}
+  {#- The Build Pack's career card: "What would I do; how could I
+      enter; what should I investigate; why am I seeing this. A
+      reality-check section: common misunderstandings, hard parts, what
+      to try before committing, routes worth comparing."
+
+      Four questions, in that order, then the reality check.
+
+        career         the record. `career.name` is the heading;
+                       `career.description` answers "what would I do"
+        entry_routes   list of {"label": str, "href": str|none} -- the
+                       published routes in. A route with no href is
+                       still listed, just not linked.
+        investigate    list of plain strings: what to check before
+                       committing
+        why            a dict passed straight to `why_seeing_this`
+                       below: {reasons, preferences, unknowns,
+                       change_preferences_url}
+        reality_check  {"misunderstandings": [...], "hard_parts": [...],
+                        "try_first": [...], "compare_with": [...]}
+        detail_url     the pathway/career detail page, when one exists
+
+      No ranking, no score, no "best fit" (CLAUDE.md non-negotiables;
+      docs/COPY.md section 4). A budget constraint belongs in the
+      reality check as support and alternatives, never as a reason to
+      drop an ambitious route. -#}
+  <article class="career-card">
+    <h2 class="career-card__title">{{ career.name }}</h2>
+
+    <section class="career-card__section">
+      <h3 class="career-card__question">What would I do</h3>
+      {% if career.description %}
+        <p class="career-card__body">{{ career.description }}</p>
+      {% else %}
+        {{ _not_published("No description published for this career yet.") }}
+      {% endif %}
+    </section>
+
+    <section class="career-card__section">
+      <h3 class="career-card__question">How could I enter</h3>
+      {% if entry_routes %}
+        <ul class="career-card__list">
+          {% for route in entry_routes %}
+            <li>
+              {% if route.href %}
+                <a href="{{ route.href }}" class="text-accent underline">{{ route.label }}</a>
+              {% else %}
+                {{ route.label }}
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        {{ _not_published("No routes published for this career yet.") }}
+      {% endif %}
+    </section>
+
+    <section class="career-card__section">
+      <h3 class="career-card__question">What should I investigate</h3>
+      {% if investigate %}
+        <ul class="career-card__list">
+          {% for item in investigate %}<li>{{ item }}</li>{% endfor %}
+        </ul>
+      {% else %}
+        {{ _not_published("Nothing published to check yet.") }}
+      {% endif %}
+    </section>
+
+    <section class="career-card__section">
+      <h3 class="career-card__question">Why am I seeing this</h3>
+      {% if why %}
+        {{ why_seeing_this(
+             reasons=why.reasons,
+             preferences=why.preferences,
+             unknowns=why.unknowns,
+             change_preferences_url=why.change_preferences_url,
+             heading=none) }}
+      {% else %}
+        <p class="career-card__body career-card__body--muted">
+          You are seeing this because you opened it, not because anything was
+          matched to you.
+        </p>
+      {% endif %}
+    </section>
+
+    {# The reality check is the part a prospectus leaves out. It is a
+       separate visual block on purpose, not a fifth bullet list. #}
+    <section class="career-card__reality">
+      <h3 class="career-card__question">A reality check</h3>
+      {% if reality_check %}
+        {{ _reality_check_part("Common misunderstandings", reality_check.misunderstandings) }}
+        {{ _reality_check_part("The hard parts", reality_check.hard_parts) }}
+        {{ _reality_check_part("What to try before committing", reality_check.try_first) }}
+        {{ _reality_check_part("Routes worth comparing", reality_check.compare_with) }}
+      {% else %}
+        {{ _not_published("No reality check published for this career yet.") }}
+      {% endif %}
+    </section>
+
+    {% if detail_url %}
+      <p class="career-card__more">
+        <a href="{{ detail_url }}" class="text-accent underline">
+          See the full record for {{ career.name }}
+        </a>
+      </p>
+    {% endif %}
+  </article>
+{% endmacro %}
+
+
+{% macro _reality_check_part(heading, items) %}
+  {% if items %}
+    <div class="career-card__reality-part">
+      <h4 class="career-card__reality-heading">{{ heading }}</h4>
+      <ul class="career-card__list">
+        {% for item in items %}<li>{{ item }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+
+{% macro why_seeing_this(reasons=none, preferences=none, unknowns=none,
+                         change_preferences_url=none, heading=none) %}
+  {#- docs/UI.md: "A recommendation shows why it appeared, which
+      preferences influenced it, what remains unknown, and how to change
+      the preferences." All four parts, or this component is not doing
+      its job -- the unknowns especially, since that is the part a
+      recommendation engine is tempted to leave out.
+
+      Every reason is a plain sentence traceable to a published record.
+      Never a score, a rank or a percentage (CLAUDE.md).
+
+      With nothing to explain, this renders nothing: an empty
+      explanation box invites someone to fill it with something
+      invented. -#}
+  {% if reasons or preferences or unknowns %}
+    <aside class="why-block">
+      <h3 class="why-block__heading">{{ heading or "Why am I seeing this" }}</h3>
+
+      {% if reasons %}
+        <ul class="why-block__list">
+          {% for reason in reasons %}<li>{{ reason }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if preferences %}
+        <p class="why-block__line">
+          <span class="why-block__label">What you told us:</span>
+          {{ preferences | join(", ") }}
+        </p>
+      {% endif %}
+
+      {% if unknowns %}
+        <p class="why-block__line">
+          <span class="why-block__label">Still not known:</span>
+          {{ unknowns | join(", ") }}
+        </p>
+      {% endif %}
+
+      {% if change_preferences_url %}
+        <p class="why-block__line">
+          <a href="{{ change_preferences_url }}" class="text-accent underline">
+            Change what matters most to you
+          </a>
+        </p>
+      {% endif %}
+    </aside>
+  {% endif %}
+{% endmacro %}
+
+
+{% macro what_changed_list(changes=none, heading=none, empty_message=none) %}
+  {#- docs/UI.md "'What changed' surface": "field, old value, new value,
+      date, source -- the interface side of the public correction log
+      (DPR section 11)". All five per row, so a reader can check the
+      change themselves rather than take it on trust.
+
+      Each change: {"field": str, "old_value": any, "new_value": any,
+                    "date": date|str, "source_authority": str|none,
+                    "source_url": str|none}
+
+      Unlike most components here, an EMPTY list still renders: "nothing
+      has changed" is itself information a student checking a saved plan
+      needs (docs/UI.md's difficult state "Information changed"). -#}
+  <section class="what-changed">
+    <h3 class="what-changed__heading">{{ heading or "What changed" }}</h3>
+    {% if changes %}
+      <ul class="what-changed__list">
+        {% for change in changes %}
+          <li class="what-changed__row">
+            <p class="what-changed__field">{{ change.field }}</p>
+            <p class="what-changed__values">
+              <span class="what-changed__old">{{ change.old_value }}</span>
+              <span aria-hidden="true">&rarr;</span>
+              <span class="sr-only">changed to</span>
+              <span class="what-changed__new">{{ change.new_value }}</span>
+            </p>
+            <p class="what-changed__date">{{ change.date | date }}</p>
+            {{ evidence_line(change.source_authority, change.source_url, none) }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="component-empty__note">
+        {{ empty_message or "Nothing has changed since you last looked." }}
+      </p>
+    {% endif %}
+  </section>
+{% endmacro %}
+
+
+{% macro reminder_opt_in(subject, action_url=none, opted_in=false,
+                         channel=none, deadline=none, note=none) %}
+  {#- One explicit opt-in, for one deadline, off unless the student
+      turns it on. Never a blanket subscription, and never opt-out.
+
+        subject     what the reminder is about, in plain words
+        action_url  where the form POSTs. WITHOUT IT NOTHING RENDERS --
+                    a switch that appears to subscribe you and does not
+                    is worse than no switch.
+        opted_in    the current state, so the control can say what it
+                    will do rather than what it is
+        channel     "WhatsApp" / "Email" -- named, because a student on
+                    a shared phone must know where the message lands
+                    before agreeing (docs/UI.md "Shared device")
+        deadline    the date it is about, rendered through the locale
+                    date filter
+        note        anything else the caller must disclose
+
+      Zero JS: a plain form POST, no toggle script. -#}
+  {% if action_url %}
+    <form class="reminder-opt-in" method="post" action="{{ action_url }}">
+      <h3 class="reminder-opt-in__heading">{{ subject }}</h3>
+      {% if deadline %}
+        <p class="reminder-opt-in__deadline">{{ deadline | date }}</p>
+      {% endif %}
+      <p class="reminder-opt-in__note">
+        {% if channel %}
+          We would send one message on {{ channel }}, about this deadline only.
+        {% else %}
+          We would send one message about this deadline only.
+        {% endif %}
+        {% if note %} {{ note }}{% endif %}
+      </p>
+      <input type="hidden" name="opt_in" value="{{ "off" if opted_in else "on" }}" />
+      <button type="submit" class="{{ "btn-secondary" if opted_in else "btn-primary" }}">
+        {{ "Stop reminding me" if opted_in else "Remind me about this" }}
+      </button>
+    </form>
+  {% endif %}
+{% endmacro %}
+
+
+{% macro ask_bcion_entry(prompts=none, pathway_id=none, career_id=none,
+                         ai_enabled=false, heading=none) %}
+  {#- docs/UI.md component set: "Contextual 'Ask BCION' entry points use
+      canned prompts over retrieved records (fixed template -- this is
+      also the Tier-0/Tier-1 cost control from the national DPR section
+      9), never a blank chat box."
+
+      So: a fixed list of prompts the server chose, each a link, and no
+      input field anywhere in this macro. There is deliberately no way
+      to pass free text through it.
+
+        prompts     list of {"id": str, "label": str} -- ids from the
+                    server's fixed template list, never user text
+        pathway_id  grounds the answer in one pathway's published
+                    claims
+        career_id   same, for a career-level question
+        ai_enabled  app/core/config.py's AI_ENABLED, which is
+                    fail-closed. `{{ ai_enabled }}` is in every
+                    template's context (app/web/templating.py), so a
+                    caller passes `ai_enabled=ai_enabled`.
+        heading     override for the block heading
+
+      HIDDEN ENTIRELY WHEN AI IS OFF. Not greyed out, not "unavailable"
+      -- absent. docs/UI.md's difficult state for AI-unavailable is
+      "You can still compare routes and use the calculators", which is
+      the answer page's job (UI-11); an entry point advertising a
+      feature the operator has switched off is noise on the screen that
+      matters most. -#}
+  {% if ai_enabled and prompts %}
+    <div class="ask-entry">
+      <h3 class="ask-entry__heading">{{ heading or "Ask about this" }}</h3>
+      <ul class="ask-entry__list">
+        {% for prompt in prompts %}
+          <li>
+            <a
+              class="ask-entry__prompt"
+              href="/ask?template={{ prompt.id | urlencode }}{% if pathway_id %}&amp;pathway_id={{ pathway_id | urlencode }}{% endif %}{% if career_id %}&amp;career_id={{ career_id | urlencode }}{% endif %}"
+            >{{ prompt.label }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+
+{% macro pathway_detail_link(pathway_id, label=none, class_names=none) %}
+  {#- Pre-wired slot for the pathway-detail screen (its card: "The
+      detail link on Explore/Compare is a slot pre-wired by UI-1 in
+      _components.html"). Still renders nothing: /pathways/{id}/view
+      does not exist, and a link to a route that 404s is worse than no
+      link. Its owner fills this in; the call sites on explore.html and
+      compare.html are already there. -#}
+{% endmacro %}

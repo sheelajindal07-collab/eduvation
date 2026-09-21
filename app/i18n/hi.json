@@ -1,0 +1,59 @@
+{
+  "_meta.locale": "hi",
+  "_meta.source": "Draft translation of docs/COPY.md section 3, produced by a development agent. NOT a reviewed translation. HINDI_UI_ENABLED stays false in production until a named human Hindi reviewer works through these strings (task I18N-11) and this meta block records their name and date.",
+  "_meta.review_status": "unreviewed",
+  "_meta.reviewed_on": "",
+  "_meta.reviewed_by": "",
+
+  "global.trust_badge.checked_against_official_source": "आधिकारिक स्रोत से जाँचा गया",
+  "global.trust_badge.institution_reported": "संस्थान द्वारा बताया गया",
+  "global.trust_badge.estimate": "अनुमान",
+  "global.trust_badge.needs_rechecking": "फिर से जाँच ज़रूरी",
+  "global.trust_badge.not_available": "उपलब्ध नहीं",
+
+  "global.eligibility_badge.meets_overall": "आप प्रकाशित आवश्यकताएँ पूरी करते हैं",
+  "global.eligibility_badge.meets_criterion": "यह आवश्यकता पूरी होती है",
+  "global.eligibility_badge.does_not_meet_overall": "कम से कम एक प्रकाशित आवश्यकता पूरी नहीं होती",
+  "global.eligibility_badge.does_not_meet_criterion": "यह आवश्यकता पूरी नहीं होती",
+  "global.eligibility_badge.insufficient_information_overall": "यह जाँचने के लिए ऊपर अपनी जानकारी भरें",
+  "global.eligibility_badge.insufficient_information_criterion": "अभी पता नहीं",
+
+  "global.difficult_state.ai_unavailable": "आप अब भी रास्तों की तुलना कर सकते हैं और कैलकुलेटर इस्तेमाल कर सकते हैं।",
+  "global.difficult_state.eligibility_uncertain": "आपने अभी {requirement} नहीं भरा है, इसलिए यह जाँचा नहीं जा सकता।",
+  "global.difficult_state.information_changed": "{field} {date} को बदला गया। देखें कि इससे आपकी सहेजी गई किसी योजना पर असर पड़ता है या नहीं।",
+  "global.difficult_state.no_matching_result": "अभी कोई मेल खाता रास्ता नहीं मिला। थोड़ी व्यापक खोज करें, या नीचे मिलते-जुलते विकल्प देखें।",
+  "global.difficult_state.save_failed": "यह सहेजा नहीं गया। यहाँ कुछ भी खोया नहीं है — फिर से कोशिश करें।",
+  "global.difficult_state.weak_connection": "कनेक्शन धीमा है। इस पेज का हल्का रूप दिखाया जा रहा है।",
+  "global.difficult_state.shared_device": "क्या यह साझा डिवाइस है? काम पूरा होने पर साइन आउट करें — यहाँ डिफ़ॉल्ट रूप से कुछ भी संवेदनशील सहेजा नहीं रहता।",
+  "global.difficult_state.permission_denied": "आपके पास इसकी पहुँच नहीं है। अगर यह गलत लगे, तो अपने समीक्षक से संपर्क करें।",
+
+  "global.guest_session.notice": "किसी खाते में सहेजा नहीं गया।",
+  "global.guest_session.save_prompt": "7 दिन बाद भी यह रखने के लिए मुफ़्त खाता बनाएँ।",
+
+  "global.month.jan": "जनवरी",
+  "global.month.feb": "फ़रवरी",
+  "global.month.mar": "मार्च",
+  "global.month.apr": "अप्रैल",
+  "global.month.may": "मई",
+  "global.month.jun": "जून",
+  "global.month.jul": "जुलाई",
+  "global.month.aug": "अगस्त",
+  "global.month.sep": "सितंबर",
+  "global.month.oct": "अक्तूबर",
+  "global.month.nov": "नवंबर",
+  "global.month.dec": "दिसंबर",
+
+  "global.duration.week_one": "1 सप्ताह",
+  "global.duration.weeks": "{weeks} सप्ताह",
+  "global.duration.month_one": "1 महीना",
+  "global.duration.months": "{months} महीने",
+  "global.duration.year_one": "1 वर्ष",
+  "global.duration.years": "{years} वर्ष",
+  "global.duration.years_and_months": "{years} {months}",
+  "global.duration.weeks_with_approximation": "{weeks} (लगभग {approximate})",
+
+  "compare.closing_prompt.text": "आप किस विकल्प के बारे में और जानना चाहेंगे?",
+
+  "askbcion.answer.not_available": "इसके लिए हमारे पास अभी कोई सत्यापित रिकॉर्ड नहीं है।",
+  "askbcion.answer.insufficient_information": "हमारे पास कुछ जानकारी है, लेकिन पक्के जवाब के लिए यहाँ पर्याप्त नहीं है।"
+}

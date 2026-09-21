@@ -147,6 +147,29 @@ The five items marked "planned `_components.html`" all come from the same
 not-yet-built file (DESIGN-18's task). Until it exists, treat every macro
 name in this table as reserved, not available to import.
 
+#### v1.1 status updates (additive — the rows above are not rewritten)
+
+The freeze above records the state on 2026-09-21. Each line below names
+a row whose **Status** has since changed, with the task that changed it.
+The v1 rows stay as written, so the history of what was missing when
+stays readable.
+
+| Row | New status | Changed by |
+| --- | --- | --- |
+| Nav shell | **Exists.** `base.html` + `_nav.html` implement the four destinations (Explore, Compare, My Plan, Saved) and the utility menu. My Plan and Saved have no route yet and render as unavailable rather than as dead links | UI-1, 2026-09-22 |
+| Comparison section | **Exists as a macro** — `comparison_section()` in `_components.html`. `compare.html` still has its own inline markup; migrating that screen onto the macro is a separate task, so the two must be kept in step until it happens | DESIGN-18, 2026-09-22 |
+| Reminder opt-in | **Exists** — `reminder_opt_in()`. Renders nothing without an `action_url`, and no route provides one yet | DESIGN-18, 2026-09-22 |
+| "What changed" list | **Exists** — `what_changed_list()`. The My Plan screen it belongs under still does not exist | DESIGN-18, 2026-09-22 |
+| Career card | **Exists** — `career_card()`, four questions plus the reality check. No screen renders it yet | DESIGN-18, 2026-09-22 |
+| Why-seeing-this | **Exists** — `why_seeing_this()` (the component) and `_why.html`'s `why_am_i_seeing_this()` (the per-screen slot, still empty). Renders nothing with nothing to explain | DESIGN-18, 2026-09-22 |
+| Ask BCION entry | **Exists** — `ask_bcion_entry()`, canned prompts only, no input element of any kind, and entirely absent when `AI_ENABLED` is off. `/ask` itself is UI-11 | DESIGN-18, 2026-09-22 |
+| Source label (with cycle and report slot) | **Slots exist** — `evidence_line()` takes `applicable_cycle` and `report_issue_url`, both optional and both rendering nothing when absent. Neither is wired to a screen: no table stores a cycle, and no report endpoint exists | DESIGN-18, 2026-09-22 |
+
+Three of these render nothing on every real screen today, by design: the
+component exists, the data or the route behind it does not. That is the
+honest state — a control that looks live and does nothing is the one
+outcome docs/UI.md's difficult-states table exists to prevent.
+
 ### `.field-input` is canonical
 
 `app/web/styles/input.css` currently defines **two** input styles:
@@ -209,3 +232,198 @@ established by `.btn-primary`, `.btn-secondary` and `.field-input`; a
 disabled or empty state is exempt from nothing here. Motion, where any
 exists, keeps respecting `prefers-reduced-motion` (`input.css`'s global
 media query) in every state row, including states not yet built.
+
+## Shell and stub macro contract (frozen v1, 2026-09-22 — UI-1)
+
+UI-1 rewrote the app shell and created the partials every later screen
+task writes into. **These signatures are the interface other tasks
+build against.** Changing an argument name or dropping one is a
+breaking change across screens, so extend additively — a new optional
+keyword argument at the end, never a reorder, a rename or a removal.
+
+Additions after usability round 1 follow the same rule as the component
+inventory above: additive v1.1 rows, never a silent rewrite.
+
+### The shell — `base.html`
+
+| Block | What it is for | Default |
+| --- | --- | --- |
+| `title` | the `<title>` text | `BCION Lite` |
+| `head_extra` | a page-specific `<link>`/`<meta>` | empty |
+| `student_nav` | the four-destination nav | `nav.student_nav(current_path)` |
+| `utility_menu` | account / language / privacy / tools | `nav.utility_menu(current_path)` |
+| `session_state` | guest vs account | `nav.session_state(session_state)` |
+| `content` | the page | empty |
+| `footer` | the standing footer | the synthetic-data line |
+
+`current_path` is derived inside `base.html` from `request.url.path`; no
+route passes it. **A reviewer page hides student navigation by
+overriding `student_nav` and `utility_menu` with empty blocks** —
+`reviewer_queue.html` and `reviewer_sign_in.html` both do, and that is
+the supported mechanism for any future non-student surface.
+
+`base.html` reads exactly one optional context variable,
+`session_state` (`"guest"` / `"account"` / absent). Everything else the
+shell needs it derives itself, so no route signature changes.
+
+### Navigation — `_nav.html`
+
+| Macro | Signature |
+| --- | --- |
+| `student_nav` | `student_nav(current_path="")` |
+| `utility_menu` | `utility_menu(current_path="")` |
+| `session_state` | `session_state(state=none, detail=none)` |
+
+The four destinations and the utility items are two `{% set %}` lists at
+the top of `_nav.html`. **A destination with `href: none` renders as
+plainly unavailable** (text, never colour alone) and is not a link, so
+no nav item can lead to a 404. The task that builds a route fills in
+that one `href` and nothing else changes. Today: Explore and Compare are
+live; My Plan and Saved are slots; in the utility menu only the timeline
+calculator is live, with account, language, privacy and help as slots.
+
+Zero JavaScript by construction: plain links that wrap rather than
+overflow at 375px, and a native `<details>`/`<summary>` disclosure for
+the utility menu.
+
+### Stub partials — one owner each, all rendering nothing today
+
+Each renders nothing until its owning task fills the body. Their call
+sites already exist (UI-1 wired them), so an owner adds markup in one
+file and it appears everywhere at once.
+
+| Macro | File | Signature | Owner | Called from |
+| --- | --- | --- | --- | --- |
+| `report_issue` | `_report.html` | `report_issue(url=none, entity_type=none, entity_id=none, field=none, label=none)` | Ops/support (needs the feedback endpoint) | `evidence_line()` — so every consequential fact |
+| `ask_bcion` | `_ask.html` | `ask_bcion(template_id, pathway_id=none, career_id=none, label=none, ai_enabled=false)` | UI-11 | `compare.html` cost card + pathway column, `requirements.html` eligibility line |
+| `why_am_i_seeing_this` | `_why.html` | `why_am_i_seeing_this(reasons=none, preferences=none, unknowns=none, change_preferences_url=none, heading=none)` | the quick-start suggestion task | `explore.html`, `compare.html` |
+| `save_action` | `_save.html` | `save_action(item_type, item_id, saved=false, label=none, return_to=none)` | UI-16 / AUTH-6 | `explore.html` per pathway, `compare.html` per column |
+
+`template_id` on `ask_bcion` is **required and is an id from a fixed
+server-side list** — docs/UI.md's component set allows canned prompts
+over retrieved records and forbids a blank chat box, and the fixed set
+is also the DPR's Tier-0/Tier-1 spend control.
+
+`return_to` on `save_action` must be validated server-side as a local
+path before any redirect uses it.
+
+### Content components — `_components.html`
+
+Bodies filled by DESIGN-18, except `pathway_detail_link`, which is still
+a stub waiting on its own screen's route.
+
+| Macro | Signature |
+| --- | --- |
+| `comparison_section` | `comparison_section(heading, field=none, money=false, note=none, divider=false)` |
+| `career_card` | `career_card(career, entry_routes=none, investigate=none, why=none, reality_check=none, detail_url=none)` |
+| `why_seeing_this` | `why_seeing_this(reasons=none, preferences=none, unknowns=none, change_preferences_url=none, heading=none)` |
+| `what_changed_list` | `what_changed_list(changes=none, heading=none, empty_message=none)` |
+| `reminder_opt_in` | `reminder_opt_in(subject, action_url=none, opted_in=false, channel=none, deadline=none, note=none)` |
+| `ask_bcion_entry` | `ask_bcion_entry(prompts=none, pathway_id=none, career_id=none, ai_enabled=false, heading=none)` |
+| `pathway_detail_link` | `pathway_detail_link(pathway_id, label=none, class_names=none)` |
+
+`why_seeing_this` (the component) and `_why.html`'s
+`why_am_i_seeing_this` (the per-screen slot) are deliberately two names:
+a screen calls the slot and never has to know the markup, and the
+component could be built before the suggestion engine exists.
+
+`career_card`'s four questions are the Build Pack's, in order: what
+would I do; how could I enter; what should I investigate; why am I
+seeing this — plus the reality check (common misunderstandings, hard
+parts, what to try before committing, routes worth comparing).
+
+Two rules run through all of them:
+
+1. **A missing section says it is missing.** Every one of these macros
+   renders the `not_available` trust badge plus a plain sentence for a
+   section with nothing published, rather than dropping it — a card
+   that silently shrinks reads as complete when it is not.
+2. **No control that goes nowhere.** `reminder_opt_in` renders nothing
+   without an `action_url`; `ask_bcion_entry` renders nothing when
+   `ai_enabled` is false or there are no prompts; `pathway_detail_link`
+   renders nothing at all until its route exists. Each is absent, not
+   greyed out.
+
+`what_changed_list` is the deliberate exception to rule 1: an empty list
+still renders, because "nothing has changed" is itself what a student
+checking a saved plan came to find out.
+
+`comparison_section` accepts a `{% call %}` body for a section that is
+not one field (the Compare cost card is four numbers). `compare.html`
+has not been migrated onto it — the macro and that screen's inline
+markup must be kept in step until a task does that.
+
+### Source label — `evidence_line` (extended, DESIGN-18)
+
+`evidence_line(source_authority, source_url, verification_date, label=none, applicable_cycle=none, report_issue_url=none)`
+
+The two new arguments are optional and additive: existing callers are
+unchanged, and each renders **nothing** when absent. `applicable_cycle`
+is the admission/fee cycle a fact belongs to ("2026–27"); without it,
+"verified 2026-09-01" cannot tell a reader which year's fee they are
+looking at. `report_issue_url` is passed straight through to
+`report_issue()` — so no report control can appear without a real URL
+behind it, and the caller builds that URL server-side rather than a
+template guessing the endpoint's parameter names.
+
+Neither is wired to a screen yet: no table stores an applicable cycle,
+and there is no report endpoint. **Known gap, left deliberately:** with
+no `source_url` the whole evidence line still renders nothing, so a
+fact whose URL is missing or was rejected for an unsafe scheme hides its
+verification date and cycle too. Fixing that changes what existing
+callers render, which DESIGN-18 is not allowed to do — it needs its own
+task and its own test.
+
+### i18n inside a macro — `t()` and the formatting filters
+
+`t("screen.component.purpose", name=value)` is a Jinja **global**, so it
+works inside any template and inside any macro, including macros
+imported without `with context` (`app/web/templating.py` explains the
+mechanism). The same applies to the four display filters:
+
+| Filter | Example | Output |
+| --- | --- | --- |
+| `inr` | `{{ fee \| inr }}` | `₹1,00,000` |
+| `number` | `{{ seats \| number }}` | `1,00,000` |
+| `date` | `{{ verification_date \| date }}` | `21 Sep 2026` / `21 सितंबर 2026` |
+| `duration_weeks` | `{{ total_weeks \| duration_weeks }}` | `78 weeks (about 1 year 6 months)` |
+
+Each takes an optional explicit locale — `{{ d \| date("hi") }}` — which
+only the components gallery needs; every real screen inherits the
+reader's locale. `None` and anything unrenderable become the catalogue's
+"Not available" string, never a blank or a raw `None`.
+
+`{{ ai_enabled }}` is in every template's context too (the same context
+processor reads `app/core/config.py`'s fail-closed `AI_ENABLED`), so a
+template can pass `ai_enabled=ai_enabled` to `ask_bcion_entry` without
+its route having to remember the flag.
+
+Template text itself is still hardcoded English: extracting it into
+`t()` keys, and setting `<html lang="{{ lang }}">`, is I18N-3's task,
+not UI-1's.
+
+### Components gallery
+
+`components_gallery.html` renders every macro above at a synthetic label
+and at both 360px and full width, for visual review.
+
+**It has no route, deliberately.** Everything on it is synthetic
+(CLAUDE.md: synthetic fixtures are clearly labelled and never published
+as verified facts), so it is not served to anyone — it is rendered to a
+local file when someone wants to look at it:
+
+```bash
+python -c "import pathlib; \
+from starlette.requests import Request; \
+from app.web.templating import templates; \
+r = Request({'type':'http','method':'GET','path':'/','headers':[]}); \
+pathlib.Path('gallery.html').write_text( \
+templates.TemplateResponse(r,'components_gallery.html',{}).body.decode(), \
+encoding='utf-8')"
+```
+
+Run it from the repo root and open `gallery.html` straight from disk:
+the page links the compiled stylesheet by both its served path and a
+repo-root-relative one, so it is styled either way, with or without the
+app running. `.gitignore` has no rule for it — **delete it when you are
+done**, or it will show up in the next `git status`.

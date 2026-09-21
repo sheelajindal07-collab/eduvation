@@ -1,4 +1,10 @@
 {% extends "base.html" %}
+{# UI-1: a reviewer console is not the student journey. The
+   four-destination nav and the student utility menu are both hidden
+   here — this page has its own Sign out control below, and a reviewer
+   landing on /explore mid-review is a wrong turn, not a feature. #}
+{% block student_nav %}{% endblock %}
+{% block utility_menu %}{% endblock %}
 {% block title %}Review queue &mdash; BCION Lite{% endblock %}
 {% block content %}
   <div class="flex items-start justify-between gap-4 mb-6">

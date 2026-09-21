@@ -1,0 +1,59 @@
+{
+  "_meta.locale": "en",
+  "_meta.source": "docs/COPY.md section 3 — every string below is copied verbatim from that file, which is the source of truth. Do not reword here; reword there.",
+  "_meta.review_status": "fixed",
+  "_meta.reviewed_on": "2026-09-22",
+  "_meta.reviewed_by": "docs/COPY.md (DESIGN-2)",
+
+  "global.trust_badge.checked_against_official_source": "Checked against official source",
+  "global.trust_badge.institution_reported": "Institution-reported",
+  "global.trust_badge.estimate": "Estimate",
+  "global.trust_badge.needs_rechecking": "Needs rechecking",
+  "global.trust_badge.not_available": "Not available",
+
+  "global.eligibility_badge.meets_overall": "You meet the published requirements",
+  "global.eligibility_badge.meets_criterion": "Meets this requirement",
+  "global.eligibility_badge.does_not_meet_overall": "At least one published requirement isn't met",
+  "global.eligibility_badge.does_not_meet_criterion": "Does not meet this requirement",
+  "global.eligibility_badge.insufficient_information_overall": "Enter your details above to check this",
+  "global.eligibility_badge.insufficient_information_criterion": "Not yet known",
+
+  "global.difficult_state.ai_unavailable": "You can still compare routes and use the calculators.",
+  "global.difficult_state.eligibility_uncertain": "You haven't entered {requirement} yet, so this can't be checked.",
+  "global.difficult_state.information_changed": "{field} changed on {date}. Check whether it affects a plan you saved.",
+  "global.difficult_state.no_matching_result": "No matching routes yet. Try a broader search, or look at related options below.",
+  "global.difficult_state.save_failed": "This didn't save. Nothing here is lost — try again.",
+  "global.difficult_state.weak_connection": "Slow connection. Showing a lighter version of this page.",
+  "global.difficult_state.shared_device": "On a shared device? Sign out when you're done — nothing sensitive stays saved here by default.",
+  "global.difficult_state.permission_denied": "You don't have access to this. If that seems wrong, contact your reviewer.",
+
+  "global.guest_session.notice": "Not saved to an account.",
+  "global.guest_session.save_prompt": "Create a free account to keep this after 7 days.",
+
+  "global.month.jan": "Jan",
+  "global.month.feb": "Feb",
+  "global.month.mar": "Mar",
+  "global.month.apr": "Apr",
+  "global.month.may": "May",
+  "global.month.jun": "Jun",
+  "global.month.jul": "Jul",
+  "global.month.aug": "Aug",
+  "global.month.sep": "Sep",
+  "global.month.oct": "Oct",
+  "global.month.nov": "Nov",
+  "global.month.dec": "Dec",
+
+  "global.duration.week_one": "1 week",
+  "global.duration.weeks": "{weeks} weeks",
+  "global.duration.month_one": "1 month",
+  "global.duration.months": "{months} months",
+  "global.duration.year_one": "1 year",
+  "global.duration.years": "{years} years",
+  "global.duration.years_and_months": "{years} {months}",
+  "global.duration.weeks_with_approximation": "{weeks} (about {approximate})",
+
+  "compare.closing_prompt.text": "Which option would you like to investigate further?",
+
+  "askbcion.answer.not_available": "We don't have a verified record for this yet.",
+  "askbcion.answer.insufficient_information": "We have some information, but not enough here for a confident answer."
+}

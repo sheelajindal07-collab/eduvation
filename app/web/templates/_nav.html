@@ -1,0 +1,146 @@
+{# UI-1 — the app shell's navigation, in one place.
+
+   docs/PRODUCT.md "Navigation (four destinations + utility menu)":
+   Explore, Compare, My Plan, Saved, and "Account, language and privacy
+   live in a utility menu -- not a fifth destination."
+
+   Zero JavaScript, by construction: the destination list is plain
+   links, and the utility menu is a native <details>/<summary>
+   disclosure. Nothing here needs a script to open, close or stay
+   usable at 375px (docs/UI.md's own floor), and nothing here breaks if
+   a script fails to load on a 2G connection.
+
+   Macro signatures are frozen by UI-1 and documented in docs/UI.md --
+   see "Shell and stub macro contract (frozen v1)" there before
+   changing any of them. #}
+
+{# ---------------------------------------------------------------------
+   The four destinations.
+
+   `href = none` means "this destination has no route yet". The task
+   that builds the route fills in the href HERE, in this one list, and
+   the item stops rendering as unavailable everywhere at once. That is
+   the whole change needed -- no markup edit, no second list to keep in
+   step:
+
+     My Plan -> AUTH-14 / UI-6      Saved -> UI-16 (or merged into My Plan)
+
+   A destination with no route is still SHOWN, deliberately: docs/UI.md
+   forbids conveying a state by colour alone, and a silently missing nav
+   item would leave a usability-round participant hunting for something
+   the product brief promises. It is rendered as plainly unavailable
+   (text, not just a dim colour) and is not a link, so nobody lands on a
+   404.
+   --------------------------------------------------------------------- #}
+{% set DESTINATIONS = [
+  {"key": "explore", "href": "/explore",      "label": "Explore",  "match": ["/explore", "/"]},
+  {"key": "compare", "href": "/compare/view", "label": "Compare",  "match": ["/compare"]},
+  {"key": "myplan",  "href": none,            "label": "My Plan",  "match": ["/plan"]},
+  {"key": "saved",   "href": none,            "label": "Saved",    "match": ["/saved"]}
+] %}
+
+{# The utility menu. Same convention: `href = none` is a slot, not a
+   link. UI-13 builds privacy, help and the account page; a language
+   switcher needs a route that sets the `lang` cookie (I18N-1 built the
+   reader, not the writer). #}
+{% set UTILITY_ITEMS = [
+  {"key": "timeline", "href": "/timeline/view", "label": "Timeline calculator"},
+  {"key": "account",  "href": none,             "label": "Account"},
+  {"key": "language", "href": none,             "label": "Language"},
+  {"key": "privacy",  "href": none,             "label": "Privacy"},
+  {"key": "help",     "href": none,             "label": "Help"}
+] %}
+
+
+{% macro _is_current(item, current_path) %}
+  {#- True when `current_path` is inside this destination. Prefix match,
+      so /compare/view and a future /compare/anything both light up
+      Compare; "/" matches only exactly (it redirects to /explore). -#}
+  {%- set matches = item.match | default([]) -%}
+  {%- for prefix in matches -%}
+    {%- if prefix == "/" and current_path == "/" -%}1
+    {%- elif prefix != "/" and current_path.startswith(prefix) -%}1
+    {%- endif -%}
+  {%- endfor -%}
+{% endmacro %}
+
+
+{% macro student_nav(current_path="") %}
+  {# The four destinations. Hidden on reviewer pages by overriding
+     base.html's `student_nav` block -- see docs/UI.md. #}
+  <nav class="site-nav" aria-label="Main">
+    {% for item in DESTINATIONS %}
+      {% set current = _is_current(item, current_path) | trim %}
+      {% if item.href %}
+        <a
+          href="{{ item.href }}"
+          class="nav-link{% if current %} nav-link--active{% endif %}"
+          {% if current %}aria-current="page"{% endif %}
+        >{{ item.label }}</a>
+      {% else %}
+        {# Not a link and not focusable: there is nowhere to go yet.
+           The state is carried by text ("soon"), never by colour
+           alone (docs/UI.md "Visual direction"). #}
+        <span class="nav-link nav-link--unavailable" aria-disabled="true">
+          {{ item.label }}
+          <span class="nav-link__note">soon</span>
+        </span>
+      {% endif %}
+    {% endfor %}
+  </nav>
+{% endmacro %}
+
+
+{% macro utility_menu(current_path="") %}
+  {# docs/PRODUCT.md: account, language and privacy live here, not as a
+     fifth destination. <details> is the zero-JS disclosure: keyboard
+     operable, screen-reader announced, no script. #}
+  <details class="utility-menu">
+    <summary class="utility-menu__summary">More</summary>
+    <ul class="utility-menu__list">
+      {% for item in UTILITY_ITEMS %}
+        <li>
+          {% if item.href %}
+            <a href="{{ item.href }}" class="utility-menu__link">{{ item.label }}</a>
+          {% else %}
+            <span class="utility-menu__link utility-menu__link--unavailable" aria-disabled="true">
+              {{ item.label }}
+              <span class="nav-link__note">soon</span>
+            </span>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </details>
+{% endmacro %}
+
+
+{% macro session_state(state=none, detail=none) %}
+  {# The session-state slot. `state` is one of:
+
+       none       nothing is known about the session -> render nothing
+       "guest"    an anonymous server session (docs/UI.md "Guest
+                  sessions": shown as "not saved to an account")
+       "account"  a signed-in student account
+
+     Rendering nothing by default is deliberate: no page passes this
+     yet, and claiming "Not saved to an account" on a page that has no
+     idea whether a session exists would be a statement the app cannot
+     stand behind. AUTH-14 (student sessions) passes `session_state`
+     into the template context and this fills in with no markup change.
+
+     `detail` is optional trailing text (e.g. an account's own label);
+     it is escaped like any other value. #}
+  {% if state == "guest" %}
+    <p class="session-state session-state--guest">
+      <span aria-hidden="true">&#9679;</span>
+      <span>{{ t("global.guest_session.notice") }}</span>
+      {% if detail %}<span class="session-state__detail">{{ detail }}</span>{% endif %}
+    </p>
+  {% elif state == "account" %}
+    <p class="session-state session-state--account">
+      <span aria-hidden="true">&#9679;</span>
+      <span>{{ detail or "Signed in" }}</span>
+    </p>
+  {% endif %}
+{% endmacro %}

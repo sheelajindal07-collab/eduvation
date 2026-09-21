@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from supabase import Client
 
 from app.api.deps import get_db_client
-from app.web.common import templates
+from app.web.templating import templates
 
 router = APIRouter(include_in_schema=False)  # HTML pages, not the JSON API surface
 

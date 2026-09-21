@@ -18,7 +18,8 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from app.rules.timeline import ParallelActivity, Stage, TimelineResult, compute_timeline
-from app.web.common import _form_str, _int_or_none, templates
+from app.web.common import _form_str, _int_or_none
+from app.web.templating import templates
 
 router = APIRouter(include_in_schema=False)  # HTML pages, not the JSON API surface
 

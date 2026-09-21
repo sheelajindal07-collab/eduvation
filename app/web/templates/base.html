@@ -1,3 +1,24 @@
+{#- UI-1 — the app shell every page extends.
+
+   Blocks other templates may override, and nothing else:
+
+     title          the <title> text
+     head_extra     extra <head> content (a page-specific <link>/<meta>)
+     student_nav    the four-destination nav. Reviewer pages override
+                    this with an empty block to hide student navigation
+     utility_menu   account / language / privacy / tools (docs/PRODUCT.md:
+                    "not a fifth destination"). Reviewer pages override
+                    it empty too
+     session_state  guest vs account, rendered from the optional
+                    `session_state` context variable (AUTH-14)
+     content        the page itself
+     footer         the standing footer, so UI-13 can make the
+                    synthetic-data line flag-driven without touching
+                    this file
+
+   Signatures for every macro used here are frozen by UI-1 and
+   documented in docs/UI.md ("Shell and stub macro contract"). -#}
+{%- import "_nav.html" as nav -%}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,27 +28,49 @@
   <!-- docs/UI.md "No web-font download in the text-only / 2G mode": one
        small compiled stylesheet, no external font/script requests. -->
   <link rel="stylesheet" href="/static/css/app.css" />
+  {% block head_extra %}{% endblock %}
 </head>
 <body class="min-h-screen flex flex-col">
-  <header class="border-b border-charcoal/10 bg-white">
-    <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
-      <a href="/explore" class="text-lg font-semibold text-charcoal">BCION Lite</a>
-      <nav class="flex items-center gap-4">
-        <a href="/timeline/view" class="text-sm text-accent underline">Timeline calculator</a>
-        <p class="text-sm text-neutral hidden sm:block">A career-decision pilot &mdash; not a national platform</p>
-      </nav>
+  {#- `request` is always present in a TemplateResponse; the guard keeps
+      a direct env.render() (tests, the components gallery) working. -#}
+  {% set current_path = request.url.path if request else "" %}
+
+  {# Skip link: the nav below is four destinations plus a disclosure, so
+     a keyboard or screen-reader user gets a way past it on every page
+     (the same readers docs/UI.md's touch-target and never-colour-alone
+     rules exist for). #}
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <header class="site-header">
+    <div class="site-header__bar">
+      <a href="/explore" class="site-header__wordmark">BCION Lite</a>
+
+      <div class="site-header__actions">
+        {% block session_state %}
+          {{ nav.session_state(session_state | default(none, true)) }}
+        {% endblock %}
+        {% block utility_menu %}
+          {{ nav.utility_menu(current_path) }}
+        {% endblock %}
+      </div>
     </div>
+
+    {% block student_nav %}
+      {{ nav.student_nav(current_path) }}
+    {% endblock %}
   </header>
 
-  <main class="flex-1 max-w-5xl mx-auto w-full px-4 py-8">
+  <main id="main" class="flex-1 max-w-5xl mx-auto w-full px-4 py-8">
     {% block content %}{% endblock %}
   </main>
 
-  <footer class="border-t border-charcoal/10 py-6">
-    <p class="max-w-5xl mx-auto px-4 text-xs text-neutral">
-      Synthetic pilot data unless a fact shows a source and verification date above.
-      BCION Lite is a technical spike, not the national platform.
-    </p>
-  </footer>
+  {% block footer %}
+    <footer class="border-t border-charcoal/10 py-6">
+      <p class="max-w-5xl mx-auto px-4 text-xs text-neutral">
+        Synthetic pilot data unless a fact shows a source and verification date above.
+        BCION Lite is a technical spike, not the national platform.
+      </p>
+    </footer>
+  {% endblock %}
 </body>
 </html>

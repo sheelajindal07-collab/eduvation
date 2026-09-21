@@ -1,0 +1,51 @@
+{# UI-1 stub partial — "why am I seeing this?".
+
+   OWNER: the quick-start suggestion task (app/planning/suggest.py,
+   /start/results), whose card lists this file. Call sites exist as of
+   UI-1 on `explore.html` (why this list) and `compare.html` (why these
+   pathways are side by side).
+
+   THE RULE THIS MACRO CARRIES: docs/UI.md — "A recommendation shows why
+   it appeared, which preferences influenced it, what remains unknown,
+   and how to change the preferences." All four, or the component is
+   not doing its job. CLAUDE.md's non-negotiables rule out the shortcut
+   version of this ("you are a 92% match"): a reason is a named,
+   retrieved fact, never a score.
+
+   WHY IT RENDERS NOTHING TODAY: nothing recommends anything yet. There
+   is no quick start, no preference capture and no suggestion engine, so
+   there is no "why" to state. An explanation box with invented contents
+   would be exactly the thing this component exists to prevent.
+
+   TWO MACROS, ONE IDEA — read this before wiring anything:
+
+     `why_am_i_seeing_this` (here)   the per-screen SLOT. A screen calls
+                                     this; it decides whether there is
+                                     anything to explain.
+     `why_seeing_this` (_components) the visual COMPONENT that renders
+                                     the block (DESIGN-18).
+
+   The slot will call the component. They are deliberately two names so
+   a screen never has to know the markup, and DESIGN-18 could build the
+   component before the suggestion engine exists.
+
+   Signature frozen by UI-1 — see docs/UI.md. #}
+
+{% macro why_am_i_seeing_this(reasons=none, preferences=none, unknowns=none,
+                              change_preferences_url=none, heading=none) %}
+  {#- Arguments:
+
+        reasons                 list of plain-language strings, each
+                                traceable to a published record. Never
+                                a score, a rank or a percentage.
+        preferences             list of the student's own stated
+                                preferences that influenced this
+        unknowns                list of what is still not known — the
+                                honest half of the explanation, and the
+                                half that gets dropped if nobody names
+                                it in the signature
+        change_preferences_url  where to go to change them; docs/UI.md
+                                requires "how to change the preferences"
+        heading                 override for the block's heading
+  -#}
+{% endmacro %}
