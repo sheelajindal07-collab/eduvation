@@ -36,6 +36,8 @@ CASES_DIR = Path(__file__).resolve().parent / "cases"
 # number, an unrelated word that happens to contain the letters).
 _FORBIDDEN_LITERAL_FACT_TOKENS: dict[str, tuple[str, ...]] = {
     "neet_ug": ("17", "Biology", "Biotechnology", "Physics", "Chemistry"),
+    "jee_main": ("2025", "2026", "2027"),
+    "gujcet": ("16", "45", "40", "Physics", "Chemistry", "Mathematics", "Biology", "SEBC"),
 }
 
 

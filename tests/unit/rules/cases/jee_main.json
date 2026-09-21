@@ -1,0 +1,128 @@
+{
+  "exam_key": "jee_main",
+  "exam_name": "JEE (Main)",
+  "cycle": "2027",
+  "cycle_end": "2027-12-31",
+  "jurisdiction": "IN",
+  "rule_version": "v1",
+  "reviewed_by": null,
+  "reviewed_on": null,
+  "source_note": "docs/content-drafts/jee-main-eligibility.md -- DRAFT RESEARCH, not verified, not published, and explicitly lower-confidence than the NEET-UG draft this engine's reference module (neet_ug.py) uses (that draft's own header: 'unverified draft research collected by an AI agent from public web sources'). Per this task's own instruction, this module reads the draft for SHAPE only, never values: the real, confirmed 2026-cycle bulletin figures are 'passed in 2024 or 2025, or appearing in 2026' (section 3) and 'no age limit for the candidates' (section 2). The facts below are INVENTED for engine-test purposes only -- a passed-in-recent-years-or-appearing-this-cycle shape, shifted by one year and otherwise unrelated to the real bulletin's own numbers -- and must never be treated as a real NEET/JEE claim. The draft's own section 4 finding (no explicit PCM subject requirement to APPEAR, as opposed to admission) is why this rule set has no subject_groups criterion at all, matching that shape faithfully without reproducing any of its values either.",
+  "facts": {
+    "eligible_passing_years": [2025, 2026],
+    "allow_appearing": true,
+    "passed_or_appearing_source_claim_id": "synthetic:jee-main-eligibility.md#section-3-shape-only"
+  },
+  "not_checked": [
+    {
+      "name": "Subject combination and minimum marks/percentile for NIT/IIIT/CFTI, B.Architecture or B.Planning admission",
+      "note": "These are admission-specific rules distinct from eligibility to appear in the exam itself, and are not checked here."
+    },
+    {
+      "name": "Institute-specific age requirements",
+      "note": "There is no NTA-level age limit to appear, but individual institutes may still apply their own age criteria at admission -- not checked here."
+    },
+    {
+      "name": "JEE Advanced eligibility (a rank-based cutoff among JEE Main candidates)",
+      "note": "This is a result of the exam, not an input a student has, and must never be turned into a rank prediction -- not checked here."
+    }
+  ],
+  "cases": [
+    {
+      "name": "meets_passed_earliest_eligible_year",
+      "input": {"year_of_passing": 2025, "appearing": false},
+      "as_of": "2026-09-19",
+      "expected_outcome": "meets",
+      "reason": "2025 is the earliest year in the synthetic eligible-passing window.",
+      "source_pointer": "docs/content-drafts/jee-main-eligibility.md section 3 (shape only)"
+    },
+    {
+      "name": "meets_passed_latest_eligible_year",
+      "input": {"year_of_passing": 2026, "appearing": false},
+      "as_of": "2026-09-19",
+      "expected_outcome": "meets",
+      "reason": "2026 is the latest year in the synthetic eligible-passing window.",
+      "source_pointer": "docs/content-drafts/jee-main-eligibility.md section 3 (shape only)"
+    },
+    {
+      "name": "does_not_meet_passed_one_year_before_window",
+      "input": {"year_of_passing": 2024, "appearing": false},
+      "as_of": "2026-09-19",
+      "expected_outcome": "does_not_meet",
+      "reason": "2024 is one year before the synthetic eligible-passing window.",
+      "source_pointer": "docs/content-drafts/jee-main-eligibility.md section 3 (shape only)"
+    },
+    {
+      "name": "does_not_meet_passed_one_year_after_window",
+      "input": {"year_of_passing": 2027, "appearing": false},
+      "as_of": "2026-09-19",
+      "expected_outcome": "does_not_meet",
+      "reason": "2027 is one year after the synthetic eligible-passing window.",
+      "source_pointer": "docs/content-drafts/jee-main-eligibility.md section 3 (shape only)"
+    },
+    {
+      "name": "does_not_meet_passed_far_before_window",
+      "input": {"year_of_passing": 2015, "appearing": false},
+      "as_of": "2026-09-19",
+      "expected_outcome": "does_not_meet",
+      "reason": "Well outside the window, for variety beyond the immediate boundary.",
+      "source_pointer": "docs/content-drafts/jee-main-eligibility.md section 3 (shape only)"
+    },
+    {
+      "name": "meets_currently_appearing",
+      "input": {"appearing": true},
+      "as_of": "2026-09-19",
+      "expected_outcome": "meets",
+      "reason": "Currently appearing in the qualifying exam is accepted, with no year of passing needed at all.",
+      "source_pointer": "docs/content-drafts/jee-main-eligibility.md section 3 (shape only)"
+    },
+    {
+      "name": "meets_currently_appearing_overrides_a_contradicting_year",
+      "input": {"appearing": true, "year_of_passing": 2015},
+      "as_of": "2026-09-19",
+      "expected_outcome": "meets",
+      "reason": "appearing=true short-circuits to meets regardless of any year_of_passing also given.",
+      "source_pointer": "docs/content-drafts/jee-main-eligibility.md section 3 (shape only)"
+    },
+    {
+      "name": "insufficient_information_both_unknown",
+      "input": {},
+      "as_of": "2026-09-19",
+      "expected_outcome": "insufficient_information",
+      "reason": "Neither year of passing nor appearing status is given.",
+      "source_pointer": "docs/content-drafts/jee-main-eligibility.md section 3 (shape only)"
+    },
+    {
+      "name": "insufficient_information_not_appearing_and_year_unknown",
+      "input": {"appearing": false},
+      "as_of": "2026-09-19",
+      "expected_outcome": "insufficient_information",
+      "reason": "Explicitly not appearing, but no year of passing was given either.",
+      "source_pointer": "docs/content-drafts/jee-main-eligibility.md section 3 (shape only)"
+    },
+    {
+      "name": "insufficient_information_stale_cycle_masks_a_would_be_meets",
+      "input": {"year_of_passing": 2025, "appearing": false},
+      "as_of": "2028-06-01",
+      "expected_outcome": "insufficient_information",
+      "reason": "as_of is past the 2027 cycle's cycle_end -- a would-be meets is downgraded so a lapsed cycle is never a confident pass.",
+      "source_pointer": "app/rules/ruleset.py cycle_stale guard"
+    },
+    {
+      "name": "does_not_meet_survives_a_stale_cycle",
+      "input": {"year_of_passing": 2024, "appearing": false},
+      "as_of": "2028-06-01",
+      "expected_outcome": "does_not_meet",
+      "reason": "A real failure found under a lapsed cycle's rules is still true information.",
+      "source_pointer": "app/rules/ruleset.py cycle_stale guard"
+    },
+    {
+      "name": "does_not_meet_passed_far_after_window",
+      "input": {"year_of_passing": 2030, "appearing": false},
+      "as_of": "2026-09-19",
+      "expected_outcome": "does_not_meet",
+      "reason": "Well after the window, for boundary variety in the other direction.",
+      "source_pointer": "docs/content-drafts/jee-main-eligibility.md section 3 (shape only)"
+    }
+  ]
+}
