@@ -8,6 +8,7 @@ criteria at once — which is exactly where a subtle bug would hide.
 
 from datetime import date
 
+from app.data.jurisdictions import resolve_jurisdiction
 from app.data.models import EligibilityOutcome
 from app.rules.eligibility import (
     EligibilityInput,
@@ -445,3 +446,71 @@ class TestFullyPopulatedStudentInput:
         assert len(result.failing) == 1
         assert result.failing[0].name == "domicile_in"
         assert result.unknown == ()
+
+
+class TestResolveJurisdiction:
+    """SCOPE-5: app.data.jurisdictions.resolve_jurisdiction — the
+    canonical-code lookup domicile_in below is built on."""
+
+    def test_delhi_resolves_to_in_dl(self) -> None:
+        assert resolve_jurisdiction("Delhi") == "IN-DL"
+
+    def test_nct_of_delhi_alias_resolves_to_in_dl(self) -> None:
+        """The exact acceptance case named in SCOPE-5's task card."""
+        assert resolve_jurisdiction("NCT of Delhi") == "IN-DL"
+
+    def test_unknown_state_does_not_resolve(self) -> None:
+        assert resolve_jurisdiction("Narnia") is None
+
+    def test_code_lookup_is_case_insensitive(self) -> None:
+        assert resolve_jurisdiction("in-gj") == "IN-GJ"
+
+    def test_pilot_country_resolves(self) -> None:
+        assert resolve_jurisdiction("Singapore") == "SG"
+
+    def test_country_alias_resolves(self) -> None:
+        assert resolve_jurisdiction("UAE") == "AE"
+        assert resolve_jurisdiction("UK") == "GB"
+
+    def test_none_input_does_not_resolve(self) -> None:
+        assert resolve_jurisdiction(None) is None
+
+    def test_blank_input_does_not_resolve(self) -> None:
+        assert resolve_jurisdiction("   ") is None
+
+
+class TestDomicileInJurisdictionResolution:
+    """SCOPE-5: domicile_in accepts a claim's/student's state or country
+    given as a code or a known alias, not just an identical literal
+    string -- and an input that resolves to NO known jurisdiction at all
+    is insufficient_information, never a guessed does_not_meet."""
+
+    def test_unrecognised_domicile_gives_insufficient_information_not_rejection(
+        self,
+    ) -> None:
+        criterion = domicile_in(frozenset({"Gujarat"}))
+        result = criterion.check(EligibilityInput(domicile_state="Narnia"))
+        assert result.outcome == EligibilityOutcome.insufficient_information
+
+    def test_alias_nct_of_delhi_matches_a_published_delhi(self) -> None:
+        criterion = domicile_in(frozenset({"Delhi"}))
+        result = criterion.check(EligibilityInput(domicile_state="NCT of Delhi"))
+        assert result.outcome == EligibilityOutcome.meets
+
+    def test_code_input_matches_a_published_state_name(self) -> None:
+        criterion = domicile_in(frozenset({"Gujarat"}))
+        result = criterion.check(EligibilityInput(domicile_state="IN-GJ"))
+        assert result.outcome == EligibilityOutcome.meets
+
+    def test_recognised_state_outside_allowed_set_still_does_not_meet(self) -> None:
+        """A recognised-but-wrong domicile is a real, known mismatch --
+        still does_not_meet, not swallowed into insufficient_information
+        just because the resolution path is now involved."""
+        criterion = domicile_in(frozenset({"Gujarat"}))
+        result = criterion.check(EligibilityInput(domicile_state="IN-MH"))
+        assert result.outcome == EligibilityOutcome.does_not_meet
+
+    def test_pilot_country_code_matches_a_published_country_name(self) -> None:
+        criterion = domicile_in(frozenset({"Singapore"}))
+        result = criterion.check(EligibilityInput(domicile_state="SG"))
+        assert result.outcome == EligibilityOutcome.meets

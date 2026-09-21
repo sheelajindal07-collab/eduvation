@@ -583,11 +583,12 @@ class TestRequirementsPage:
     def test_domicile_case_mismatch_still_meets_not_a_hard_rejection(
         self, admin_client: Client, requirements_pathway: dict[str, Any]
     ) -> None:
-        """FIX 4 (part B): domicile_state is a bare text input with no
-        dropdown -- a plausible case mismatch ('gujarat' vs the
+        """FIX 4 (part B): a plausible case mismatch ('gujarat' vs the
         published 'Gujarat') must not silently produce a hard
-        does_not_meet. SEC-5: now submitted via POST, not a query
-        string."""
+        does_not_meet -- still true after SCOPE-5 replaced the free-text
+        input with a <select> (a raw POST can still submit any string,
+        not only one of the select's own option values, so the server
+        side tolerance this test pins down still matters)."""
         domicile_claim = (
             admin_client.table("claims")
             .insert(
@@ -622,18 +623,105 @@ class TestRequirementsPage:
         finally:
             admin_client.table("claims").delete().eq("id", domicile_claim["id"]).execute()
 
+    def test_domicile_select_code_value_matches_a_published_name(
+        self, admin_client: Client, requirements_pathway: dict[str, Any]
+    ) -> None:
+        """SCOPE-5: the actual value a real browser submits from the new
+        <select> is a canonical ISO code (e.g. 'IN-GJ'), not the display
+        name -- this must still match a claim published as the plain
+        state name via app.data.jurisdictions' code resolution."""
+        domicile_claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": requirements_pathway["pathway"]["id"],
+                    "field": "domicile_states",
+                    "value": "Gujarat",
+                    "source_id": requirements_pathway["source"]["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": run_name("test-fixture-reviewer"),
+                    "status": "published",
+                    "review_due_date": "2099-01-01",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.post(
+                "/requirements/view",
+                data={
+                    "pathway_id": requirements_pathway["pathway"]["id"],
+                    "age": 18,
+                    "marks_percentage": 72,
+                    "subjects_studied": "Physics,Chemistry,Biology,English",
+                    "domicile_state": "IN-GJ",
+                },
+            )
+            assert response.status_code == 200
+            assert "You meet the published requirements" in response.text
+        finally:
+            admin_client.table("claims").delete().eq("id", domicile_claim["id"]).execute()
+
+    def test_unrecognised_domicile_shows_not_yet_known_not_a_rejection(
+        self, admin_client: Client, requirements_pathway: dict[str, Any]
+    ) -> None:
+        """SCOPE-5's core safety rule at the whole-page level: an
+        unrecognised domicile value (bypassing the <select> via a raw
+        POST) must render as unknown, never as a rejection."""
+        domicile_claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": requirements_pathway["pathway"]["id"],
+                    "field": "domicile_states",
+                    "value": "Gujarat",
+                    "source_id": requirements_pathway["source"]["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": run_name("test-fixture-reviewer"),
+                    "status": "published",
+                    "review_due_date": "2099-01-01",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.post(
+                "/requirements/view",
+                data={
+                    "pathway_id": requirements_pathway["pathway"]["id"],
+                    "domicile_state": "Narnia",
+                },
+            )
+            assert response.status_code == 200
+            assert "Not yet known" in response.text
+            assert "At least one published requirement isn&#39;t met" not in response.text
+        finally:
+            admin_client.table("claims").delete().eq("id", domicile_claim["id"]).execute()
+
     def test_domicile_hint_is_present_matching_subjects_studied_treatment(
         self, requirements_pathway: dict[str, Any]
     ) -> None:
-        """FIX 4 (part A): domicile_state gets a placeholder/hint, same
-        treatment subjects_studied already has. Needs a well-formed
-        pathway_id -- the form only renders on the "else" (non-error)
-        branch of the page."""
+        """FIX 4 (part A): domicile_state gets a hint, same treatment
+        subjects_studied already has. SCOPE-5: the field is now a plain,
+        zero-JS <select> over app/data/jurisdictions.py's canonical
+        state/UT + pilot-country list, not a free-text input with a
+        placeholder -- a <select> has no placeholder attribute, so this
+        checks the select itself renders with a real option instead.
+        Needs a well-formed pathway_id -- the form only renders on the
+        "else" (non-error) branch of the page."""
         response = client.get(
             "/requirements/view",
             params={"pathway_id": requirements_pathway["pathway"]["id"]},
         )
-        assert 'placeholder="e.g. Gujarat"' in response.text
+        assert response.status_code == 200
+        assert '<select class="field-input" id="domicile_state" name="domicile_state">' in (
+            response.text
+        )
+        assert '<option value="IN-GJ"' in response.text
         assert "Your state of domicile" in response.text
 
     def test_malformed_age_and_marks_percentage_degrade_not_a_422(

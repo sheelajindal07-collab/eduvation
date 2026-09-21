@@ -10,7 +10,10 @@ exist. Recognised claim fields on a Pathway:
   maximum_age                  int
   minimum_marks_percentage     float
   required_subjects            comma-separated string, e.g. "Physics,Chemistry,Biology"
-  domicile_states               comma-separated string, e.g. "Gujarat,Maharashtra"
+  domicile_states               comma-separated string of state/country names,
+                                ISO codes or aliases, e.g. "Gujarat,IN-MH" —
+                                resolved by app.rules.eligibility.domicile_in
+                                via app.data.jurisdictions (SCOPE-5)
 
 Any of these that isn't published simply contributes no criterion at
 all — it is not the same as "insufficient_information" (that's reserved

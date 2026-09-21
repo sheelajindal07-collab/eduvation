@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from supabase import Client
 
 from app.api.eligibility import EligibilityResponse, check_eligibility
+from app.data.jurisdictions import ALL_JURISDICTIONS
 from app.web.common import (
     _DB_UNAVAILABLE_MESSAGE,
     _db_client_or_none,
@@ -37,10 +38,11 @@ router = APIRouter(include_in_schema=False)  # HTML pages, not the JSON API surf
 
 
 def _none_if_blank(raw: str) -> str | None:
-    """A submitted-but-empty form field means "not provided" — same
-    convention as `app.web.common._int_or_none`/`_float_or_none`, kept
-    local here since this one is a plain string, not a number to
-    parse."""
+    """A submitted-but-empty form field (e.g. SCOPE-5's domicile
+    `<select>` left on its blank default option, or a text field
+    submitted empty) means "not provided" — same convention as
+    `app.web.common._int_or_none`/`_float_or_none`, kept local here
+    since this one is a plain string, not a number to parse."""
     text = raw.strip()
     return text if text else None
 
@@ -76,6 +78,7 @@ def _render_requirements(
                 "marks_percentage": marks_percentage,
                 "subjects_studied": subjects_studied,
                 "domicile_state": domicile_state,
+                "jurisdictions": ALL_JURISDICTIONS,
             },
         )
 
@@ -92,6 +95,7 @@ def _render_requirements(
                 "marks_percentage": marks_percentage,
                 "subjects_studied": subjects_studied,
                 "domicile_state": domicile_state,
+                "jurisdictions": ALL_JURISDICTIONS,
             },
         )
 
@@ -115,6 +119,7 @@ def _render_requirements(
             "marks_percentage": marks_percentage,
             "subjects_studied": subjects_studied,
             "domicile_state": domicile_state,
+            "jurisdictions": ALL_JURISDICTIONS,
         },
     )
 

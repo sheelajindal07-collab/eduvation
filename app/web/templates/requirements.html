@@ -58,10 +58,31 @@
           </div>
           <div>
             <label class="field-label" for="domicile_state">Domicile state</label>
-            <input
-              class="field-input" type="text" id="domicile_state" name="domicile_state"
-              value="{{ domicile_state or '' }}" placeholder="e.g. Gujarat"
-            />
+            {# SCOPE-5: a plain, zero-JS <select> over the canonical
+               state/UT + pilot-country list (app/data/jurisdictions.py)
+               instead of a free-text input -- app.rules.eligibility.
+               domicile_in resolves the chosen code against a claim's
+               own domicile_states value (itself a name, code or alias),
+               so this never needs client-side script to work. #}
+            <select class="field-input" id="domicile_state" name="domicile_state">
+              <option value="" {% if not domicile_state %}selected{% endif %}>
+                -- Select your state, union territory or country --
+              </option>
+              <optgroup label="India — states and union territories">
+                {% for j in jurisdictions if j.kind == "state" %}
+                  <option value="{{ j.code }}" {% if domicile_state == j.code %}selected{% endif %}>
+                    {{ j.name }}
+                  </option>
+                {% endfor %}
+              </optgroup>
+              <optgroup label="Other countries">
+                {% for j in jurisdictions if j.kind == "country" %}
+                  <option value="{{ j.code }}" {% if domicile_state == j.code %}selected{% endif %}>
+                    {{ j.name }}
+                  </option>
+                {% endfor %}
+              </optgroup>
+            </select>
             <p class="field-hint">Your state of domicile, e.g. Gujarat</p>
           </div>
         </div>
