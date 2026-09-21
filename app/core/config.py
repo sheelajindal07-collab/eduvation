@@ -6,7 +6,7 @@ names). Nothing here holds a real secret — CLAUDE.md non-negotiable.
 
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -132,10 +132,19 @@ class Settings(BaseSettings):
     )
     demo_mode: bool = Field(
         default=False,
-        description="Reserved guard for a supervised demo/showcase run "
-        "(e.g. the teacher demo, docs/DECISIONS.md). DEPLOY-18 only adds "
-        "the flag with a fail-closed default; no behaviour is gated on it "
-        "yet — a later task defines what, if anything, changes when it's on.",
+        description="Guard for a supervised demo/showcase run (e.g. the "
+        "teacher demo, docs/DECISIONS.md). DEPLOY-18 added the flag with a "
+        "fail-closed default; DATA-12 is the 'later task' that gives it "
+        "meaning — see `_refuse_demo_mode_in_production` below and "
+        "db/migrations/0007_demo_mode.sql. NOTE: this process-level flag "
+        "does NOT itself unlock anything. What a visitor can actually see "
+        "is decided entirely by the database (the `demo_mode()` function "
+        "and the `claims_select_demo_synthetic` policy over an "
+        "owner-writable `app_settings` row), so no application deploy, "
+        "environment variable or code path can widen it. This flag is the "
+        "application's own copy of the same switch, used to label the read "
+        "path and to refuse to boot in the one place demo data must never "
+        "appear.",
     )
     # Raw comma-separated value from the environment. Use
     # `allowed_hosts_list` below, never this field directly — it applies
@@ -159,6 +168,49 @@ class Settings(BaseSettings):
     @classmethod
     def _parse_flags_fail_closed(cls, value: object) -> bool:
         return _fail_closed_bool(value)
+
+    # DATA-12. Added alongside DEPLOY-18's flag block above, not folded
+    # into it: `_parse_flags_fail_closed` is a per-field coercion that
+    # deliberately never raises, and this is a whole-model consistency
+    # check that deliberately does.
+    @model_validator(mode="after")
+    def _refuse_demo_mode_in_production(self) -> "Settings":
+        """`DEMO_MODE=true` with `APP_ENV=production` refuses to start.
+
+        Demo mode's entire purpose is to make unverified, clearly-labelled
+        *sample* rows visible to a visitor who is not signed in
+        (db/migrations/0007_demo_mode.sql). On staging that is the point;
+        on production it would put unpublished content in front of a real
+        student, which CLAUDE.md's non-negotiable forbids outright
+        ("Synthetic fixtures ... NEVER published as verified facts").
+
+        This raises rather than silently forcing the flag to False, and
+        that is a deliberate departure from `_fail_closed_bool`'s "always
+        boots, always into the safe state" rule directly above. The two
+        cases are not the same: that rule protects against a *typo* in a
+        kill switch taking the whole app down, where guessing "off" is
+        both safe and almost certainly what was meant. Here nothing is
+        ambiguous — somebody has explicitly written a true-token into
+        DEMO_MODE on a production deploy. Silently ignoring that would
+        leave an operator believing demo mode is on while it is not,
+        which is how the *next* person "fixes" it by loosening the
+        database policy instead. A refused boot is loud, immediate, and
+        cannot be mistaken for success.
+
+        Mirrors `app/main.py`'s `_verify_critical_settings` "Refusing to
+        start:" contract, but lives here because the check needs no
+        registry and must hold for every construction of `Settings`, not
+        only the one `create_app` performs.
+        """
+        if self.demo_mode and self.app_env == "production":
+            raise ValueError(
+                "Refusing to start: DEMO_MODE is on with APP_ENV='production'. "
+                "Demo mode exposes unpublished, synthetic-sourced sample claims "
+                "to anonymous visitors (db/migrations/0007_demo_mode.sql) and "
+                "must never be enabled on production. Unset DEMO_MODE, or use "
+                "APP_ENV='staging'."
+            )
+        return self
 
     @property
     def allowed_hosts_list(self) -> list[str]:

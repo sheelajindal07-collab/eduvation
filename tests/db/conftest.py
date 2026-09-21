@@ -554,6 +554,93 @@ _GUARDIAN_CONSENT_SKIP_REASON = (
 )
 
 
+def _demo_mode_migration_applied() -> bool:
+    """Same marker-function pattern as 0003/0004/0005/0006 — 0007 adds a
+    new table (`app_settings`), but that table is deliberately
+    unreadable through PostgREST by every role the tests can use
+    (`revoke all ... from anon, authenticated`, plus RLS with no
+    policies), so `_saved_plans_table_exists`'s "select from it" check
+    could never work here and would report "not applied" forever."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("demo_mode_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_DEMO_MODE_SKIP_REASON = (
+    "db/migrations/0007_demo_mode.sql not yet applied to this stack. Run "
+    "`make test-db-up`; see db/migrations/README.md. A stale PostgREST "
+    "schema cache looks identical — `make test-db-migrate` reloads it."
+)
+
+
+def _scope_migration_applied() -> bool:
+    """Same marker-function pattern as 0003-0007, for
+    0008_jurisdiction_currency.sql. That migration adds no new table —
+    only columns, constraints, an index and a re-created trigger
+    function — so there is nothing for `_saved_plans_table_exists`'s
+    "select from it" shape to check."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("scope_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_SCOPE_SKIP_REASON = (
+    "db/migrations/0008_jurisdiction_currency.sql not yet applied to this "
+    "stack. Run `make test-db-up`; see db/migrations/README.md. A stale "
+    "PostgREST schema cache looks identical — `make test-db-migrate` "
+    "reloads it."
+)
+
+
+def _guest_session_migration_applied() -> bool:
+    """Same marker-function pattern as 0003-0008, for
+    0009_guest_sessions.sql. Its two new tables are deliberately
+    unreachable through PostgREST by every role these tests can use
+    (deny-all RLS plus revoked grants), so a "select from it" existence
+    check would report "not applied" forever."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("guest_session_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_GUEST_SESSION_SKIP_REASON = (
+    "db/migrations/0009_guest_sessions.sql not yet applied to this stack. "
+    "Run `make test-db-up`; see db/migrations/README.md. A stale PostgREST "
+    "schema cache looks identical — `make test-db-migrate` reloads it."
+)
+
+
+def _plan_actions_migration_applied() -> bool:
+    """Same marker-function pattern as 0003-0009, for
+    0010_plan_actions.sql."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("plan_actions_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_PLAN_ACTIONS_SKIP_REASON = (
+    "db/migrations/0010_plan_actions.sql not yet applied to this stack. "
+    "Run `make test-db-up`; see db/migrations/README.md. A stale PostgREST "
+    "schema cache looks identical — `make test-db-migrate` reloads it."
+)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Enforce the target guard before anything is collected or run.
 
@@ -635,6 +722,28 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     # three markers are checked, not just 0004's).
     if not _guardian_consent_migration_applied():
         _mark_unavailable(_in(("test_guardian_consent.py",)), _GUARDIAN_CONSENT_SKIP_REASON)
+
+    # Same pattern, for 0007_demo_mode.sql.
+    if not _demo_mode_migration_applied():
+        _mark_unavailable(_in(("test_demo_mode.py",)), _DEMO_MODE_SKIP_REASON)
+
+    # Same pattern, for 0008_jurisdiction_currency.sql.
+    if not _scope_migration_applied():
+        _mark_unavailable(_in(("test_scope_columns.py",)), _SCOPE_SKIP_REASON)
+
+    # Same pattern, for 0009_guest_sessions.sql.
+    if not _guest_session_migration_applied():
+        _mark_unavailable(_in(("test_guest_session.py",)), _GUEST_SESSION_SKIP_REASON)
+
+    # Same pattern, for 0010_plan_actions.sql.
+    #
+    # test_api_plans.py is deliberately NOT gated on this one: AUTH-5's
+    # additions to app/api/plans.py degrade cleanly without 0010
+    # (`PlanOut.is_current` is defaulted, and the plan_actions routes
+    # live in their own test file), so gating it here would skip working
+    # 0002-era tests for a migration they do not actually need.
+    if not _plan_actions_migration_applied():
+        _mark_unavailable(_in(("test_plan_actions.py",)), _PLAN_ACTIONS_SKIP_REASON)
 
 
 @pytest.fixture(scope="module")

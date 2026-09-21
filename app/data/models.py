@@ -54,11 +54,36 @@ class EligibilityOutcome(StrEnum):
     insufficient_information = "insufficient_information"
 
 
+# SCOPE-3 / docs/CONTRACTS.md "Entity vocabulary": one text code — ISO
+# 3166-1 alpha-2 for a country ("IN"), ISO 3166-2 for a subdivision
+# ("IN-MH"). Matches the CHECK constraints in
+# db/migrations/0008_jurisdiction_currency.sql exactly, so a value that
+# would be refused by the database is refused here too rather than
+# failing later with a raw Postgres error. No covered-set list is
+# hardcoded anywhere: CONTRACTS.md forbids that until SCOPE-1 is
+# answered, so this is shape-only.
+JURISDICTION_PATTERN = r"^[A-Z]{2}(-[A-Z0-9]{1,3})?$"
+
+# ISO 4217, uppercase (docs/CONTRACTS.md "Money and currency"). Amounts
+# are NEVER converted — no FX rate exists anywhere in Lite.
+CURRENCY_PATTERN = r"^[A-Z]{3}$"
+
+# docs/CONTRACTS.md "Duration, dates, cycle, DOB": a text LABEL, `YYYY`
+# or `YYYY-YY`, "stored exactly as the source states it, compared as a
+# string, never parsed". Deliberately a `str`, never a date or an int.
+ACADEMIC_CYCLE_PATTERN = r"^[0-9]{4}(-[0-9]{2})?$"
+
+DEFAULT_JURISDICTION = "IN"
+
+
 class Source(BaseModel):
     id: str
     authority_name: str
     official_url: str
     source_type: SourceType
+    jurisdiction: str = Field(default=DEFAULT_JURISDICTION, pattern=JURISDICTION_PATTERN)
+    """SCOPE-3: the authority's remit — whose rules this body actually
+    speaks for. Not derived from the claims that cite it."""
 
 
 class Claim(BaseModel):
@@ -89,6 +114,23 @@ class Claim(BaseModel):
     superseded_by: str | None = None
     approved_draft_version: str | None = None
     extracted_by: str = "human"  # "human" | "ai" — an "ai" draft can never be published directly
+    jurisdiction: str = Field(default=DEFAULT_JURISDICTION, pattern=JURISDICTION_PATTERN)
+    """SCOPE-3. Which jurisdiction this fact is true for. Defaults to the
+    India-first pilot's 'IN', matching the column default in
+    db/migrations/0008_jurisdiction_currency.sql, so a claim read back
+    from a row written before that migration is still well-formed here.
+
+    docs/CONTRACTS.md: "Fields on a non-`IN` pathway are display-only:
+    shown with source and currency, never fed to the eligibility engine
+    or into a total." """
+    academic_cycle: str | None = Field(default=None, pattern=ACADEMIC_CYCLE_PATTERN)
+    """SCOPE-3. A LABEL (`2026`, `2026-27`), never a date, never parsed —
+    compared as a string. None when the fact is not cycle-scoped."""
+    currency: str | None = Field(default=None, pattern=CURRENCY_PATTERN)
+    """SCOPE-3. ISO 4217, for a money-valued claim. None is a real state,
+    not a missing default: docs/CONTRACTS.md says "a money claim with a
+    null currency renders not_available", so it must never be silently
+    assumed to be INR — that would invent a fact about a real fee."""
 
 
 class Career(BaseModel):
@@ -103,6 +145,10 @@ class Pathway(BaseModel):
     career_id: str
     name: str
     description: str
+    jurisdiction: str = Field(default=DEFAULT_JURISDICTION, pattern=JURISDICTION_PATTERN)
+    """SCOPE-3. docs/CONTRACTS.md: a non-`IN` pathway's fields are
+    display-only — shown with source and currency, never fed to the
+    eligibility engine or into a total."""
 
 
 class Exam(BaseModel):
