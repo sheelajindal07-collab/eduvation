@@ -130,78 +130,70 @@ def create_guardian_consent_request(
     """Creates the `student_accounts` row (status
     `pending_guardian_consent`) and the `guardian_consents` row, then
     emails the guardian via `sender`. `client` must already be scoped to
-    `student_id`'s own session (`client.postgrest.auth(access_token)`) —
-    both inserts are own-row RLS-protected (see the migration), so this
-    fails loudly with a 403-shaped `APIError` from Postgres if it isn't.
+    `student_id`'s own session (`client.postgrest.auth(access_token)`).
+
+    Delegates both inserts to the `create_guardian_consent_request` SQL
+    function (`db/migrations/0005_guardian_consent_request_rpc.sql`)
+    rather than doing them as two plain `client.table(...).insert(...)`
+    calls. **Why an RPC, not a direct insert:** supabase-py's
+    `.insert().execute()` defaults to `Prefer: return=representation`,
+    asking PostgREST to return the inserted row via `INSERT ...
+    RETURNING`. Postgres applies a table's SELECT policies to rows
+    returned this way, not just the INSERT policy's WITH CHECK to the
+    write itself — and `guardian_consents` deliberately has NO SELECT
+    policy at all, for anyone (see db/migrations/0004_guardian_consent.sql's
+    module-level design note: the token is a bearer credential that must
+    never be readable through the normal API, not even by the owning
+    student). That combination meant the direct-insert form used to fail
+    outright with "new row violates row-level security policy for table
+    guardian_consents" — a real, previously-live bug that broke the
+    guardian-consent gate for every self-declared minor. The RPC does the
+    insert and reads back the value INSERT itself produced in the same
+    statement, server-side, as the function owner — no RETURNING-through-
+    REST round trip, so no SELECT policy is ever needed. See the
+    migration's own module-level comment for the full explanation.
+
+    The RPC determines the calling student from `auth.uid()` internally
+    (there is no `student_id` parameter to send it — `student_id` is kept
+    on THIS function's own signature only for logging and because
+    existing callers pass it).
 
     Idempotent against a concurrent duplicate call (two sign-in requests
-    racing the same lazy-create path): a unique-violation on the
-    `student_accounts` insert is treated as "already created by another
-    request", not an error — the caller (the gate below) still ends up
-    correctly blocked either way, just without a second email sent. A
-    unique-violation on the `guardian_consents` insert itself (the
-    `guardian_consents_one_pending_per_student` partial unique index,
-    db/migrations/0004_guardian_consent.sql — adversarial review,
-    2026-09-21) is handled the same way for the same reason: this
-    function's own two inserts are not atomic with each other, so a
-    caller racing a direct-API duplicate could in principle hit this
-    second unique constraint instead of the first one.
+    racing the same lazy-create path), and against a genuinely
+    still-pending request from earlier: the RPC's own `ON CONFLICT ... DO
+    NOTHING` (on both `student_accounts.id` and the partial unique index
+    `guardian_consents_one_pending_per_student`) makes both cases return
+    `NULL` instead of raising — "already existed, not an error, no second
+    email sent" is now enforced database-side rather than by catching a
+    unique-violation exception here.
 
     **The `token` itself is never chosen here** (adversarial review,
     2026-09-21, closing a complete bypass — see the migration's own
     docstring): a BEFORE INSERT trigger on `guardian_consents`
     unconditionally server-generates `token` and `expires_at`, silently
-    overwriting anything this call sends (nothing is sent for either
-    field, on purpose, so there is nothing here that could look like it
-    matters and not actually be used). The confirmation email is built
-    from the token this INSERT's own response reports was actually
-    written — never from a value generated in this process — the same
-    "read back what the database actually did" pattern
-    `app.api.auth._migrate_pending_plan` already uses for a saved plan's
-    generated id.
+    overwriting anything this call sends. The confirmation email is built
+    from the token the RPC reports was actually written — never from a
+    value generated in this process — the same "read back what the
+    database actually did" pattern `app.api.auth._migrate_pending_plan`
+    already uses for a saved plan's generated id.
     """
-    try:
-        client.table("student_accounts").insert(
-            {
-                "id": student_id,
-                "date_of_birth": date_of_birth.isoformat(),
-                "account_status": "pending_guardian_consent",
-            }
-        ).execute()
-    except APIError as exc:
-        if exc.code == _UNIQUE_VIOLATION:
-            logger.info(
-                "student_accounts row for user_id=%s already existed "
-                "(concurrent creation) — not an error.",
-                student_id,
-            )
-            return
-        raise
+    result = client.rpc(
+        "create_guardian_consent_request",
+        {
+            "p_date_of_birth": date_of_birth.isoformat(),
+            "p_guardian_email": guardian_email,
+        },
+    ).execute()
+    token = cast("str | None", result.data)
 
-    try:
-        result = (
-            client.table("guardian_consents")
-            .insert(
-                {
-                    "student_id": student_id,
-                    "guardian_email": guardian_email,
-                }
-            )
-            .execute()
+    if token is None:
+        logger.info(
+            "guardian_consents row for student_id=%s already existed "
+            "(concurrent creation, or a still-pending request from "
+            "earlier) — not an error, no second email sent.",
+            student_id,
         )
-    except APIError as exc:
-        if exc.code == _UNIQUE_VIOLATION:
-            logger.info(
-                "guardian_consents row for student_id=%s already existed "
-                "(concurrent creation, or a still-pending request from "
-                "earlier) — not an error, no second email sent.",
-                student_id,
-            )
-            return
-        raise
-
-    rows = cast("list[dict[str, Any]]", result.data)
-    token = rows[0]["token"]
+        return
 
     subject, body = build_guardian_consent_email(
         confirm_url=_confirm_url(token), expiry_hours=GUARDIAN_CONSENT_EXPIRY_HOURS

@@ -12,10 +12,17 @@ endpoint) is in tests/db/test_guardian_consent.py.
 from __future__ import annotations
 
 from datetime import date
+from typing import Any, cast
 
 import pytest
+from supabase import Client
 
-from app.api.guardian_consent import MINOR_AGE_THRESHOLD_YEARS, compute_age, is_minor
+from app.api.guardian_consent import (
+    MINOR_AGE_THRESHOLD_YEARS,
+    compute_age,
+    create_guardian_consent_request,
+    is_minor,
+)
 from app.core.config import Settings
 from app.notifications.logging_sender import LoggingEmailSender
 from app.notifications.sender import EmailSender
@@ -72,6 +79,107 @@ def test_logging_email_sender_records_the_call_and_sends_nothing_real() -> None:
 
 def test_logging_email_sender_satisfies_the_email_sender_protocol() -> None:
     assert isinstance(LoggingEmailSender(), EmailSender)
+
+
+# ---------------------------------------------------------------------
+# create_guardian_consent_request — the RPC-call shape
+# (db/migrations/0005_guardian_consent_request_rpc.sql). Mocks
+# `client.rpc(...).execute()` only, never a live database — the live,
+# RLS-backed version of this same function is exercised in
+# tests/db/test_guardian_consent.py's TestCreateGuardianConsentRequest.
+#
+# Why this RPC exists at all, in one line (full reasoning in the
+# migration and in create_guardian_consent_request's own docstring):
+# supabase-py's `.table(...).insert(...).execute()` used to ask
+# PostgREST to RETURNING the inserted row, which Postgres RLS gates on
+# guardian_consents' (nonexistent, by design) SELECT policy — so the
+# insert failed outright. The fix reads the token back inside a
+# SECURITY DEFINER function instead, which is what `client.rpc(...)`
+# below stands in for.
+# ---------------------------------------------------------------------
+
+
+class _FakeRpcExecute:
+    """Stands in for the `.execute()` call at the end of
+    `client.rpc(name, params).execute()` — just enough of postgrest's
+    return shape (a `.data` attribute) for
+    create_guardian_consent_request, which reads nothing else off it."""
+
+    def __init__(self, data: str | None) -> None:
+        self.data = data
+
+    def execute(self) -> _FakeRpcExecute:
+        return self
+
+
+class _FakeSupabaseClient:
+    """A minimal stand-in for `supabase.Client` — the only method
+    create_guardian_consent_request calls on `client` is `.rpc(...)`, so
+    that's the only one faked here. Records every call so a test can
+    assert on exactly what was sent, the same "assert on what was
+    actually sent" style this file already uses for LoggingEmailSender."""
+
+    def __init__(self, *, token: str | None) -> None:
+        self._token = token
+        self.rpc_calls: list[tuple[str, dict[str, Any]]] = []
+
+    def rpc(self, fn_name: str, params: dict[str, Any]) -> _FakeRpcExecute:
+        self.rpc_calls.append((fn_name, dict(params)))
+        return _FakeRpcExecute(self._token)
+
+
+def test_create_guardian_consent_request_calls_the_rpc_and_never_sends_a_student_id() -> None:
+    """The core shape of the fix: exactly one call to the
+    `create_guardian_consent_request` RPC, with only the two documented
+    params — and, just as importantly, proves the spoofing-is-
+    structurally-impossible claim at the Python layer: there is no
+    `student_id` key in the params this function ever constructs (the
+    RPC determines the caller from `auth.uid()` server-side; a
+    `student_id` parameter doesn't exist for anyone to even attempt to
+    spoof with)."""
+    fake_client = _FakeSupabaseClient(token="freshly-generated-token-value")
+    sender = LoggingEmailSender()
+
+    create_guardian_consent_request(
+        cast(Client, fake_client),
+        student_id="some-other-students-uuid-must-never-reach-the-rpc",
+        date_of_birth=date(2015, 3, 4),
+        guardian_email="guardian@example.com",
+        sender=sender,
+    )
+
+    assert len(fake_client.rpc_calls) == 1
+    fn_name, params = fake_client.rpc_calls[0]
+    assert fn_name == "create_guardian_consent_request"
+    assert params == {
+        "p_date_of_birth": "2015-03-04",
+        "p_guardian_email": "guardian@example.com",
+    }
+    assert "student_id" not in params
+    assert "p_student_id" not in params
+
+    assert len(sender.sent) == 1
+    assert sender.sent[0]["to"] == "guardian@example.com"
+    assert "freshly-generated-token-value" in sender.sent[0]["body"]
+
+
+def test_create_guardian_consent_request_sends_no_email_when_rpc_reports_already_pending() -> None:
+    """The RPC returns NULL (not an error) when a pending request already
+    existed — idempotent-skip, no second email, matching the previous
+    caught-unique-violation behaviour this RPC call replaced."""
+    fake_client = _FakeSupabaseClient(token=None)
+    sender = LoggingEmailSender()
+
+    create_guardian_consent_request(
+        cast(Client, fake_client),
+        student_id="student-uuid",
+        date_of_birth=date(2015, 3, 4),
+        guardian_email="guardian@example.com",
+        sender=sender,
+    )
+
+    assert len(fake_client.rpc_calls) == 1  # the RPC was still called
+    assert sender.sent == []  # but no email — nothing new was created
 
 
 # ---------------------------------------------------------------------

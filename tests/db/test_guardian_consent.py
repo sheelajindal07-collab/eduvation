@@ -296,7 +296,19 @@ class TestCreateGuardianConsentRequest:
     directly against a real, already-signed-in student — same technique
     test_api_auth.py's TestGuestToAccountPlanMigration already uses to
     sidestep the sign-up email-confirmation ambiguity for testing the
-    underlying logic reliably."""
+    underlying logic reliably.
+
+    This is, precisely, the path that used to be silently broken by the
+    RETURNING/RLS conflict db/migrations/0005_guardian_consent_request_rpc.sql
+    fixes (see that migration's own module comment and
+    app.api.guardian_consent.create_guardian_consent_request's docstring):
+    `scoped_client` below is a REAL signed-in student's own session, not
+    the service-role `admin_client` — exactly the caller that used to get
+    an unhandled `APIError` ("new row violates row-level security policy
+    for table guardian_consents") out of the old two-plain-insert
+    implementation. `admin_client` is used only to verify what actually
+    landed in the database afterward, never to perform the write being
+    tested."""
 
     def test_creates_pending_account_generates_token_and_calls_email_sender(
         self, admin_client: Client, confirmed_adult: dict[str, str]
@@ -351,6 +363,192 @@ class TestCreateGuardianConsentRequest:
         assert sent["to"] == guardian_email
         assert consents[0]["token"] in sent["body"]
         assert "/consent/confirm?token=" in sent["body"]
+
+
+class TestCreateGuardianConsentRequestRpcDirectly:
+    """Regression test for the exact bug
+    db/migrations/0005_guardian_consent_request_rpc.sql fixes, isolated
+    from app.api.guardian_consent.create_guardian_consent_request's own
+    Python wrapper: calls the `create_guardian_consent_request` SQL
+    function directly, as a real signed-in student, and proves it
+    succeeds and returns a real token. Before the fix, the equivalent
+    plain `client.table("guardian_consents").insert(...).execute()` (what
+    the Python wrapper used to do) failed outright with "new row violates
+    row-level security policy for table guardian_consents" — supabase-py
+    defaults to `Prefer: return=representation`, and Postgres applies
+    `guardian_consents`' SELECT policies (there are none, by design — see
+    0004_guardian_consent.sql) to the RETURNING re-select, not just the
+    INSERT policy's WITH CHECK to the write. This test would have failed
+    with exactly that error against the pre-fix implementation."""
+
+    def test_rpc_succeeds_as_a_real_signed_in_student_and_returns_a_real_token(
+        self, admin_client: Client, confirmed_adult: dict[str, str]
+    ) -> None:
+        sign_in = client.post(
+            "/auth/sign-in",
+            json={"email": confirmed_adult["email"], "password": confirmed_adult["password"]},
+        )
+        assert sign_in.status_code == 200
+        access_token = sign_in.json()["access_token"]
+        user_id = confirmed_adult["user_id"]
+        guardian_email = f"bcion-guardian-rpc-{uuid.uuid4().hex[:12]}@example.com"
+
+        scoped = get_user_scoped_client(access_token)
+        try:
+            result = scoped.rpc(
+                "create_guardian_consent_request",
+                {"p_date_of_birth": "2015-06-01", "p_guardian_email": guardian_email},
+            ).execute()
+        finally:
+            scoped.postgrest.aclose()
+
+        token = result.data
+        assert token is not None, (
+            "the RPC must return a real token for a fresh request from a real "
+            "signed-in student -- a None here means the insert was silently "
+            "blocked (the exact RETURNING/RLS bug this migration fixes) or "
+            "treated as an idempotent duplicate when it should not have been"
+        )
+        assert isinstance(token, str)
+        # 32 random bytes, hex-encoded (0004_guardian_consent.sql's
+        # enforce_guardian_consent_server_token) -- 64 hex characters.
+        assert len(token) == 64
+
+        account = (
+            admin_client.table("student_accounts").select("*").eq("id", user_id).execute().data
+        )
+        assert len(account) == 1
+        assert account[0]["account_status"] == "pending_guardian_consent"
+
+        consents = (
+            admin_client.table("guardian_consents")
+            .select("*")
+            .eq("student_id", user_id)
+            .execute()
+            .data
+        )
+        assert len(consents) == 1
+        assert consents[0]["token"] == token
+        assert consents[0]["guardian_email"] == guardian_email
+        assert consents[0]["status"] == "pending"
+
+        admin_client.table("guardian_consents").delete().eq("student_id", user_id).execute()
+
+    def test_rpc_returns_none_and_sends_no_second_row_for_an_already_pending_student(
+        self, admin_client: Client, confirmed_adult: dict[str, str]
+    ) -> None:
+        """Idempotency, now enforced at the SQL layer via `ON CONFLICT
+        (student_id) WHERE status = 'pending' DO NOTHING` rather than by
+        the Python layer catching a unique-violation exception."""
+        sign_in = client.post(
+            "/auth/sign-in",
+            json={"email": confirmed_adult["email"], "password": confirmed_adult["password"]},
+        )
+        assert sign_in.status_code == 200
+        access_token = sign_in.json()["access_token"]
+        user_id = confirmed_adult["user_id"]
+
+        scoped = get_user_scoped_client(access_token)
+        try:
+            first = scoped.rpc(
+                "create_guardian_consent_request",
+                {
+                    "p_date_of_birth": "2015-06-01",
+                    "p_guardian_email": "guardian-first@example.com",
+                },
+            ).execute()
+            assert first.data is not None
+
+            second = scoped.rpc(
+                "create_guardian_consent_request",
+                {
+                    "p_date_of_birth": "2015-06-01",
+                    "p_guardian_email": "guardian-second@example.com",
+                },
+            ).execute()
+        finally:
+            scoped.postgrest.aclose()
+
+        assert second.data is None
+
+        consents = (
+            admin_client.table("guardian_consents")
+            .select("*")
+            .eq("student_id", user_id)
+            .execute()
+            .data
+        )
+        assert len(consents) == 1, "the second call must not have created a second row"
+        assert consents[0]["guardian_email"] == "guardian-first@example.com"
+
+        admin_client.table("guardian_consents").delete().eq("student_id", user_id).execute()
+
+
+class TestCreateGuardianConsentRequestRpcCannotActOnAnotherStudent:
+    """Task requirement: prove spoofing another student's id is
+    structurally impossible, not just policy-checked — the RPC takes no
+    student_id parameter at all (contra the old RLS-policy-checked
+    design: `guardian_consents_insert_own`'s `with check (auth.uid() =
+    student_id)` compared a CLIENT-SUPPLIED value to auth.uid(); this RPC
+    never accepts one to compare in the first place). Uses two distinct,
+    real, signed-in students in the same test (CLAUDE.md: "Cross-user
+    access (guest, student A, student B, reviewer) is tested every time
+    auth, RLS or publication changes")."""
+
+    def test_rpc_always_attributes_the_new_row_to_the_callers_own_auth_uid(
+        self,
+        admin_client: Client,
+        student_a: tuple[str, Client],
+        student_b: tuple[str, Client],
+    ) -> None:
+        student_a_id, client_a = student_a
+        student_b_id, client_b = student_b
+
+        result_a = client_a.rpc(
+            "create_guardian_consent_request",
+            {
+                "p_date_of_birth": "2015-01-01",
+                "p_guardian_email": f"guardian-a-{uuid.uuid4().hex[:8]}@example.com",
+            },
+        ).execute()
+        result_b = client_b.rpc(
+            "create_guardian_consent_request",
+            {
+                "p_date_of_birth": "2016-01-01",
+                "p_guardian_email": f"guardian-b-{uuid.uuid4().hex[:8]}@example.com",
+            },
+        ).execute()
+
+        assert result_a.data is not None
+        assert result_b.data is not None
+        assert result_a.data != result_b.data, "each student must get their own, distinct token"
+
+        consent_a = (
+            admin_client.table("guardian_consents")
+            .select("student_id, token")
+            .eq("token", result_a.data)
+            .execute()
+            .data
+        )
+        consent_b = (
+            admin_client.table("guardian_consents")
+            .select("student_id, token")
+            .eq("token", result_b.data)
+            .execute()
+            .data
+        )
+        assert len(consent_a) == 1
+        assert len(consent_b) == 1
+        assert consent_a[0]["student_id"] == student_a_id, (
+            "student A's own call must create a row for student A, never anyone else"
+        )
+        assert consent_b[0]["student_id"] == student_b_id, (
+            "student B's own call must create a row for student B, never anyone else"
+        )
+        assert consent_a[0]["student_id"] != consent_b[0]["student_id"]
+
+        admin_client.table("guardian_consents").delete().eq("student_id", student_a_id).execute()
+        admin_client.table("guardian_consents").delete().eq("student_id", student_b_id).execute()
 
 
 class TestPendingAccountCannotSignIn:
