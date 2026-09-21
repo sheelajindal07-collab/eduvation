@@ -42,12 +42,13 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from app.api.auth import authenticate
 from app.api.deps import AuthedSession
 from app.core.config import get_settings
+from app.core.csrf import require_same_origin
 from app.db import get_anon_client, get_user_scoped_client
 from app.web.templating import templates
 
@@ -73,6 +74,23 @@ COOKIE_PATH = "/reviewer"
 # an unbounded lifetime as a fallback, so this stays conservative (one
 # hour) rather than long-lived.
 _FALLBACK_MAX_AGE_SECONDS = 3600
+
+require_reviewer_origin = require_same_origin(COOKIE_NAME)
+"""SEC-2's CSRF dependency, bound to this console's session cookie.
+
+Built once here and applied by every state-changing reviewer route --
+this module's own sign-in POST below and all three action routes in
+queue.py -- so there is exactly one object to point at when asking "what
+protects the console's forms". `app/core/csrf.py` owns the rule itself
+(Origin, falling back to Referer, matched against
+`Settings.allowed_hosts_list`; a cookie-bearing POST with neither header
+is refused); a future student-session cookie builds its own instance from
+the same factory rather than copying any of it.
+
+It is a no-op for a request that carries no session cookie, which is
+exactly what makes it safe on the sign-in POST -- see that route's
+docstring.
+"""
 
 
 def get_reviewer_session(request: Request) -> Iterator[AuthedSession | None]:
@@ -133,11 +151,23 @@ def reviewer_sign_in_form(request: Request) -> Any:
     return templates.TemplateResponse(request, "reviewer_sign_in.html", {"error": None})
 
 
-@router.post("/sign-in")
+@router.post("/sign-in", dependencies=[Depends(require_reviewer_origin)])
 def reviewer_sign_in_submit(
     request: Request, email: str = Form(...), password: str = Form(...)
 ) -> Any:
-    """Reuses `app/api/auth.py`'s `authenticate()` — the one place this
+    """SEC-2 note before anything else: the CSRF dependency above is
+    attached here but is a deliberate NO-OP for an ordinary sign-in. The
+    browser posting this form has not been issued `COOKIE_NAME` yet --
+    this request is what creates it -- and `require_same_origin` only
+    guards requests that ALREADY carry the cookie. Gating the login form
+    on an `Origin` header would lock a reviewer out of signing in from a
+    client that omits one, which is a far worse failure than the "login
+    CSRF" it would prevent (docs/SECURITY.md records that residual risk
+    as accepted). What the dependency DOES cover here: an already-signed-
+    in session re-posting this form, which is a cookie-bearing state
+    change like any other.
+
+    Reuses `app/api/auth.py`'s `authenticate()` — the one place this
     app calls Supabase's own `sign_in_with_password` — rather than
     reimplementing the call here. On success, sets the session cookie
     and redirects (303, so the browser re-requests /reviewer/queue with
@@ -175,9 +205,16 @@ def reviewer_sign_in_submit(
             value=session.access_token,
             httponly=True,  # no JS access to the token, ever
             samesite="lax",  # blocks the cookie on a cross-site POST --
-            # the actual CSRF defense for the zero-JS approve/reject/
-            # submit forms below (no separate CSRF-token mechanism is
+            # the FIRST CSRF defense for the zero-JS approve/reject/
+            # submit forms (no separate CSRF-token mechanism is
             # practical with no client-side script to carry one).
+            # SEC-2 added the second: `require_reviewer_origin` above, a
+            # server-side Origin/Referer check on every cookie-bearing
+            # state change, for the cases SameSite alone does not cover
+            # (a client that ignores the attribute, a same-site but
+            # different-host subdomain). These flags are unchanged by
+            # SEC-2 -- the check was added alongside them, not instead
+            # of them.
             secure=(settings.app_env == "production"),  # mirrors
             # app/main.py's own docs_url conditional: plain http still
             # works for local dev, only production requires https.
@@ -191,4 +228,12 @@ def reviewer_sign_in_submit(
 
 @router.post("/sign-out")
 def reviewer_sign_out() -> Any:
+    """Deliberately NOT carrying SEC-2's `require_reviewer_origin` (the
+    task card names the three action routes plus sign-in, and this is
+    neither). A forced sign-out is the one cookie-bearing state change
+    here that alters no verified data and is fully undone by signing in
+    again, while gating it would strand a reviewer whose client sends
+    neither header on a session they can no longer end. Flagged for the
+    lead rather than decided silently -- if the console later gains any
+    route whose sign-out has a side effect, this needs the guard."""
     return _redirect_to_sign_in()

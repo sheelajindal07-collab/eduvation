@@ -17,6 +17,73 @@ Source: `docs/BCION-Lite-Build-Pack.md` §3 (Decisions — Residency), §4
   Cross-user reads/writes must fail; tests must NOT run as the database
   owner (owner bypasses RLS and would hide a real bug).
 
+## Web sessions & CSRF (SEC-2)
+
+The JSON API is Bearer-only and has no session cookie, so it has no CSRF
+exposure and nothing below applies to it (`docs/CONTRACTS.md`: "cookies
+belong to the web layer alone"). The cookie-authenticated **web** layer —
+today `bcion_reviewer_session` on `/reviewer`, tomorrow the planned
+`bcion_student_session` — is protected by two independent layers:
+
+1. **`SameSite=Lax` on the cookie itself**, alongside `HttpOnly` and
+   `Secure` in production only (plain http still works for local dev).
+   A genuinely cross-*site* POST does not carry the cookie at all in any
+   browser that honours the attribute.
+2. **A server-side origin check on every state-changing request that
+   carries one of those cookies** (`app/core/csrf.py`, applied as a
+   FastAPI dependency; `app/main.py`'s `OriginCheckMiddleware` is the
+   same rule as middleware for the student cookie). There is no CSRF
+   *token*: the console's forms are deliberately zero-JS, so there is no
+   client-side script to carry one, and inventing one would mean giving
+   up the zero-JS requirement.
+
+**The rule.** A `POST`/`PUT`/`PATCH`/`DELETE` carrying a session cookie
+is rejected with **403** unless every origin-declaring header it sends
+names a host in `ALLOWED_HOSTS` (`Settings.allowed_hosts_list`, the same
+list `TrustedHostMiddleware` uses), and it sends at least one:
+
+- `Origin` present → its host must be allowed.
+- `Referer` present → its host must be allowed too. It is the fallback
+  for browsers that omit `Origin` on a same-site navigation; when both
+  are present **both** are checked, because two disagreeing values are
+  not something an honest same-origin form post produces.
+- **Neither present → rejected.** Fail closed, never open: "declares no
+  origin" is exactly the shape this check exists to refuse.
+- `Origin: null` has no host and is rejected by the same rule.
+
+**Configuration requirement.** `ALLOWED_HOSTS` must list **exact**
+hostnames. `TrustedHostMiddleware` additionally understands a
+`*.example.com` prefix pattern and this check deliberately does not, so a
+wildcard entry passes the Host check and fails the origin check — a
+closed failure, but one that will look like "the console stopped
+accepting form posts" if nobody reads this paragraph. An unset
+`ALLOWED_HOSTS` outside development is already the fail-closed empty list
+(DEPLOY-18/SEC-1), which here means every guarded POST is refused, never
+that every one is accepted.
+
+**Interaction with `Referrer-Policy: no-referrer`** (set on every
+response by SEC-1): real browsers therefore send no `Referer` to this
+app at all, so `Origin` is the header actually doing the work. The
+`Referer` fallback stays for clients and intermediaries that behave
+differently; it is not what a browser relies on here.
+
+**Accepted residual risk — login CSRF.** The sign-in POST does not yet
+carry the cookie (it is the request that creates it), so it is not
+guarded, and an attacker can in principle cause a victim's browser to
+sign in as the attacker. Gating it would lock a reviewer out of signing
+in, which is the worse failure. The route still carries the dependency,
+so an *already signed-in* session re-posting the form is checked like any
+other state change; if that ever strands somebody, `POST
+/reviewer/sign-out` is deliberately unguarded and every expired-session
+bounce clears the cookie, so the unguarded, cookie-free state is always
+reachable.
+
+**Error surfaces carry codes, not prose.** `/reviewer/queue?error=` takes
+a short code looked up in a fixed dict (`QUEUE_ERROR_MESSAGES`); an
+unrecognised code renders a generic message. Nothing a stranger puts in
+that URL is rendered, escaped or otherwise — the query parameter is used
+as a dict key and never as content.
+
 ## Consent & safeguarding (a launch gate, not a checkbox)
 Real accounts for minors stay **disabled** until this workflow is built and
 reviewed by a person (not model review alone):
@@ -111,6 +178,11 @@ to any aggregator, dashboard or third party, that line must be dropped to
   version.
 - **Access:** guest/student A/student B/reviewer × read/write/delete/
   export/storage.
+- **CSRF (SEC-2):** for every cookie-authenticated state-changing route —
+  cross-origin rejected **and the record unchanged afterwards** (read it
+  back; a status code alone proves nothing), same-origin accepted, the
+  `Referer` fallback accepted, neither header rejected, and sign-in still
+  reachable with no cookie from any origin.
 - **Publication:** separate maker/checker, exact draft approval,
   invalidation on edit.
 - **AI:** wrong source IDs, unsupported claims, stale evidence, prompt

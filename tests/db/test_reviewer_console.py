@@ -1,7 +1,7 @@
-"""Live end-to-end tests for the reviewer console (`app/web/
-reviewer_pages.py`) — the first browser-usable UI on top of
-`app/api/claims.py`'s publishing-console API, and the first place this
-app has ever had a real, cookie-based browser session at all.
+"""Live end-to-end tests for the reviewer console (`app/web/reviewer/`)
+— the first browser-usable UI on top of `app/api/claims.py`'s
+publishing-console API, and the first place this app has ever had a
+real, cookie-based browser session at all.
 
 Same seeding pattern as tests/db/test_api_claims.py and
 tests/db/test_maker_checker.py: claims are seeded directly via
@@ -9,28 +9,94 @@ tests/db/test_maker_checker.py: claims are seeded directly via
 trigger) when a test needs a specific starting status, and via the
 real reviewer/second_reviewer clients (going through the trigger for
 real) when the test is about a state transition.
+
+SEC-2: every action POST below now sends an `Origin` header, because the
+console refuses a cookie-bearing state change that declares no origin at
+all (`app/core/csrf.py`). That is not test scaffolding — it is what a
+real browser sends, and `app/main.py`'s SEC-1 docstring predicted this
+exact suite would need it. `TestReviewerCsrf` is the regression test for
+the rule itself.
 """
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date, timedelta
 from typing import Any
-from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
+from markupsafe import escape
 from supabase import Client
 
+from app.core.config import Settings, get_settings
+from app.core.csrf import CSRF_ERROR_CODE
 from app.main import app
 from app.web.reviewer import COOKIE_NAME
+from app.web.reviewer.queue import QUEUE_ERROR_MESSAGES
 from tests.db.conftest import run_email, run_name
 
 client = TestClient(app)
 
 TODAY = date.today()
 DUE = (TODAY + timedelta(days=365)).isoformat()
+
+# What a real browser puts on a form POST from this app's own pages.
+# `testserver` is TestClient's default Host, so this is genuinely
+# same-origin for every request in this file.
+SAME_ORIGIN = {"Origin": "http://testserver"}
+FOREIGN_ORIGIN = {"Origin": "https://attacker.example.com"}
+
+
+def signed_out_client() -> TestClient:
+    """A client with a genuinely empty cookie jar.
+
+    The module-level `client` is shared by every test in this file and
+    httpx persists any `Set-Cookie` it receives, so once ONE test signs
+    in successfully, later requests through that client carry
+    `bcion_reviewer_session` whether the test meant them to or not. That
+    was invisible before SEC-2 (no route cared about a stray cookie) and
+    is not any more: a cookie-bearing POST is CSRF-guarded, so a
+    leftover session turned "sign in with a wrong password" into a 403
+    instead of a 401.
+
+    Every test below whose subject is "a browser that has NOT signed in
+    yet" uses this instead — which is also the more faithful model of
+    what it claims to be testing.
+    """
+    return TestClient(app)
+
+
+def rendered(message: str) -> str:
+    """A message as Jinja's autoescaping actually writes it into the
+    page — `escape` is markupsafe's, the same function the template
+    environment applies, so an apostrophe in the copy (`isn't`) does not
+    quietly make a substring assertion unsatisfiable."""
+    return str(escape(message))
+
+
+@contextmanager
+def strict_allowed_hosts() -> Iterator[None]:
+    """Narrow `ALLOWED_HOSTS` to `testserver` for the duration of a test.
+
+    The app under test boots with development settings, where
+    `allowed_hosts_list` is the permissive `["*"]` and every declared
+    origin therefore passes — so a cross-origin rejection cannot be
+    demonstrated without a real allow-list. Overriding the settings
+    dependency (which `require_same_origin` takes via `Depends`
+    precisely so this is possible) narrows only the origin check: the
+    routers, the session cookie handling and TrustedHostMiddleware all
+    stay exactly as the real app builds them.
+    """
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        _env_file=None, allowed_hosts="testserver"
+    )
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
 
 
 @pytest.fixture
@@ -101,10 +167,16 @@ def _draft_payload(source_id: str, created_by: str, **overrides: object) -> dict
 
 
 class TestReviewerSignIn:
+    """Every test here posts through `signed_out_client()` — see that
+    helper for why a shared cookie jar and SEC-2's CSRF guard do not
+    mix. Deliberately no `Origin` header on any of them either: a
+    sign-in that carries no session cookie must work with no origin
+    declared at all, and these tests are where that is proven."""
+
     def test_valid_credentials_set_a_cookie_and_redirect_to_the_queue(
         self, reviewer_credentials: dict[str, str]
     ) -> None:
-        response = client.post(
+        response = signed_out_client().post(
             "/reviewer/sign-in",
             data={
                 "email": reviewer_credentials["email"],
@@ -133,7 +205,7 @@ class TestReviewerSignIn:
     def test_wrong_password_rerenders_the_form_with_an_error_and_sets_no_cookie(
         self, reviewer_credentials: dict[str, str]
     ) -> None:
-        response = client.post(
+        response = signed_out_client().post(
             "/reviewer/sign-in",
             data={"email": reviewer_credentials["email"], "password": "definitely-wrong"},
         )
@@ -147,7 +219,7 @@ class TestReviewerSignIn:
         assert COOKIE_NAME not in response.cookies
 
     def test_nonexistent_email_gets_the_identical_error_no_enumeration_leak(self) -> None:
-        response = client.post(
+        response = signed_out_client().post(
             "/reviewer/sign-in",
             data={"email": "definitely-not-registered@example.com", "password": "whatever123"},
         )
@@ -230,8 +302,12 @@ class TestReviewerApproveAction:
         (0003_maker_checker.sql's `enforce_claims_workflow`) surfaced as
         FastAPI's raw default JSON error body with no way back to the
         queue. It must now redirect (303) to /reviewer/queue with the
-        trigger's own message carried as a visible error, and the claim
-        must genuinely stay in_review, never published."""
+        failure carried as a visible error, and the claim must genuinely
+        stay in_review, never published.
+
+        SEC-2 changed what travels in the query string -- a fixed code,
+        not the trigger's own prose -- so this now asserts the exact
+        code AND that the code's own message is what the page renders."""
         maker_id, maker_client = reviewer
         maker_token = maker_client.auth.get_session().access_token
 
@@ -245,10 +321,11 @@ class TestReviewerApproveAction:
             response = client.post(
                 f"/reviewer/claims/{claim_id}/approve",
                 cookies={COOKIE_NAME: maker_token},
+                headers=SAME_ORIGIN,
                 follow_redirects=False,
             )
             assert response.status_code == 303
-            assert response.headers["location"].startswith("/reviewer/queue?error=")
+            assert response.headers["location"] == "/reviewer/queue?error=self_approval"
 
             # Following the redirect renders the error as a visible alert,
             # not a bare JSON body.
@@ -257,6 +334,7 @@ class TestReviewerApproveAction:
             )
             assert follow_up.status_code == 200
             assert "alert--error" in follow_up.text
+            assert rendered(QUEUE_ERROR_MESSAGES["self_approval"]) in follow_up.text
 
             row = (
                 admin_client.table("claims").select("status").eq("id", claim_id).execute().data[0]
@@ -290,6 +368,7 @@ class TestReviewerApproveAction:
             response = client.post(
                 f"/reviewer/claims/{claim_id}/approve",
                 cookies={COOKIE_NAME: checker_token},
+                headers=SAME_ORIGIN,
                 follow_redirects=False,
             )
             assert response.status_code == 303
@@ -310,7 +389,7 @@ class TestReviewerApproveAction:
         finally:
             admin_client.table("claims").delete().eq("id", claim_id).execute()
 
-    def test_non_reviewer_approve_redirects_to_the_queue_with_the_json_apis_own_error(
+    def test_non_reviewer_approve_redirects_to_the_queue_with_the_matching_error_code(
         self,
         admin_client: Client,
         reviewer: tuple[str, Client],
@@ -323,18 +402,21 @@ class TestReviewerApproveAction:
         case -- the 404 a non-reviewer's now-invisible-under-RLS row
         produces) surface as FastAPI's raw default JSON error body, with
         no way back to the queue. It now catches that exception and
-        redirects (303) to /reviewer/queue with the same detail message
-        carried as a query param, rendered there as a visible alert. This
-        supersedes the previous version of this test, which asserted the
-        console's raw status code matched the JSON API's and was
-        deliberately never 303 -- that was correct for the old,
-        unhandled-exception behaviour, but the whole point of the fix is
-        that a failure now DOES redirect (303), just with the error made
-        visible rather than silently dropped or (as before the fix) shown
-        as a bare JSON body. What still must hold, and is asserted below:
-        the JSON API's own detail text for this exact failure reaches the
-        redirect target, and the claim itself is genuinely untouched --
-        not that the two routes' status codes match byte-for-byte."""
+        redirects (303) to /reviewer/queue, rendering it there as a
+        visible alert.
+
+        SEC-2 deliberately narrowed what that redirect carries. This test
+        used to assert the JSON API's own detail TEXT reached the
+        redirect URL; it must not any more -- a free-text `?error=`
+        parameter is exactly the reflected-content surface SEC-2 removed.
+        What replaces it is stronger, not weaker: the failure is
+        classified into the CODE that names it (`claim_not_found`, the
+        404 an RLS-invisible row produces), and the page renders that
+        code's own fixed message. The JSON API's behaviour is unchanged
+        and is still asserted below, to prove the two paths still agree
+        about WHICH failure this is -- just not about its wording.
+
+        And, as before, the claim itself is genuinely untouched."""
         maker_id, maker_client = reviewer
         _student_id, student_client = student_a
         student_token = student_client.auth.get_session().access_token
@@ -352,18 +434,27 @@ class TestReviewerApproveAction:
             )
             assert json_response.status_code not in (200, 201)  # genuinely rejected
             detail = json_response.json()["detail"]
+            # The JSON API still relays its own detail, unchanged by
+            # SEC-2 -- this route is Bearer-only and was never touched.
+            assert detail == "Claim not found."
 
             console_response = client.post(
                 f"/reviewer/claims/{claim_id}/approve",
                 cookies={COOKIE_NAME: student_token},
+                headers=SAME_ORIGIN,
                 follow_redirects=False,
             )
             assert console_response.status_code == 303
-            location = console_response.headers["location"]
-            assert location.startswith("/reviewer/queue?error=")
-            # The JSON API's own detail text for this exact failure reaches
-            # the redirect target -- not a generic or blank message.
-            assert quote(detail) in location
+            # A code naming the same failure -- and nothing else. The
+            # query string carries no message, from claims.py or anyone.
+            assert console_response.headers["location"] == "/reviewer/queue?error=claim_not_found"
+
+            follow_up = client.get(
+                console_response.headers["location"],
+                cookies={COOKIE_NAME: student_token},
+            )
+            assert follow_up.status_code == 200
+            assert rendered(QUEUE_ERROR_MESSAGES["claim_not_found"]) in follow_up.text
 
             # And the claim itself was genuinely never approved.
             row = (
@@ -403,6 +494,7 @@ class TestReviewerApproveAction:
         first_approve = client.post(
             f"/reviewer/claims/{claim_id}/approve",
             cookies={COOKIE_NAME: checker_token},
+            headers=SAME_ORIGIN,
             follow_redirects=False,
         )
         assert first_approve.status_code == 303
@@ -416,11 +508,16 @@ class TestReviewerApproveAction:
             response = client.post(
                 f"/reviewer/claims/{claim_id}/approve",
                 cookies={COOKIE_NAME: checker_token},
+                headers=SAME_ORIGIN,
                 follow_redirects=False,
             )
             assert response.status_code == 303
             location = response.headers["location"]
-            assert location.startswith("/reviewer/queue?error=")
+            # SEC-2: the code, not the trigger's prose. That the raw
+            # "supersede" instruction cannot reach the URL is now
+            # structural rather than a translation step -- asserted
+            # anyway, because it is the guarantee FIX 8 bought.
+            assert location == "/reviewer/queue?error=already_published"
             assert "supersede" not in location.lower()
 
             follow_up = client.get(location, cookies={COOKIE_NAME: checker_token})
@@ -457,6 +554,7 @@ class TestReviewerSubmitAction:
             response = client.post(
                 f"/reviewer/claims/{claim_id}/submit",
                 cookies={COOKIE_NAME: maker_token},
+                headers=SAME_ORIGIN,
                 follow_redirects=False,
             )
             assert response.status_code == 303
@@ -492,6 +590,7 @@ class TestReviewerRejectAction:
             response = client.post(
                 f"/reviewer/claims/{claim_id}/reject",
                 cookies={COOKIE_NAME: maker_token},
+                headers=SAME_ORIGIN,
                 follow_redirects=False,
             )
             assert response.status_code == 303
@@ -521,7 +620,13 @@ class TestReviewerSignOut:
         """UI-review finding, 2026-09-21 (MEDIUM, FIX 11): no test at all
         covered POST /reviewer/sign-out. Asserts the cookie is genuinely
         cleared (an expired/zeroed Set-Cookie for the same name+path), not
-        just that the redirect happens."""
+        just that the redirect happens.
+
+        Deliberately sends no `Origin` (SEC-2): sign-out is the one
+        cookie-bearing POST in this console that does NOT carry the CSRF
+        guard -- see that route's docstring for why -- and this test is
+        the thing that would fail if somebody added it without deciding
+        to."""
         response = client.post(
             "/reviewer/sign-out",
             cookies={COOKIE_NAME: "some-previous-session-token"},
@@ -544,8 +649,17 @@ class TestReviewerSignInCookieFlags:
         cookie-checking test only ever checked the cookie's name/length
         via httpx's cookie-jar abstraction, never httponly/samesite/path
         -- inspected here via the raw Set-Cookie header string, since the
-        cookie jar drops those flags."""
-        response = client.post(
+        cookie jar drops those flags.
+
+        SEC-2 required these flags to be VERIFIED UNCHANGED, not
+        modified: SameSite=Lax stays the first CSRF defense and the
+        origin check is the second, added alongside it. This test is
+        that verification, and it is deliberately identical to its
+        pre-SEC-2 form. (`Secure` is absent here because APP_ENV is
+        `development` on this local stack -- the production half of that
+        conditional is asserted in tests/unit/test_csrf.py's
+        `TestSessionCookieFlagsUnchangedBySec2`.)"""
+        response = signed_out_client().post(
             "/reviewer/sign-in",
             data={
                 "email": reviewer_credentials["email"],
@@ -564,3 +678,314 @@ class TestReviewerSignInCookieFlags:
         assert "SameSite=lax" in set_cookie
         assert "Path=/reviewer" in set_cookie
         assert "Max-Age=" in set_cookie
+
+
+class TestReviewerCsrf:
+    """SEC-2's regression tests, against a real reviewer session and a
+    real database.
+
+    The assertion that matters in each rejection case is not the 403 --
+    it is the row read back afterwards through the service-role client.
+    A CSRF bug is "the claim got published", not "the status code was
+    wrong", and a test that only checked the status code would still
+    pass if the guard ran AFTER the transition.
+    """
+
+    def _in_review_claim(
+        self, maker_client: Client, maker_id: str, official_source: str
+    ) -> str:
+        created = (
+            maker_client.table("claims").insert(_draft_payload(official_source, maker_id)).execute()
+        ).data[0]
+        claim_id: str = created["id"]
+        maker_client.table("claims").update({"status": "in_review"}).eq("id", claim_id).execute()
+        return claim_id
+
+    def _status(self, admin_client: Client, claim_id: str) -> str:
+        row = admin_client.table("claims").select("status").eq("id", claim_id).execute().data[0]
+        return str(row["status"])
+
+    def test_cross_origin_approve_is_refused_and_the_claim_is_untouched(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        """THE regression test. A forged cross-site POST that carries the
+        reviewer's real session cookie must not publish the claim.
+
+        The second half of the test is the control: the SAME request,
+        same cookie, same claim, differing only in the `Origin` header,
+        does publish it. Without that, a "403" could just as well mean
+        the request was broken in some other way."""
+        maker_id, maker_client = reviewer
+        _checker_id, checker_client = second_reviewer
+        checker_token = checker_client.auth.get_session().access_token
+        claim_id = self._in_review_claim(maker_client, maker_id, official_source)
+
+        try:
+            with strict_allowed_hosts():
+                forged = client.post(
+                    f"/reviewer/claims/{claim_id}/approve",
+                    cookies={COOKIE_NAME: checker_token},
+                    headers=FOREIGN_ORIGIN,
+                    follow_redirects=False,
+                )
+            assert forged.status_code == 403
+            assert forged.json()["detail"]["code"] == CSRF_ERROR_CODE
+            assert self._status(admin_client, claim_id) == "in_review"
+
+            with strict_allowed_hosts():
+                honest = client.post(
+                    f"/reviewer/claims/{claim_id}/approve",
+                    cookies={COOKIE_NAME: checker_token},
+                    headers=SAME_ORIGIN,
+                    follow_redirects=False,
+                )
+            assert honest.status_code == 303
+            assert honest.headers["location"] == "/reviewer/queue"
+            assert self._status(admin_client, claim_id) == "published"
+        finally:
+            admin_client.table("claims").delete().eq("id", claim_id).execute()
+
+    def test_a_cookie_post_with_no_origin_and_no_referer_is_refused(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        """Fail closed. Note there is no `strict_allowed_hosts()` here:
+        the absent-header case is refused even under development's
+        wildcard allow-list, because there is nothing to match."""
+        maker_id, maker_client = reviewer
+        _checker_id, checker_client = second_reviewer
+        checker_token = checker_client.auth.get_session().access_token
+        claim_id = self._in_review_claim(maker_client, maker_id, official_source)
+
+        try:
+            response = client.post(
+                f"/reviewer/claims/{claim_id}/approve",
+                cookies={COOKIE_NAME: checker_token},
+                follow_redirects=False,
+            )
+            assert response.status_code == 403
+            assert response.json()["detail"]["code"] == CSRF_ERROR_CODE
+            assert self._status(admin_client, claim_id) == "in_review"
+        finally:
+            admin_client.table("claims").delete().eq("id", claim_id).execute()
+
+    def test_a_matching_referer_works_when_origin_is_absent(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        """The documented fallback, exercised live: a browser that omits
+        `Origin` on a same-site form navigation still gets through."""
+        maker_id, maker_client = reviewer
+        _checker_id, checker_client = second_reviewer
+        checker_token = checker_client.auth.get_session().access_token
+        claim_id = self._in_review_claim(maker_client, maker_id, official_source)
+
+        try:
+            with strict_allowed_hosts():
+                response = client.post(
+                    f"/reviewer/claims/{claim_id}/approve",
+                    cookies={COOKIE_NAME: checker_token},
+                    headers={"Referer": "http://testserver/reviewer/queue"},
+                    follow_redirects=False,
+                )
+            assert response.status_code == 303
+            assert response.headers["location"] == "/reviewer/queue"
+            assert self._status(admin_client, claim_id) == "published"
+        finally:
+            admin_client.table("claims").delete().eq("id", claim_id).execute()
+
+    def test_cross_origin_submit_and_reject_are_refused_too(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        """Not just approve: a forged `submit` would push someone else's
+        draft into the review queue, and a forged `reject` would pull a
+        claim back out of it."""
+        maker_id, maker_client = reviewer
+        maker_token = maker_client.auth.get_session().access_token
+        created = (
+            maker_client.table("claims").insert(_draft_payload(official_source, maker_id)).execute()
+        ).data[0]
+        claim_id = created["id"]
+
+        try:
+            with strict_allowed_hosts():
+                submitted = client.post(
+                    f"/reviewer/claims/{claim_id}/submit",
+                    cookies={COOKIE_NAME: maker_token},
+                    headers=FOREIGN_ORIGIN,
+                    follow_redirects=False,
+                )
+            assert submitted.status_code == 403
+            assert self._status(admin_client, claim_id) == "draft"
+
+            # Move it on legitimately, then try to forge the reverse.
+            maker_client.table("claims").update({"status": "in_review"}).eq(
+                "id", claim_id
+            ).execute()
+            with strict_allowed_hosts():
+                rejected = client.post(
+                    f"/reviewer/claims/{claim_id}/reject",
+                    cookies={COOKIE_NAME: maker_token},
+                    headers=FOREIGN_ORIGIN,
+                    follow_redirects=False,
+                )
+            assert rejected.status_code == 403
+            assert self._status(admin_client, claim_id) == "in_review"
+        finally:
+            admin_client.table("claims").delete().eq("id", claim_id).execute()
+
+    def test_sign_in_still_works_from_any_origin(
+        self, reviewer_credentials: dict[str, str]
+    ) -> None:
+        """Don't CSRF-gate the login form. The browser posting it has no
+        session cookie yet, so even an `Origin` that every action route
+        would refuse -- under a strict allow-list, with no `Referer` to
+        fall back on -- must still sign the reviewer in."""
+        with strict_allowed_hosts():
+            response = signed_out_client().post(
+                "/reviewer/sign-in",
+                data={
+                    "email": reviewer_credentials["email"],
+                    "password": reviewer_credentials["password"],
+                },
+                headers=FOREIGN_ORIGIN,
+                follow_redirects=False,
+            )
+        if response.status_code == 429:
+            # See TestReviewerSignIn's identical comment (FIX 2).
+            return
+        assert response.status_code == 303
+        assert response.headers["location"] == "/reviewer/queue"
+        assert COOKIE_NAME in response.cookies
+
+    def test_an_already_signed_in_session_reposting_sign_in_is_gated(
+        self, reviewer_credentials: dict[str, str]
+    ) -> None:
+        """The other half of that decision, and the reason the guard is
+        attached to the sign-in route at all: once a session cookie
+        exists, re-posting this form IS a cookie-bearing state change.
+
+        Worth stating because it is the one way SEC-2 could inconvenience
+        a real reviewer: a client that sends no `Origin` and still holds
+        a session cookie cannot sign in again. The escape hatch is real
+        and needs no support call -- `POST /reviewer/sign-out` is
+        deliberately not guarded, and `_redirect_to_sign_in` clears the
+        cookie on every expired-session bounce, so the cookie-free state
+        this test's sibling covers is always reachable."""
+        with strict_allowed_hosts():
+            response = client.post(
+                "/reviewer/sign-in",
+                data={
+                    "email": reviewer_credentials["email"],
+                    "password": reviewer_credentials["password"],
+                },
+                cookies={COOKIE_NAME: "a-previous-session-token"},
+                headers=FOREIGN_ORIGIN,
+                follow_redirects=False,
+            )
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == CSRF_ERROR_CODE
+
+    def test_the_bearer_json_api_is_completely_unaffected(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        """docs/CONTRACTS.md: "the JSON API is Bearer-only; cookies
+        belong to the web layer alone". `POST /claims/{id}/approve` sends
+        no cookie, carries no origin-check dependency, and must keep
+        working with an `Origin` that the console would have refused."""
+        maker_id, maker_client = reviewer
+        checker_id, checker_client = second_reviewer
+        checker_token = checker_client.auth.get_session().access_token
+        claim_id = self._in_review_claim(maker_client, maker_id, official_source)
+
+        try:
+            with strict_allowed_hosts():
+                response = client.post(
+                    f"/claims/{claim_id}/approve",
+                    headers={
+                        "Authorization": f"Bearer {checker_token}",
+                        **FOREIGN_ORIGIN,
+                    },
+                )
+            assert response.status_code == 200, response.text
+            assert response.json()["status"] == "published"
+            assert response.json()["reviewed_by"] == checker_id
+            assert self._status(admin_client, claim_id) == "published"
+        finally:
+            admin_client.table("claims").delete().eq("id", claim_id).execute()
+
+
+class TestReviewerQueueErrorCodes:
+    """SEC-2's other half, live: `?error=` is a code looked up in a fixed
+    dict, so nothing a stranger writes into that parameter can appear on
+    an authenticated page."""
+
+    def test_an_arbitrary_error_parameter_is_never_reflected(
+        self, reviewer: tuple[str, Client]
+    ) -> None:
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        hostile = "<script>alert(1)</script>"
+
+        signed_out = signed_out_client().get(
+            "/reviewer/queue", params={"error": hostile}, follow_redirects=False
+        )
+        assert signed_out.status_code == 303  # no session -> sign-in, as always
+
+        response = client.get(
+            "/reviewer/queue", params={"error": hostile}, cookies={COOKIE_NAME: token}
+        )
+        assert response.status_code == 200
+        # Neither raw nor merely HTML-escaped: the string never reaches
+        # the template at all, so no form of it is in the page.
+        assert hostile not in response.text
+        assert rendered(hostile) not in response.text
+        assert "alert(1)" not in response.text
+        # What a reviewer sees instead.
+        assert rendered(QUEUE_ERROR_MESSAGES["unknown_error"]) in response.text
+
+    def test_a_phishing_sentence_is_replaced_by_the_generic_message(
+        self, reviewer: tuple[str, Client]
+    ) -> None:
+        """The realistic version of the same attack: no markup at all,
+        just believable text in a link sent to a reviewer."""
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        hostile = "Your session expired. Call BCION support on 000-000-0000 to restore it."
+
+        response = client.get(
+            "/reviewer/queue", params={"error": hostile}, cookies={COOKIE_NAME: token}
+        )
+        assert response.status_code == 200
+        assert "000-000-0000" not in response.text
+        assert rendered(QUEUE_ERROR_MESSAGES["unknown_error"]) in response.text
+
+    def test_a_known_code_renders_its_own_fixed_message(
+        self, reviewer: tuple[str, Client]
+    ) -> None:
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+
+        response = client.get(
+            "/reviewer/queue", params={"error": "db_unavailable"}, cookies={COOKIE_NAME: token}
+        )
+        assert response.status_code == 200
+        assert rendered(QUEUE_ERROR_MESSAGES["db_unavailable"]) in response.text
+        assert "alert--error" in response.text
