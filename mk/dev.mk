@@ -16,7 +16,11 @@ install:
 	npm install
 
 dev:
-	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	# --no-access-log: OPS-2's own request-id middleware logs a
+	# redacted, route-template-only line for every request. uvicorn's
+	# default access log would duplicate that with the raw path
+	# (including any query string) and isn't redacted, so it stays off.
+	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-access-log
 
 css:
 	npx tailwindcss -i ./app/web/styles/input.css -o ./app/static/css/app.css --minify
