@@ -88,7 +88,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] RULES-8 - Wire RuleSets into the eligibility API [W3a]
 - [ ] RULES-9 - Timeline seeding from stage claims (session 1 W3a, session 2 W3b)
 - [ ] UI-6 - Cost-assumption editing on Compare [W3b]
-- [ ] SCOPE-4 - Currency-safe cost display [W3b]
+- [x] SCOPE-4 - Currency-safe cost display [W3b] -- known follow-up: itemised fee_component:* claims with no legacy verified_charges claim show "Not available" on the display line while the total (correctly) uses the components; not carded yet
 - [ ] UI-7 - Timeline stage kinds and "Revise this scenario" [W3b]
 - [ ] RULES-16 - Requirements screen: DOB input, cycle label, "not checked here" list [W3b]
 - [ ] QA-7 - Mobile and desktop viewport e2e, full guest journey [W3b]

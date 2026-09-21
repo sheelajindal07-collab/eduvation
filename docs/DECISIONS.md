@@ -5,6 +5,50 @@ never deleted.
 
 ---
 
+## 2026-09-22 — SCOPE-4: the rupee sign now exists in exactly one place, and "no total" says why
+**Event:** SCOPE-4 closed the display half of RULES-10's Money work. Both
+`compare.html` and `_trust_badge.html` wrote `₹` as a literal in front of
+whatever number they were handed, so a fee published in any other currency
+was shown to a student as rupees. Both now format through a `money` Jinja
+filter over `format_money(amount, currency)`; a repo-wide guard test
+(`tests/unit/test_formatting.py`) fails if any template, or any Python
+string literal outside `app/i18n/formatting.py`, ever reintroduces a
+currency symbol.
+**Wire shape changed:** `GET /compare`'s `cost.net_to_arrange` is now
+`{"amount": int, "currency": str} | None` plus a separate
+`cost.net_to_arrange_unavailable_reason` = `"missing" | "mixed_currencies"
+| null`, and every `FieldValueOut` carries `currency`. `docs/CONTRACTS.md`
+requires a mixed-currency total to be shown as such; a bare `null` could
+not distinguish it from an unpublished charge. No real content is
+published yet (see this file's own "Not claimed" note in STATUS.md), so
+this has no live-user impact today.
+**Disclosed gap from RULES-10, now closed:** a money claim with a null
+currency renders `not_available` on the DISPLAY path too, not just in the
+arithmetic — the regression test RULES-10 added to pin the known
+inconsistency now asserts the consistent, correct behaviour instead.
+**Two correctness fixes to RULES-10's own arithmetic, reviewed and
+accepted here, not assumed:** (1) an all-non-INR pathway with zero
+confirmed assistance was incorrectly reported as a currency mismatch — a
+well-defined `Money(0, "INR")` for "nothing awarded" was being summed
+against real charges in another currency, which is not a real term of
+that sum and should not participate in the currency check at all; fixed
+by only including the confirmed-assistance term when one exists. (2) a
+student's cost-assumption override was hard-coded to INR regardless of
+the pathway's own charges currency, manufacturing a currency clash the
+student never created; it now inherits the pathway's charges currency
+(falling back to INR only when that currency itself is unknown), shown
+alongside the figure. Both proven live with a new GBP-only pathway test
+and a mixed INR+GBP fee-component pathway test.
+**Verified live:** `tests/unit` 903 → 935 passed; `tests/db` 548 → 552
+passed, 8 xfailed, 0 skipped, 0 failed (run twice — once in the
+implementer's own worktree, once again against the shared local stack
+after merge).
+**Known follow-up, not in scope here:** when a pathway publishes itemised
+`fee_component:*` claims and no legacy `verified_charges` claim, the
+"Verified charges" display line shows "Not available" while the
+computed total (correctly) uses the components — a display-only gap, not
+tracked as its own task yet.
+
 ## 2026-09-22 — Declarative cross-user access matrix (QA-6); a real thread leak found and fixed at its source
 **Event:** `tests/db/access_matrix.py` + `tests/db/test_access_matrix.py`
 turn CLAUDE.md's "cross-user access is tested every time auth, RLS or

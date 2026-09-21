@@ -135,11 +135,20 @@ substance already lives in this file's "Infrastructure" table, just not
 yet copied into a `docs/DECISIONS.md` entry the way `DEPLOY-1` wants
 it). `DEPLOY-4`/`DEPLOY-6` are behind the same `DEPLOY-2` gate.
 `QA-12` (sweeping test residue from the **live** project) and `DATA-10a`
-are owner-run, not agent work, by design. `SCOPE-4` (currency-aware
-cost display, closing the display gap RULES-10 disclosed) is unblocked
-now (`SCOPE-3`, `I18N-2` both done) and queued next. See
-`docs/TESTING.md` (new, QA-4) for the local-stack contract every
-parallel lane follows.
+are owner-run, not agent work, by design. **`SCOPE-4` merged** —
+currency-safe cost display, closing the display gap RULES-10 disclosed:
+no currency symbol literal exists outside `app/i18n/formatting.py`
+anywhere now; `/compare`'s `net_to_arrange` carries its own currency
+plus a `"missing"` vs `"mixed_currencies"` reason when it's unavailable,
+shown as two different sentences to a student, never conflated. Also
+fixed two real bugs in RULES-10's own arithmetic along the way (a
+non-INR pathway with no confirmed assistance was wrongly flagged
+mixed-currency; a student's cost override was hard-coded INR
+regardless of the pathway's actual currency) — both reviewed and
+accepted here, proven live with new GBP/mixed-currency pathway tests.
+`tests/unit`: 935 passed. `tests/db`: 552 passed, 8 xfailed, 0 skipped,
+0 failed. See `docs/TESTING.md` (new, QA-4) for the local-stack
+contract every parallel lane follows.
 
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
