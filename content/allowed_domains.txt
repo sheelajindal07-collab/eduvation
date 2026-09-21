@@ -1,0 +1,62 @@
+# Official-domain allow-list for BCION Lite content sources (CONTENT-4).
+#
+# PROPOSED starting list only -- not yet signed off by the editor. Per
+# CONTENT-4's acceptance criteria ("the allow-list is signed off by the
+# editor"), this file is not authoritative until a named editor has
+# reviewed and approved it. Until then, treat every domain below as a
+# candidate, not a decision.
+#
+# Format: one registrable domain per line, lowercase, no scheme, no
+# path, no trailing slash, no leading "www.". A listed domain also
+# covers its subdomains (e.g. "nta.ac.in" covers "jeemain.nta.ac.in").
+# Blank lines and lines starting with "#" are ignored --
+# scripts/content/check_sources.py parses this file the same way.
+#
+# docs/DATA.md "Source allowlist": only allow-listed official sources
+# are extracted from. This is an allow-list (default-deny): a domain
+# not listed here is rejected even if it is not on the explicit
+# aggregator block-list in scripts/content/check_sources.py.
+
+# --- National exam and education-regulator bodies (.gov.in / .nic.in / statutory) ---
+nta.ac.in
+ugc.gov.in
+aicte-india.org
+cbse.gov.in
+cbse.nic.in
+cisce.org
+nios.ac.in
+ncte.gov.in
+aiu.ac.in
+nirfindia.org
+education.gov.in
+mea.gov.in
+dgca.gov.in
+upsc.gov.in
+ssc.nic.in
+ibps.in
+icar.org.in
+clatconsortium.ac.in
+nata.in
+mcc.nic.in
+natboard.edu.in
+
+# --- Scholarship / welfare schemes (official government portals only) ---
+scholarships.gov.in
+aicte-india.org
+minorityaffairs.gov.in
+tribal.nic.in
+socialjustice.gov.in
+online-inspire.gov.in
+
+# --- State government / state counselling authority domains ---
+# One row per state's own admissions/counselling/scholarship portal.
+# Left for the editor to populate per SCOPE-1's covered set -- adding a
+# state or foreign-country domain here is a content-review decision,
+# not a default this template should predict.
+
+# --- Foreign-pathway official domains ---
+# Destination government immigration/education domains and named
+# institutions' own domains only (docs/plan open-question recommended
+# default: "aggregators and marketing portals are leads"). Left for the
+# editor to populate per-country once SCOPE-1/SCOPE-8/SCOPE-9 name the
+# covered set -- this template does not hardcode a covered-set list.
