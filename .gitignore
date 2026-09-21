@@ -15,6 +15,7 @@ dist/
 .env
 .env.local
 .env.*.local
+.env.test
 
 # Node (if Playwright/e2e tooling adds a package.json later)
 node_modules/

@@ -33,67 +33,57 @@ sign-off (`docs/SECURITY.md`). 193 unit tests passing.
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
 verified healthy, talking to the real database).
 
-## Development plan written (2026-09-21) — PROPOSAL, nothing approved
-`docs/DEVELOPMENT-PLAN.md` (the map of everything left), three task
-inventories under `docs/plan/` (248 audited tasks + 12 added), and a DRAFT
-`tasks/INDEX.md`. Produced by an owner-requested 64-agent planning run (18
-area audits, each verified; dependency resolver; 7 analysts; 3 competing
-plans judged; 6 critics; two fix rounds), then checked and revised by the
-lead across four passes as three sessions worked this repo concurrently
-today. Committed and pushed: `2a9d6d2`, merged with the guardian-consent
-gate at `c0bd343`. No product code written by this session.
-- **Phase 1 = "gated staging, journey complete, AI off"**: about 22–27
-  working days, about ₹45–80k cash (all figures model-generated,
-  unverified), 6 waves, peak 6 parallel workflows, about 107 agent
-  sessions. Section 8.8 of the plan is the operating table (workflows at
-  once per wave, agents per workflow); `CLAUDE.md` now points the lead to it.
-- **"No agent swarm" removed** from `CLAUDE.md` on the owner's instruction;
-  guardrails kept — see `docs/DECISIONS.md` 2026-09-21.
-- **`.claude/settings.json` created** (deny-only): no agent session can
-  Read/Edit the live `.env` or print it via Bash. Still needed: SEC-15
-  (owner moves the real keys out of the repo folder — not done yet, blocks
-  real fan-out) and SEC-16 (rotate them after).
-- **Migration ledger renumbered twice in one afternoon** — now marked
-  PROVISIONAL in the plan, not fixed. First: another session merged
-  `0004_guardian_consent.sql` (a real, adversarially-reviewed age +
-  guardian-email gate, not a stopgap) while this plan was mid-review.
-  Second: that session is now fixing a real bug in it with a **new**
-  migration, `0005_guardian_consent_request_rpc.sql`. The plan's ledger
-  currently starts at 0006 (was 0004, then 0005) — **re-verify against
-  `ls db/migrations/` before the migration lane's first session opens**;
-  a third shift before Wave 2 starts would not be a surprise.
-  **CONSENT-1 (this plan's sign-up kill-switch stopgap) is superseded and
-  marked so** — the real gate is more complete. About two dozen *other*
-  CONSENT-1 references elsewhere in the plan (start conditions, the
-  auth.py chain, section 15's pasteable session 2) are now stale and
-  flagged for a dedicated re-derivation pass — not yet done; see plan
-  section 16.
-- **`0004_guardian_consent.sql` IS applied to a live production Supabase
-  project** — confirmed via the guardian-consent session's own `c7d87bc`
-  commit message (checked directly, not taken on trust), which resolves
-  the contradiction noted below as stale prose, not a live discrepancy.
-  **This makes the RPC bug that session is fixing a real, live-impacting
-  production issue**: every minor's guardian-consent request reaching
-  production right now hits an unhandled 500 until the fix lands. Not
-  this session's to fix — no DB access sought or used.
-- **New gap found, not yet carded:** the locked worktree
-  `.claude/worktrees/wf_9b7797a4-e76-1` is real, uncommitted work — the
-  "Held, not merged" student sign-up/save-plan UI this file already
-  describes below — not scratch. It needs its own bounded merge-on-top-
-  of-the-gate task.
-- **Resolved:** the apparent contradiction above (production-applied vs.
-  "not applied") was real but not a lie or a hallucination — `STATUS.md`
-  had stale pre-apply prose sitting next to a commit message that already
-  reflected the apply. See the confirmed-applied bullet above.
-- **Staleness:** another session committed M5 AI groundwork (14:13) and
-  reviewer-console fixes (14:27) while the audits ran (14:06–14:18); the
-  plan's AI-2/3/5/6, PUB-5 and SEC-2 tasks must be re-checked against the
-  code before carding (plan section 16).
-- Known plan defects still open are listed in the plan's section 16 (the
-  DRAFT index disagrees with the plan in five lines; DOCS-3 should be split).
-- **Next task:** owner reads plan section 0 and section 10; the lead
-  finishes the CONSENT-1 re-derivation pass before pasting any Wave 0/1
-  session from section 15.
+## Development plan — Wave 1 fully executed, Wave 2 underway (2026-09-21)
+`docs/DEVELOPMENT-PLAN.md` (produced by an owner-requested 64-agent
+planning run, then revised across seven passes as real migrations from a
+concurrent session moved its ledger three times) is now being executed
+for real, not just planned. `tasks/INDEX.md` is finalised (DOCS-3a);
+`docs/CONTRACTS.md` is fully frozen (all 7 Wave 1 contract-burst tasks +
+A11Y-1); `docs/PARALLEL.md`/`docs/COSTS.md`/`.claude/agents/implementer.md`
++`migration-owner.md` exist (DOCS-4/13/6).
+**Merged, in order:** contract burst (7 tasks) → design docs (4 tasks,
+found and fixed a real touch-target bug) → docs-and-scripts (3 tasks,
+scrubbed the owner's personal email from 116 content-draft files) →
+content-prep (5 tasks) → Rules lane (`RULES-2..6,11`: real eligibility
+engines for NEET-UG/JEE Main/GUJCET) → mechanical lane
+(`DEPLOY-18,SEC-7,UI-2,SEC-1,DEPLOY-5`: the shared middleware/flag
+registry, a hashed lockfile, `pages.py` split into modules, security
+headers) → **QA-2** (local Supabase test stack — the first real local-DB
+test run in this project's history).
+**Two real bugs found and fixed by the lead across these merges** (not
+just accepted from agent reports): SEC-7's new CI jobs failed on their
+first run for two genuine reasons — a known CVE in the pinned `pytest`
+version, and fixing that surfaced a resolver picking a `pytest-asyncio`
+version that **crashes outright** under the new `pytest` (verified by
+installing that exact combination, not just reading a version-conflict
+warning); both fixed, re-verified on real CI, green. Separately, merging
+QA-2's `supabase/` directory broke `ruff` for everyone (isort
+misclassified the real `supabase` package as first-party) — fixed with
+`known-third-party` in `pyproject.toml`.
+**Real numbers, this session:** 442 unit tests passing (up from 193).
+Against the new local stack: `tests/db` 148 passed/0 failed/0 skipped,
+`tests/e2e` 6 passed; a 3-concurrent-lane measurement (228s wall clock,
+zero flakes) supports the plan's default DB-lane cap of 3 with evidence,
+not just an assumption. CI green throughout.
+**Migration ledger, current real state:** `0004`–`0006` are the merged
+guardian-consent gate (another session's real work, now confirmed
+live-verified in production per that milestone above). This plan's own
+next migration (`DATA-12`) is `0007` — **still marked provisional in the
+plan; re-verify `ls db/migrations/` before trusting it**, since it has
+already moved three times from concurrent migration work.
+**CONSENT-1 (the plan's sign-up kill-switch stopgap) is superseded and
+its ~25 stale references across the plan are fixed** — the real merged
+gate does the job.
+**Still open:** SEC-15 is done (owner confirmed, keys moved out of the
+repo); `.claude/settings.json` now has both deny and allow rules. The
+locked worktree `wf_9b7797a4-e76-1` ("Held, not merged" student sign-up
+UI) still needs its own bounded merge task — not yet carded. Two small
+follow-ups flagged mid-session, not yet started: moving `explore.html`'s
+inline `<script>` to tighten the CSP, and widening a Pydantic field type
+in `app/api/compare.py` (already fixed) plus its `Citation` counterpart
+(already fixed).
+**Next:** Wave 2's DB-touching lanes (migration, eligibility) can now
+start for real — the local stack exists.
 
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.

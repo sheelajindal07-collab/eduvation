@@ -41,6 +41,14 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # the mutable-default-argument bug this rule exists to catch.
 ignore = ["B008"]
 
+[tool.ruff.lint.isort]
+# QA-2 added supabase/ (the Supabase CLI's local config directory) at the
+# repo root. Without this, isort's first-party detection sees a local
+# `supabase` path and misclassifies every `from supabase import ...`
+# (the real PyPI client library) as first-party, breaking every existing
+# import block that correctly treated it as third-party.
+known-third-party = ["supabase"]
+
 [tool.mypy]
 python_version = "3.11"
 disallow_untyped_defs = true
