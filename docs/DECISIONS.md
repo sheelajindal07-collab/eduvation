@@ -5,6 +5,38 @@ never deleted.
 
 ---
 
+## 2026-09-22 — Shell-lane follow-ups closed; PUB-5 unblocks the reviewer-auth serial chain
+**Event:** Two disclosed gaps from the Shell lane merge closed same day:
+`app/web/consent_pages.py` now imports the one shared Jinja environment
+(`app/web/templating.py`) instead of building its own — the "no second
+environment" guard test's exemption for it is gone, the guard now
+actually covers it. `docs/CONTRACTS.md`'s "Keys and components" section,
+left as a placeholder since the contract-burst freeze, is filled in for
+real (I18N-1's key rules, the DESIGN-1/DESIGN-2/UI-1 component and shell
+contracts, both frozen additive-only).
+Also merged: **AI-2** (`ai_model`, `ai_max_input_tokens`,
+`ai_max_output_tokens`, `ai_per_account_daily_cap` — names/defaults only,
+no provider wiring) and **PUB-5** (`app/web/reviewer_pages.py` split into
+`app/web/reviewer/{auth,queue}.py` plus stub modules for future console
+lanes — pure mechanical refactor, no route or behaviour change, all 10
+existing console tests plus the 2 e2e reviewer tests pass unchanged).
+**Reason PUB-5 first:** `docs/DEVELOPMENT-PLAN.md`'s 6.4 conflict table
+serialises `SEC-2 -> DEPLOY-15 -> A11Y-4` on this file; PUB-5 has no
+dependencies of its own ("can run immediately") and SEC-2 explicitly
+depends on it, so it went in ahead of that chain rather than blocking it.
+**Found while checking dependencies, not by the checkbox alone:**
+`tasks/INDEX.md` had `DEPLOY-5` (readyz + `scripts/smoke.py` + `make
+smoke`) already checked `[x]`, but `AI-2` was unchecked despite
+`app/core/config.py` already carrying `ai_enabled`/`ai_configured` from
+DEPLOY-18's flag block — a genuinely partial implementation, not a false
+checkbox. Verified both against the actual code before dispatching any
+agent work, so the AI-2 agent only built the four fields that were
+actually missing, not a duplicate of DEPLOY-5.
+**Owner action still open, unrelated to the above:** `DEPLOY-1` (record
+the Oracle VM facts formally) is unchecked and blocks `DEPLOY-2`; the
+underlying facts already live in `STATUS.md`'s "Infrastructure" table,
+so this is a paperwork gap, not a missing decision.
+
 ## 2026-09-22 — i18n key naming, placeholder syntax and the fallback rules
 **Event:** I18N-1 built the i18n mechanism (`app/i18n/`,
 `app/web/templating.py`). Its task card requires these rules to be

@@ -99,8 +99,32 @@ missing `cast(...)` in `app/web/guest_session.py` (migration lane),
 fixed immediately, matching this codebase's own established pattern
 used at five other call sites. Trust CI's `mypy` result, not a local run,
 on this machine, until someone cleans up its global Python install.
-**Next:** the Shell lane (`I18N-1`→`DESIGN-18`) and the Hardening lane's
-`OPS-2` are next up — both now unblocked.
+**Shell lane merged** (`I18N-1, I18N-2, UI-1, DESIGN-18`), plus two
+disclosed follow-ups closed same day: `consent_pages.py` now shares the
+one Jinja environment (no more test exemption), and `docs/CONTRACTS.md`'s
+"Keys and components" section is frozen for real. `AI-2` (AI settings:
+model/token/daily-cap names) and `PUB-5` (split `reviewer_pages.py` into
+`app/web/reviewer/{auth,queue}.py` plus stubs for future console lanes,
+zero behaviour change, unblocks the `SEC-2 → DEPLOY-15 → A11Y-4` chain
+that all three serialise on) are also merged. 790 unit tests passing.
+**In flight now** (4 parallel worktree lanes, launched together, none
+touching each other's files): `RULES-10` (cost engine: multi-component
+fee sums wired through to `assemble_cost_summary`, split estimate vs.
+user-override), `A11Y-2` (state macros, `base.html` landmarks, moves
+`explore.html`'s inline script to a static file — exclusive use of
+`base.html`/`_components.html` while it runs), `QA-6` (declarative
+cross-user access matrix + an RLS-coverage guard), `DEPLOY-3` (real
+Dockerfile, `make build`, a CI image-build step, fixes `ci.yml`'s stale
+header comment). **Next after these land:** `SEC-2` (CSRF contract,
+now unblocked by PUB-5), then `DEPLOY-15`, then `A11Y-4`, in that order
+(all three touch `app/web/reviewer/auth.py`); `DEPLOY-4`/`DEPLOY-6`
+once `DEPLOY-2`+`DEPLOY-3` are both in; `DEPLOY-2` itself is blocked on
+`DEPLOY-1` (owner: record the real Oracle VM facts — the substance
+already lives in this file's "Infrastructure" table, just not yet
+copied into a `docs/DECISIONS.md` entry the way DEPLOY-1 wants it).
+`QA-12` (sweeping test residue from the **live** project) and `DATA-10a`
+are owner-run, not agent work, by design. See `docs/TESTING.md` (new,
+QA-4) for the local-stack contract every parallel lane follows.
 
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
@@ -729,14 +753,13 @@ can substitute for.
 Full details on all of these in `docs/DECISIONS.md`.
 
 ## Next task
-**The consent-gate decision above is the one that actually matters right
-now** — everything else is normal backlog. All engineering milestones
-through M4 are done and genuinely verified (migration applied, zero
-tests skipping). Candidates for what's next, all your call: more UI
-screens (quick start, timeline/cost calculator, a reviewer console for
-the publishing API — see `tasks/BCI-006.md`'s full "not done yet" list,
-including that Playwright e2e still isn't wired), M5 (bounded AI), or a
-content/design pass.
+**Stale as of 2026-09-21 — kept for history, not current guidance.** This
+section predates the plan (`docs/DEVELOPMENT-PLAN.md`) and the M5/E2E
+work below it; both "not done yet" items it names (a reviewer console,
+Playwright e2e) are done. **Current pointer:** see this file's own top
+section ("Development plan") for what's merged and what's in flight —
+the plan's wave/lane tables (`docs/DEVELOPMENT-PLAN.md` sections 5, 6.4,
+8.8) are what actually govern "what's next" now, not this paragraph.
 
 ## Infrastructure
 | Thing | Status |
@@ -815,10 +838,14 @@ things worth knowing before anyone builds a NEET pathway on it:
 No tests run this session — docs-only change, no code touched.
 
 ## Not claimed
-No e2e test, no live AI call, no public exposure of the deployed app
-yet. No real content exists — every test uses clearly-labelled synthetic
-fixtures; nothing has been published as a verified fact for an actual
-student to see.
+E2E exists and runs locally/in a worktree (`make test-e2e`, zero skips)
+but is **not yet a CI job** (tracked: QA-5). No live AI call anywhere —
+the M5 safety layer exists but nothing calls a real provider yet, and
+`ai_enabled` defaults false. No public exposure of the deployed app yet
+(no domain, no nginx site — see "Needs your input" above). No real
+content exists — every test uses clearly-labelled synthetic fixtures;
+nothing has been published as a verified fact for an actual student to
+see.
 
 ## Concurrent sessions — multiple sessions worked this repo today
 This session shared the repo with at least one other active Claude

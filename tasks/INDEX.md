@@ -138,7 +138,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 ## Step 9 Publishing console (M4) - PARTIAL (console exists; self-approval bypass open)
 - [ ] PUB-13a - Owner names reviewers [W0, owner, day 3]
 - [x] PUB-1 - Publishing contract incl. content hash (owner explicit yes) [W1, contract burst]
-- [ ] PUB-5 - Split reviewer_pages.py into a package [W1]
+- [x] PUB-5 - Split reviewer_pages.py into a package [W1]
 - [ ] PUB-2 - Migration 0011: identity enforcement, source versions, claim columns [W3]
 - [ ] PUB-3 - Migration 0012: audit events, atomic publish functions, plan flag [W3]
 - [ ] PUB-4 - Owner applies through 0012 after the adversarial review [W3-W4, owner]
@@ -176,7 +176,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] CONTENT-11 - Cycle-roll recheck for tier-1 exam claims [P2, human]
 
 ## Step 11 Bounded AI (M5) - GROUNDWORK ONLY (AI stays off in Phase 1)
-- [ ] AI-2 - AI_ENABLED flag, kill switch, /readyz reports it [W2]
+- [x] AI-2 - AI_ENABLED flag, kill switch, /readyz reports it [W2]
 - [ ] AI-10 - Owner: provider terms, restricted key, provider-side cap [P1 weeks 2-3 prep, owner]
 - [ ] AI-1 - AI contract and schemas [P2]
 - [ ] AI-3 - Provider adapter [P2]
@@ -294,8 +294,8 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] UI-2 - Split pages.py into per-screen modules [W1]
 - [x] SEC-1 - Security middleware, trusted hosts, env guard [W1]
 - [x] CONTENT-18 - Scrub researcher email from drafts [W1]
-- [ ] QA-4 - Parallel-agent testing contract (docs/TESTING.md) [W2]
-- [ ] DOCS-12 - Refresh CLAUDE.md links and verified commands [W2]
+- [x] QA-4 - Parallel-agent testing contract (docs/TESTING.md) [W2]
+- [x] DOCS-12 - Refresh CLAUDE.md links and verified commands [W2]
 - [ ] DATA-10a - Owner: QA-12 sweep, apply through 0008, synthetic seed [W2, owner]
 - [ ] DATA-10b - Owner: apply through 0010, redeploy staging [W3, owner]
 - [ ] DATA-10c - Owner: apply through 0014 [W4-W5, owner]

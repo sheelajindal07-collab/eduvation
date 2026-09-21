@@ -38,9 +38,23 @@ for Python + ruff + mypy · GitHub Actions with a protected prod environment.
 - `make lint` — ruff
 - `make typecheck` — mypy
 - `make test-unit` — pytest (unit)
-- `make test-e2e` — Playwright (once UI exists)
-- `make test-db` — RLS/policy tests against a live Postgres (once DB exists)
+- `make test-rules` — pytest tests/unit/rules only, per-exam pass/review table
+- `make test-db-up` / `test-db-down` / `test-db-reset` — local Supabase stack
+  lifecycle (Docker + Supabase CLI); `test-db-status` to check it
+- `make test-db` — RLS/policy tests against the local stack (or a live
+  project if `SUPABASE_URL` etc. are set — `tests/db/conftest.py`'s target
+  guard refuses any non-loopback URL unless explicitly allowed)
+- `make test-db-parallel` — pytest-xdist workers, RUN_ID-tagged fixtures
+- `make test-e2e` — Playwright, real uvicorn subprocess, zero skips
+- `make verify` — lint + unit + db in one gate, logged per-suite
+- `make smoke URL=... [ENV=...]` — read-only checks against a running
+  deployment (`scripts/smoke.py`), never writes
+- `make seed` / `seed-demo` / `seed-purge` — synthetic fixtures only, see
+  `scripts/seed_synthetic.py`'s production-ref guard
+- `make content-check` — source register / allow-list checker
 - `make build` — build the Docker image (once Dockerfile is exercised)
+- See `docs/TESTING.md` for the local-stack contract parallel agents must
+  follow (targeted runs, `.env.test`, one migration owner at a time).
 
 ## Working rules
 - One bounded task per agent; no whole-product attempts. Parallel
@@ -68,6 +82,9 @@ for Python + ruff + mypy · GitHub Actions with a protected prod environment.
 - National context: `docs/BCION-DPR-v1.1.md` (Annex A state variant, Annex B
   change log, Annex C glossary, Annex D assumptions register)
 - `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/UI.md`, `docs/DATA.md`,
-  `docs/SECURITY.md`, `docs/DECISIONS.md`, `STATUS.md`
-- Task cards: `tasks/BCI-xxx.md`
+  `docs/SECURITY.md`, `docs/DECISIONS.md`, `docs/CONTRACTS.md`,
+  `docs/TESTING.md`, `STATUS.md`
+- Parallel-work protocol and cost tracking (lead only):
+  `docs/PARALLEL.md`, `docs/COSTS.md`
+- Task list and checkboxes: `tasks/INDEX.md`; task cards: `tasks/BCI-xxx.md`
 - Agent roles: `.claude/agents/`
