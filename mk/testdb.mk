@@ -122,15 +122,34 @@ test-db-env:
 ## test-db-migrate — apply db/migrations/*.sql to the LOCAL stack, then
 # make PostgREST notice.
 #
-# That second step is not optional: PostgREST caches the database schema
-# at boot and serves 404/PGRST202 for anything added afterwards, so a
-# migration applied over a raw psycopg connection (which is what
+# Why the second step exists: PostgREST caches the database schema and
+# serves 404/PGRST202 for anything added after that cache was built, so
+# a migration applied over a raw psycopg connection (which is what
 # scripts/apply_migrations.py does — docs/DECISIONS.md rules out the
-# management API) is invisible to every test until the cache is
-# reloaded. `NOTIFY pgrst, 'reload schema'` is the documented way to do
-# that. Composed with psycopg's `sql.Literal` rather than hand-quoted:
-# NOTIFY takes a string literal, not a bind parameter, and this keeps
-# the recipe free of nested quotes that make/sh would have to fight over.
+# management API) can be invisible to every test until the cache is
+# reloaded. `NOTIFY pgrst, 'reload schema'` is the documented reload.
+#
+# Measured on this stack, 2026-09-21, and worth writing down because it
+# contradicts the usual advice: the reload is NOT actually required
+# here. Supabase's Postgres image ships `pgrst_ddl_watch` and
+# `pgrst_drop_watch` event triggers (confirmed present in
+# pg_event_trigger) that fire that same NOTIFY on any ddl_command_end,
+# so a psycopg-applied migration already reloads the cache by itself —
+# verified by running `supabase db reset`, applying all six migrations
+# with no NOTIFY at all, and finding PostgREST served the new tables
+# and RPCs immediately.
+#
+# It is kept anyway, deliberately: it costs one connection and
+# milliseconds, it is the only thing standing between "a migration ran"
+# and "the tests can see it" if those triggers are ever dropped,
+# disabled or absent on some other target, and the failure it prevents
+# (every test failing as though a migration were missing) is expensive
+# to diagnose. Do not remove it on the grounds that it looks redundant
+# — it is redundant here, on purpose.
+#
+# Composed with psycopg's `sql.Literal` rather than hand-quoted: NOTIFY
+# takes a string literal, not a bind parameter, and this keeps the
+# recipe free of nested quotes that make/sh would have to fight over.
 test-db-migrate:
 	@url=$$(supabase status -o env --override-name db.url=DATABASE_URL 2>/dev/null \
 		| grep '^DATABASE_URL=' | cut -d'"' -f2); \
