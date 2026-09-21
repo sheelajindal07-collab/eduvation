@@ -6,9 +6,11 @@ name: CI
 # docs/DECISIONS.md). test-db is live and required (has been since QA-2
 # stood up the local Supabase stack this job's repo secrets point at) and
 # is never allowed to silently skip in CI. test-e2e stays commented out
-# below until a UI exists to drive it (Lite Build Pack §9 milestones M1+);
-# enabling it early would just fail red for lack of a target, which is
-# noise, not signal.
+# below not for lack of a UI (the guest journey and reviewer console both
+# exist and pass locally today, zero skips — see STATUS.md) but for lack
+# of a CI job: it needs its own Supabase-stack + Playwright-browser setup,
+# separate from lint-typecheck-test's dependency install. Tracked as
+# QA-5, not yet built.
 #
 # SEC-7: dependencies install only from the hashed, pinned lockfile
 # (requirements-dev.lock, generated for Linux/py3.11 to match this
@@ -76,11 +78,13 @@ jobs:
 
       - name: DB/RLS policy tests
         run: pytest tests/db -v
-        # Skips cleanly (with a printed reason) until SUPABASE_URL,
-        # SUPABASE_PUBLISHABLE_KEY and SUPABASE_SERVICE_ROLE_KEY are set as
-        # repo secrets against a real staging project — see
-        # db/migrations/README.md. Never silently green for a check that
-        # didn't run: a skip prints in the job log, it isn't hidden.
+        # SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY and SUPABASE_SERVICE_ROLE_KEY
+        # are set as repo secrets, against the real (staging) Supabase
+        # project — see db/migrations/README.md — so this actually runs,
+        # every push. If those secrets were ever unset, this would skip
+        # cleanly with a printed reason rather than fail; never silently
+        # green for a check that didn't run: a skip prints in the job log,
+        # it isn't hidden.
 
       # - name: E2E tests (Playwright)
       #   run: make test-e2e

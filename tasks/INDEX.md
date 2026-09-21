@@ -54,7 +54,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] DATA-12 - Migration 0007: DB-gated demo mode for synthetic data [W2]
 - [x] DATA-8 - Synthetic seed script [W2]
 - [ ] DEPLOY-2 - Environment contract, hosting docs (its hosting facts for `docs/DECISIONS.md`/`STATUS.md` come back as proposed lines; the lead drafts D13/D16 in DOCS-5, not here) [W2]
-- [ ] DEPLOY-3 - Dockerfile, install from requirements.lock, make build, CI image build [W2]
+- [x] DEPLOY-3 - Dockerfile, install from requirements.lock, make build, CI image build [W2]
 - [ ] DEPLOY-4 - Compose file and nginx site templates [W2]
 - [ ] DEPLOY-15 - Behind-proxy and config hardening; refuse unknown sign-up flag names [W2]
 - [ ] DEPLOY-7 - Bring up private staging on the VM, owner-only [W2-W3, owner, days 8-10]
