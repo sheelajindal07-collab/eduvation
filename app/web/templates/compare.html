@@ -110,6 +110,26 @@
               </h3>
               {{ field_value(c.fields["location"]) }}
             </div>
+
+            {# A student finishing a 3-way comparison must be able to
+               keep going on ANY of the compared pathways, not just
+               backtrack to Explore -- one Requirements link per
+               pathway shown, continuing this same screen's journey.
+               Only when the pathway is actually known (has a resolved
+               name): a well-formed but nonexistent pathway_id is never
+               specially handled elsewhere on this screen either, and
+               the raw id must never leak into the rendered page (same
+               convention the heading above already follows). #}
+            {% if c.pathway_id in pathway_names %}
+              <div class="border-t border-charcoal/10 pt-4">
+                <a
+                  href="/requirements/view?pathway_id={{ c.pathway_id }}"
+                  class="text-accent underline text-sm font-medium"
+                >
+                  See requirements for {{ pathway_names[c.pathway_id] }}
+                </a>
+              </div>
+            {% endif %}
           </div>
         </section>
       {% endfor %}

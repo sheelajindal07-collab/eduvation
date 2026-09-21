@@ -119,6 +119,37 @@ class TestDomicileIn:
         result = criterion.check(EligibilityInput(domicile_state=None))
         assert result.outcome == EligibilityOutcome.insufficient_information
 
+    def test_meets_is_case_insensitive(self) -> None:
+        """domicile_state is a bare text input (app/web/templates/
+        requirements.html), so a plausible capitalisation mismatch
+        ('delhi' vs the published 'Delhi') must not silently produce a
+        hard does_not_meet."""
+        criterion = domicile_in(frozenset({"Gujarat"}))
+        result = criterion.check(EligibilityInput(domicile_state="gujarat"))
+        assert result.outcome == EligibilityOutcome.meets
+
+    def test_meets_ignores_surrounding_whitespace(self) -> None:
+        criterion = domicile_in(frozenset({"Gujarat"}))
+        result = criterion.check(EligibilityInput(domicile_state="  Gujarat  "))
+        assert result.outcome == EligibilityOutcome.meets
+
+    def test_allowed_state_list_itself_is_matched_case_insensitively(self) -> None:
+        """The normalisation applies to both sides -- a published state
+        list authored in an unexpected case must still match the
+        student's differently-cased answer."""
+        criterion = domicile_in(frozenset({"GUJARAT"}))
+        result = criterion.check(EligibilityInput(domicile_state="Gujarat"))
+        assert result.outcome == EligibilityOutcome.meets
+
+    def test_explanation_shows_original_casing_not_normalised_form(self) -> None:
+        """The normalisation is comparison-only -- display text still
+        shows what was actually published/entered."""
+        criterion = domicile_in(frozenset({"Gujarat"}))
+        result = criterion.check(EligibilityInput(domicile_state="Maharashtra"))
+        assert result.outcome == EligibilityOutcome.does_not_meet
+        assert "Gujarat" in result.explanation
+        assert "Maharashtra" in result.explanation
+
 
 class TestEvaluateEligibilityPriority:
     """The combination logic across multiple criteria — this is where a

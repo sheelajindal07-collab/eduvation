@@ -135,8 +135,8 @@ def compute_timeline(
         if overlap:
             if previous is None:
                 raise ValueError(
-                    f"Stage {stage.name!r} declares overlap_weeks_with_previous={overlap} "
-                    "but is the first stage — there is no previous stage to overlap."
+                    f"{stage.name!r} can't overlap with a previous stage — "
+                    "it's the first one, so there's nothing before it."
                 )
             assert previous.duration_weeks is not None
             if overlap > previous.duration_weeks or overlap > stage.duration_weeks:

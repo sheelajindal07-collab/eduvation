@@ -46,6 +46,24 @@
     @apply bg-neutral-bg text-neutral border border-dashed border-neutral;
   }
 
+  /* Eligibility outcome (app/rules/eligibility.py's three outcomes --
+     a different, three-value vocabulary from the five trust labels
+     above, so it gets its own component rather than overloading
+     trust-badge with meanings it was never designed for. Same "text +
+     icon, never colour alone" rule (docs/UI.md). */
+  .eligibility-badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium;
+  }
+  .eligibility-badge--meets {
+    @apply bg-positive-bg text-positive;
+  }
+  .eligibility-badge--does_not_meet {
+    @apply bg-danger-bg text-danger;
+  }
+  .eligibility-badge--insufficient_information {
+    @apply bg-neutral-bg text-neutral;
+  }
+
   .card {
     @apply bg-white rounded-lg shadow-sm border border-neutral/20 p-5;
   }
@@ -75,5 +93,25 @@
   }
   .alert--neutral {
     @apply bg-neutral-bg border-neutral/30 text-charcoal;
+  }
+
+  /* docs/UI.md component set: "inputs" is one of the frozen components
+     -- one shared look for every plain-HTML form field across the app,
+     rather than each new template inventing its own input styling. */
+  .field-label {
+    @apply block text-sm font-medium text-charcoal mb-1;
+  }
+  /* ux-qa-reviewer finding: text-sm (20px line-height) + the old py-2
+     (0.5rem) plus the 1px border computed to ~38px total height, short
+     of the 44px touch-target minimum .btn-primary/.btn-secondary
+     already meet. py-3 (0.75rem) clears it (~46px) -- same "bump
+     padding to clear the minimum" treatment already given to the
+     reviewer console's `.input` class. */
+  .field-input {
+    @apply w-full rounded-md border border-charcoal/30 px-3 py-3 text-sm text-charcoal
+           focus:outline-none focus:ring-2 focus:ring-accent;
+  }
+  .field-hint {
+    @apply text-xs text-neutral mt-1;
   }
 }

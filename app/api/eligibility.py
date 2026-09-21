@@ -31,7 +31,8 @@ from pydantic import BaseModel
 from supabase import Client
 
 from app.api.deps import get_db_client
-from app.data.models import ClaimStatus, Source, SourceType
+from app.data.models import Claim, ClaimStatus, Source, SourceType
+from app.planning.comparison import trust_label_for_claim
 from app.rules.eligibility import (
     Criterion,
     EligibilityInput,
@@ -55,6 +56,28 @@ def _row_to_source(row: dict[str, Any]) -> Source:
         authority_name=row["authority_name"],
         official_url=row["official_url"],
         source_type=SourceType(row["source_type"]),
+    )
+
+
+def _row_to_claim(row: dict[str, Any]) -> Claim:
+    """Identical to app/api/compare.py's helper of the same name — same
+    file-local convention as `_row_to_source` above. Needed to call
+    app/planning/comparison.py's `trust_label_for_claim()`, which takes a
+    real `Claim`, not the raw row dict this route already has on hand."""
+    return Claim(
+        id=row["id"],
+        entity_type=row["entity_type"],
+        entity_id=row["entity_id"],
+        field=row["field"],
+        value=row["value"],
+        source_id=row["source_id"],
+        verification_date=row["verification_date"],
+        verifier=row["verifier"],
+        status=ClaimStatus(row["status"]),
+        review_due_date=row["review_due_date"],
+        superseded_by=row.get("superseded_by"),
+        approved_draft_version=row.get("approved_draft_version"),
+        extracted_by=row.get("extracted_by", "human"),
     )
 
 
@@ -93,6 +116,21 @@ class CriterionResultOut(BaseModel):
     on the pathway, so resolving the source it points at costs one more
     query, not a design change, the same `_row_to_source`/`sources_by_id`
     shape `app/api/compare.py` already uses."""
+    trust_label: str | None = None
+    """docs/UI.md's five-value trust-label vocabulary (checked_against_
+    official_source / institution_reported / needs_rechecking /
+    not_available / estimate — see app/web/templates/_trust_badge.html's
+    `trust_badge()` macro) for the underlying claim this criterion is
+    based on. Deliberately separate from `outcome` above: `outcome` says
+    whether the STUDENT's input meets the requirement; `trust_label` says
+    how much the requirement ITSELF (the fact `check_eligibility` is
+    checking against) should be trusted — e.g. a criterion can `meet`
+    while its source is `needs_rechecking`, and the student should see
+    both. Computed by the same `trust_label_for_claim()` the Compare
+    screen uses (app/planning/comparison.py), not a second copy of that
+    logic. `None` only when the criterion has no `source_claim_id` at all
+    (does not happen for any criterion `_criteria_from_claims` below
+    builds, but a defensive default all the same)."""
 
 
 class EligibilityResponse(BaseModel):
@@ -190,10 +228,16 @@ def check_eligibility(
     )
 
     result = evaluate_eligibility(criteria, student)
+    as_of = date.today()
     criteria_out = []
     for c in result.criteria:
         claim_row = published_claims_by_id.get(c.source_claim_id) if c.source_claim_id else None
         source = sources_by_id.get(claim_row["source_id"]) if claim_row else None
+        trust_label = (
+            trust_label_for_claim(_row_to_claim(claim_row), source, as_of=as_of).value
+            if claim_row
+            else None
+        )
         criteria_out.append(
             CriterionResultOut(
                 name=c.name,
@@ -203,6 +247,7 @@ def check_eligibility(
                 source_authority=source.authority_name if source else None,
                 source_url=_safe_source_url(source),
                 verification_date=claim_row["verification_date"] if claim_row else None,
+                trust_label=trust_label,
             )
         )
     return EligibilityResponse(outcome=result.outcome.value, criteria=criteria_out)
