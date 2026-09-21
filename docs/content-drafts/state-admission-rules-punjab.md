@@ -16,8 +16,7 @@ row below directly into the facts/records tables. No rank predictions,
 are made here — named assumptions and ranges only, in line with project
 rules.
 
-Research date: 2026-09-21. Researcher: automated agent (session run for
-carohitjin@gmail.com), web search only, no student data used or seen.
+Research date: 2026-09-21. Researcher: automated agent, web search only, no student data used or seen.
 
 Methodology note: this session's web-search tool had already exhausted its
 call budget (shared across earlier state-profile research runs in the same

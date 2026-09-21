@@ -15,8 +15,7 @@ suitability judgments ("you are/are not suited"), personality-type labels
 or guarantees are made here, in line with project rules — figures are
 ranges and named assumptions only.
 
-Research date: 2026-09-21. Researcher: automated agent (session run for
-carohitjin@gmail.com), web search only, no student data used or seen.
+Research date: 2026-09-21. Researcher: automated agent, web search only, no student data used or seen.
 
 ---
 

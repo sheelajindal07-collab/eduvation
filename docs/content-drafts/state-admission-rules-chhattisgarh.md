@@ -15,8 +15,7 @@ no "you are/are not suited" language, and no personality-type labels or
 guarantees are made here, in line with project rules — only named
 assumptions and ranges where a figure could not be pinned down exactly.
 
-Research date: 2026-09-21. Researcher: automated agent (session run for
-carohitjin@gmail.com), web search only, no student data used or seen.
+Research date: 2026-09-21. Researcher: automated agent, web search only, no student data used or seen.
 
 Scope note: this file covers state-level admissions *infrastructure* for
 Chhattisgarh (which bodies exist and what they do), mirroring the depth of

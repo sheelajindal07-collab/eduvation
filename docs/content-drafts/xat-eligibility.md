@@ -13,8 +13,7 @@ before it can be published or used to answer a student. Do not insert any
 row below directly into the facts/records tables. No rank predictions or
 suitability judgments are made here, in line with project rules.
 
-Research date: 2026-09-21. Researcher: automated agent (session run for
-carohitjin@gmail.com), web search only, no student data used or seen.
+Research date: 2026-09-21. Researcher: automated agent, web search only, no student data used or seen.
 
 Note on method this session: the session's live web-search tool was
 exhausted (quota used up) before this topic could be researched, so all

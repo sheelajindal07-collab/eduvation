@@ -17,8 +17,7 @@ level up from institution-specific research such as
 `gujarat-institutions.md`/`gujcet-eligibility.md`), per the all-India pilot
 scope widening recorded in `docs/DECISIONS.md` (2026-09-21 entry).
 
-Research date: 2026-09-21. Researcher: automated agent (session run for
-carohitjin@gmail.com), web search only, no student data used or seen.
+Research date: 2026-09-21. Researcher: automated agent, web search only, no student data used or seen.
 
 **Session tooling note:** this session's general web-search tool reached its
 call budget before this file's research began, so all findings below come
