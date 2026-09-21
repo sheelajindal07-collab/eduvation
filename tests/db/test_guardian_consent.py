@@ -30,6 +30,7 @@ from app.api.guardian_consent import create_guardian_consent_request
 from app.db import get_anon_client, get_user_scoped_client
 from app.main import app
 from app.notifications.logging_sender import LoggingEmailSender
+from tests.db.conftest import run_email, run_name
 
 client = TestClient(app)
 
@@ -64,7 +65,7 @@ def confirmed_adult(admin_client: Client) -> Iterator[dict[str, str]]:
     """A real, pre-confirmed 18+ user — mirrors test_api_auth.py's own
     `registered_user`, kept separate here so this file has no import-time
     dependency on that one."""
-    email = f"bcion-consent-adult-{uuid.uuid4().hex[:12]}@example.com"
+    email = run_email("consent-adult", domain="example.com")
     password = "correct-horse-battery-staple-adult-1"
     created = admin_client.auth.admin.create_user(
         {"email": email, "password": password, "email_confirm": True}
@@ -86,7 +87,7 @@ def confirmed_minor(admin_client: Client) -> Iterator[dict[str, str]]:
     `student_accounts`/`guardian_consents` cascade-delete with the user
     (on delete cascade, db/migrations/0004_guardian_consent.sql), same
     pattern the `reviewer` fixture already relies on for `reviewers`."""
-    email = f"bcion-consent-minor-{uuid.uuid4().hex[:12]}@example.com"
+    email = run_email("consent-minor", domain="example.com")
     guardian_email = f"bcion-guardian-{uuid.uuid4().hex[:12]}@example.com"
     password = "correct-horse-battery-staple-minor-1"
     created = admin_client.auth.admin.create_user(
@@ -115,7 +116,7 @@ class TestAdultSignUpAndSignInUnchanged:
     def test_18_plus_sign_up_reports_active_and_immediately_usable(
         self, admin_client: Client
     ) -> None:
-        email = f"bcion-consent-signup-adult-{uuid.uuid4().hex[:12]}@example.com"
+        email = run_email("consent-signup-adult", domain="example.com")
         response = client.post(
             "/auth/sign-up",
             json={
@@ -164,7 +165,7 @@ class TestAdultSignUpAndSignInUnchanged:
 
 class TestUnder18SignUpValidation:
     def test_under_18_sign_up_without_guardian_email_is_rejected(self) -> None:
-        email = f"bcion-consent-nogte-{uuid.uuid4().hex[:12]}@example.com"
+        email = run_email("consent-nogte", domain="example.com")
         response = client.post(
             "/auth/sign-up",
             json={
@@ -186,7 +187,7 @@ class TestUnder18SignUpValidation:
         self-confirm instantly. Checked case-insensitively (mixed-case
         variant) since Supabase Auth itself treats email case-
         insensitively."""
-        email = f"bcion-consent-selfguardian-{uuid.uuid4().hex[:12]}@example.com"
+        email = run_email("consent-selfguardian", domain="example.com")
         response = client.post(
             "/auth/sign-up",
             json={
@@ -211,7 +212,7 @@ class TestUnder18SignUpValidation:
         self-confirm -- the exact defeat the check above exists to
         prevent, just via a different-looking string. See
         `app.api.auth._normalize_email_for_self_check`."""
-        email = f"bcion-consent-plustag-{uuid.uuid4().hex[:12]}@example.com"
+        email = run_email("consent-plustag", domain="example.com")
         local, _, domain = email.partition("@")
         response = client.post(
             "/auth/sign-up",
@@ -236,7 +237,7 @@ class TestUnder18SignUpValidation:
         genuinely different guardian address that merely happens to
         contain a dot must still be accepted, not wrongly rejected as
         'the same email'."""
-        email = f"bcion-consent-dotguardian-{uuid.uuid4().hex[:12]}@example.com"
+        email = run_email("consent-dotguardian", domain="example.com")
         local, _, domain = email.partition("@")
         guardian_email = f"{local}.guardian@{domain}"
         response = client.post(
@@ -273,7 +274,7 @@ class TestUnder18SignUpValidation:
         EmailSender-was-actually-called assertion is covered separately
         below (TestCreateGuardianConsentRequest), where it isn't
         ambiguous which branch ran."""
-        email = f"bcion-consent-pending-{uuid.uuid4().hex[:12]}@example.com"
+        email = run_email("consent-pending", domain="example.com")
         guardian_email = f"bcion-guardian-{uuid.uuid4().hex[:12]}@example.com"
         response = client.post(
             "/auth/sign-up",
@@ -843,7 +844,7 @@ def seeded_pathway_for_guardian_tests(admin_client: Client) -> Iterator[dict[str
     established this pattern)."""
     career = (
         admin_client.table("careers")
-        .insert({"name": "Guardian-consent test career (SYNTHETIC)"})
+        .insert({"name": run_name("Guardian-consent test career (SYNTHETIC)")})
         .execute()
         .data[0]
     )
@@ -852,7 +853,7 @@ def seeded_pathway_for_guardian_tests(admin_client: Client) -> Iterator[dict[str
         .insert(
             {
                 "career_id": career["id"],
-                "name": "Guardian-consent test pathway (SYNTHETIC)",
+                "name": run_name("Guardian-consent test pathway (SYNTHETIC)"),
                 "description": "Seeded by tests/db/test_guardian_consent.py",
             }
         )

@@ -21,6 +21,8 @@ import pytest
 from postgrest.exceptions import APIError
 from supabase import Client
 
+from tests.db.conftest import run_name
+
 TODAY = date.today()
 DUE = TODAY + timedelta(days=365)
 
@@ -35,7 +37,7 @@ def official_source(admin_client: Client) -> Iterator[str]:
         admin_client.table("sources")
         .insert(
             {
-                "authority_name": "MAKER-CHECKER TEST FIXTURE (official)",
+                "authority_name": run_name("MAKER-CHECKER TEST FIXTURE (official)"),
                 "official_url": "https://example.invalid/maker-checker-test-source",
                 "source_type": "official",
             }
@@ -55,7 +57,7 @@ def _draft_payload(source_id: str, created_by: str | None, **overrides: object) 
         "value": 50000,
         "source_id": source_id,
         "verification_date": TODAY.isoformat(),
-        "verifier": "test-fixture-reviewer",
+        "verifier": run_name("test-fixture-reviewer"),
         "review_due_date": DUE.isoformat(),
         "status": "draft",
         "created_by": created_by,

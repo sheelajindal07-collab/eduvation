@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from supabase import Client
 
 from app.main import app
+from tests.db.conftest import run_name
 
 client = TestClient(app)
 
@@ -39,7 +40,7 @@ def seeded_pathway(
     """
     career = (
         admin_client.table("careers")
-        .insert({"name": "API test career (SYNTHETIC)"})
+        .insert({"name": run_name("API test career (SYNTHETIC)")})
         .execute()
         .data[0]
     )
@@ -48,7 +49,7 @@ def seeded_pathway(
         .insert(
             {
                 "career_id": career["id"],
-                "name": "API test pathway (SYNTHETIC)",
+                "name": run_name("API test pathway (SYNTHETIC)"),
                 "description": "Seeded by tests/db/test_api_explore_compare.py",
             }
         )
@@ -65,7 +66,7 @@ def seeded_pathway(
                 "value": "should never be visible to a guest",
                 "source_id": synthetic_source,
                 "verification_date": "2026-01-01",
-                "verifier": "test-fixture",
+                "verifier": run_name("test-fixture"),
                 "status": "draft",
                 "review_due_date": "2099-01-01",
             }
@@ -137,7 +138,7 @@ class TestComparePathways:
             .insert(
                 {
                     "career_id": seeded_pathway["career"]["id"],
-                    "name": "second API test pathway (SYNTHETIC)",
+                    "name": run_name("second API test pathway (SYNTHETIC)"),
                     "description": "Seeded by tests/db/test_api_explore_compare.py",
                 }
             )
@@ -175,7 +176,7 @@ class TestComparePathways:
             admin_client.table("sources")
             .insert(
                 {
-                    "authority_name": "API TEST OFFICIAL SOURCE (fixture)",
+                    "authority_name": run_name("API TEST OFFICIAL SOURCE (fixture)"),
                     "official_url": "https://example.invalid/official-test-source",
                     "source_type": "official",
                 }
@@ -188,7 +189,7 @@ class TestComparePathways:
             .insert(
                 {
                     "career_id": seeded_pathway["career"]["id"],
-                    "name": "third API test pathway (SYNTHETIC)",
+                    "name": run_name("third API test pathway (SYNTHETIC)"),
                     "description": "Seeded by tests/db/test_api_explore_compare.py",
                 }
             )
@@ -205,7 +206,7 @@ class TestComparePathways:
                     "value": 75000,
                     "source_id": official_source["id"],
                     "verification_date": "2026-09-01",
-                    "verifier": "test-fixture-reviewer",
+                    "verifier": run_name("test-fixture-reviewer"),
                     "status": "published",
                     "review_due_date": "2099-01-01",
                 }
@@ -247,7 +248,7 @@ class TestComparePathways:
             admin_client.table("sources")
             .insert(
                 {
-                    "authority_name": "API TEST OFFICIAL SOURCE (net_to_arrange)",
+                    "authority_name": run_name("API TEST OFFICIAL SOURCE (net_to_arrange)"),
                     "official_url": "https://example.invalid/official-test-source-2",
                     "source_type": "official",
                 }
@@ -260,7 +261,7 @@ class TestComparePathways:
             .insert(
                 {
                     "career_id": seeded_pathway["career"]["id"],
-                    "name": "fourth API test pathway (SYNTHETIC)",
+                    "name": run_name("fourth API test pathway (SYNTHETIC)"),
                     "description": "Seeded by tests/db/test_api_explore_compare.py",
                 }
             )
@@ -277,7 +278,7 @@ class TestComparePathways:
                     "value": 100000,
                     "source_id": official_source["id"],
                     "verification_date": "2026-09-01",
-                    "verifier": "test-fixture-reviewer",
+                    "verifier": run_name("test-fixture-reviewer"),
                     "status": "published",
                     "review_due_date": "2099-01-01",
                 }
@@ -359,7 +360,7 @@ class TestReviewerNeverSeesADraftClaimEitherAppLayerNotJustRLS:
             .insert(
                 {
                     "career_id": seeded_pathway["career"]["id"],
-                    "name": "reviewer-visibility test pathway (SYNTHETIC)",
+                    "name": run_name("reviewer-visibility test pathway (SYNTHETIC)"),
                     "description": "Seeded by tests/db/test_api_explore_compare.py",
                 }
             )

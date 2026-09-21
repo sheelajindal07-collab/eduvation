@@ -13,7 +13,6 @@ under-18/guardian-consent-specific tests live in
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Iterator
 from typing import Any
 
@@ -22,7 +21,7 @@ from fastapi.testclient import TestClient
 from supabase import Client
 
 from app.main import app
-from tests.db.conftest import target_is_localhost
+from tests.db.conftest import run_email, run_name, target_is_localhost
 
 client = TestClient(app)
 
@@ -75,7 +74,7 @@ def registered_user(admin_client: Client) -> Iterator[dict[str, str]]:
     sign-in without depending on the project's email-confirmation
     setting (sign-up itself is tested separately, tolerant of either
     setting)."""
-    email = f"bcion-authtest-{uuid.uuid4().hex[:12]}@example.com"
+    email = run_email("authtest", domain="example.com")
     password = "correct-horse-battery-staple-1"
     created = admin_client.auth.admin.create_user(
         {"email": email, "password": password, "email_confirm": True}
@@ -172,7 +171,7 @@ class TestSignUp:
         `over_request_rate_limit`, confirmed live 2026-09-19) and not
         every variant's message necessarily contains that exact
         substring — the status code doesn't have that ambiguity."""
-        email = f"bcion-signuptest-{uuid.uuid4().hex[:12]}@example.com"
+        email = run_email("signuptest", domain="example.com")
         response = client.post(
             "/auth/sign-up",
             json={
@@ -267,7 +266,7 @@ class TestSignUp:
 def seeded_pathway_for_migration(admin_client: Client) -> Iterator[dict[str, Any]]:
     career = (
         admin_client.table("careers")
-        .insert({"name": "Migration test career (SYNTHETIC)"})
+        .insert({"name": run_name("Migration test career (SYNTHETIC)")})
         .execute()
         .data[0]
     )
@@ -276,7 +275,7 @@ def seeded_pathway_for_migration(admin_client: Client) -> Iterator[dict[str, Any
         .insert(
             {
                 "career_id": career["id"],
-                "name": "Migration test pathway (SYNTHETIC)",
+                "name": run_name("Migration test pathway (SYNTHETIC)"),
                 "description": "Seeded by tests/db/test_api_auth.py",
             }
         )
@@ -376,7 +375,7 @@ class TestSignUpWithPendingPlan:
     def test_sign_up_with_pending_plan_migrates_it_in_one_request(
         self, admin_client: Client, seeded_pathway_for_migration: dict[str, Any]
     ) -> None:
-        email = f"bcion-migrationtest-{uuid.uuid4().hex[:12]}@example.com"
+        email = run_email("migrationtest", domain="example.com")
         response = client.post(
             "/auth/sign-up",
             json={

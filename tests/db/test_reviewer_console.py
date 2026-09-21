@@ -25,6 +25,7 @@ from supabase import Client
 
 from app.main import app
 from app.web.reviewer_pages import COOKIE_NAME
+from tests.db.conftest import run_email, run_name
 
 client = TestClient(app)
 
@@ -44,7 +45,7 @@ def official_source(admin_client: Client) -> Iterator[str]:
         admin_client.table("sources")
         .insert(
             {
-                "authority_name": "REVIEWER CONSOLE TEST OFFICIAL SOURCE",
+                "authority_name": run_name("REVIEWER CONSOLE TEST OFFICIAL SOURCE"),
                 "official_url": "https://example.invalid/reviewer-console-test-source",
                 "source_type": "official",
             }
@@ -63,7 +64,7 @@ def reviewer_credentials(admin_client: Client) -> Iterator[dict[str, str]]:
     fine for tests that only need an already-authenticated client), the
     sign-in tests below need to actually POST credentials through the
     HTML form."""
-    email = f"bcion-reviewerconsole-{uuid.uuid4().hex[:12]}@example.com"
+    email = run_email("reviewerconsole", domain="example.com")
     # ux-qa-reviewer finding, 2026-09-21 (LOW, security-adjacent): this
     # used to be a fixed, hardcoded password, unlike every other
     # real-Supabase-Auth-user fixture in this suite (official_source
@@ -90,7 +91,7 @@ def _draft_payload(source_id: str, created_by: str, **overrides: object) -> dict
         "value": 77000,
         "source_id": source_id,
         "verification_date": TODAY.isoformat(),
-        "verifier": "reviewer-console-test-fixture",
+        "verifier": run_name("reviewer-console-test-fixture"),
         "review_due_date": DUE,
         "status": "draft",
         "created_by": created_by,

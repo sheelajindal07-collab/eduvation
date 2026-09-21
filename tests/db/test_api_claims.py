@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from supabase import Client
 
 from app.main import app
+from tests.db.conftest import run_name
 
 client = TestClient(app)
 
@@ -31,7 +32,7 @@ def official_source(admin_client: Client) -> Iterator[str]:
         admin_client.table("sources")
         .insert(
             {
-                "authority_name": "API TEST OFFICIAL SOURCE (claims)",
+                "authority_name": run_name("API TEST OFFICIAL SOURCE (claims)"),
                 "official_url": "https://example.invalid/claims-api-test-source",
                 "source_type": "official",
             }
@@ -51,7 +52,7 @@ def _create_payload(source_id: str, **overrides: object) -> dict:
         "value": 42000,
         "source_id": source_id,
         "verification_date": TODAY.isoformat(),
-        "verifier": "test-fixture-reviewer",
+        "verifier": run_name("test-fixture-reviewer"),
         "review_due_date": DUE,
     }
     payload.update(overrides)

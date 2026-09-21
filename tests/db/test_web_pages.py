@@ -15,8 +15,16 @@ from fastapi.testclient import TestClient
 from supabase import Client
 
 from app.main import app
+from tests.db.conftest import run_name
 
 client = TestClient(app)
+
+# QA-3: these two literals are asserted verbatim further down (not read
+# back off the fixture's own returned dict, unlike every career/pathway
+# name in this file), so each is tagged exactly once, here, and reused —
+# never re-typed — everywhere it must match.
+_SOME_COLLEGE_NAME = run_name("Some College (web UI test)")
+_REQUIREMENTS_SOURCE_NAME = run_name("WEB UI REQUIREMENTS TEST SOURCE (fixture)")
 
 
 @pytest.fixture
@@ -24,14 +32,17 @@ def two_pathways(
     admin_client: Client, synthetic_source: str
 ) -> Iterator[dict[str, Any]]:
     career = (
-        admin_client.table("careers").insert({"name": "Web UI test career"}).execute().data[0]
+        admin_client.table("careers")
+        .insert({"name": run_name("Web UI test career")})
+        .execute()
+        .data[0]
     )
     pathway_a = (
         admin_client.table("pathways")
         .insert(
             {
                 "career_id": career["id"],
-                "name": "Web UI test pathway A",
+                "name": run_name("Web UI test pathway A"),
                 "description": "Seeded by tests/db/test_web_pages.py",
             }
         )
@@ -43,7 +54,7 @@ def two_pathways(
         .insert(
             {
                 "career_id": career["id"],
-                "name": "Web UI test pathway B",
+                "name": run_name("Web UI test pathway B"),
                 "description": "Seeded by tests/db/test_web_pages.py",
             }
         )
@@ -54,7 +65,7 @@ def two_pathways(
         admin_client.table("sources")
         .insert(
             {
-                "authority_name": "WEB UI TEST OFFICIAL SOURCE",
+                "authority_name": run_name("WEB UI TEST OFFICIAL SOURCE"),
                 "official_url": "https://example.invalid/web-ui-test-source",
                 "source_type": "official",
             }
@@ -72,7 +83,7 @@ def two_pathways(
                 "value": 85000,
                 "source_id": official_source["id"],
                 "verification_date": "2026-09-01",
-                "verifier": "test-fixture-reviewer",
+                "verifier": run_name("test-fixture-reviewer"),
                 "status": "published",
                 "review_due_date": "2099-01-01",
             }
@@ -242,7 +253,7 @@ class TestComparePage:
             admin_client.table("sources")
             .insert(
                 {
-                    "authority_name": "Some College (web UI test)",
+                    "authority_name": _SOME_COLLEGE_NAME,
                     "official_url": "https://example.invalid/institution-web-test",
                     "source_type": "institution_self_declared",
                 }
@@ -260,7 +271,7 @@ class TestComparePage:
                     "value": "Ahmedabad",
                     "source_id": institution_source["id"],
                     "verification_date": "2026-09-01",
-                    "verifier": "test-fixture-reviewer",
+                    "verifier": run_name("test-fixture-reviewer"),
                     "status": "published",
                     "review_due_date": "2099-01-01",
                 }
@@ -279,7 +290,7 @@ class TestComparePage:
                 },
             )
             assert response.status_code == 200
-            assert "Some College (web UI test)" in response.text
+            assert _SOME_COLLEGE_NAME in response.text
             assert "(institution-reported)" in response.text
         finally:
             admin_client.table("claims").delete().eq("id", claim["id"]).execute()
@@ -311,7 +322,7 @@ class TestComparePage:
                     "value": distinctive_value,
                     "source_id": synthetic_source,
                     "verification_date": "2026-01-01",
-                    "verifier": "test-fixture",
+                    "verifier": run_name("test-fixture"),
                     "status": "draft",
                     "review_due_date": "2099-01-01",
                 }
@@ -349,7 +360,7 @@ def requirements_pathway(
         admin_client.table("sources")
         .insert(
             {
-                "authority_name": "WEB UI REQUIREMENTS TEST SOURCE (fixture)",
+                "authority_name": _REQUIREMENTS_SOURCE_NAME,
                 "official_url": "https://example.invalid/requirements-web-ui-source",
                 "source_type": "official",
             }
@@ -359,7 +370,7 @@ def requirements_pathway(
     )
     career = (
         admin_client.table("careers")
-        .insert({"name": "Requirements web UI test career (SYNTHETIC)"})
+        .insert({"name": run_name("Requirements web UI test career (SYNTHETIC)")})
         .execute()
         .data[0]
     )
@@ -368,7 +379,7 @@ def requirements_pathway(
         .insert(
             {
                 "career_id": career["id"],
-                "name": "Requirements web UI test pathway (SYNTHETIC)",
+                "name": run_name("Requirements web UI test pathway (SYNTHETIC)"),
                 "description": "Seeded by tests/db/test_web_pages.py",
             }
         )
@@ -392,7 +403,7 @@ def requirements_pathway(
                     "value": value,
                     "source_id": official_source["id"],
                     "verification_date": "2026-09-01",
-                    "verifier": "test-fixture-reviewer",
+                    "verifier": run_name("test-fixture-reviewer"),
                     "status": "published",
                     "review_due_date": "2099-01-01",
                 }
@@ -431,7 +442,7 @@ class TestRequirementsPage:
         assert "Minimum marks percentage" in response.text
         assert "Required subjects" in response.text
         assert "Not yet known" in response.text
-        assert "WEB UI REQUIREMENTS TEST SOURCE (fixture)" in response.text
+        assert _REQUIREMENTS_SOURCE_NAME in response.text
 
     def test_matching_student_inputs_shows_meets(
         self, requirements_pathway: dict[str, Any]
@@ -520,7 +531,7 @@ class TestRequirementsPage:
                     "value": "Gujarat",
                     "source_id": requirements_pathway["source"]["id"],
                     "verification_date": "2026-09-01",
-                    "verifier": "test-fixture-reviewer",
+                    "verifier": run_name("test-fixture-reviewer"),
                     "status": "published",
                     "review_due_date": "2099-01-01",
                 }
@@ -556,7 +567,7 @@ class TestRequirementsPage:
                     "value": "Gujarat",
                     "source_id": requirements_pathway["source"]["id"],
                     "verification_date": "2026-09-01",
-                    "verifier": "test-fixture-reviewer",
+                    "verifier": run_name("test-fixture-reviewer"),
                     "status": "published",
                     "review_due_date": "2099-01-01",
                 }
