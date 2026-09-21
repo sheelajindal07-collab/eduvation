@@ -130,8 +130,16 @@ class TestExploreAndCompareJourney:
         page.goto(f"{live_server}/explore")
 
         expect(page.locator("h1")).to_have_text("Explore")
-        expect(page.get_by_text(two_seeded_pathways["pathway_a"]["name"])).to_be_visible()
-        expect(page.get_by_text(two_seeded_pathways["pathway_b"]["name"])).to_be_visible()
+        # exact=True: each pathway card also carries a "See requirements
+        # for <name>" link (app/web/templates/explore.html) whose text
+        # contains the pathway name as a substring -- a non-exact match
+        # is ambiguous between the two.
+        expect(
+            page.get_by_text(two_seeded_pathways["pathway_a"]["name"], exact=True)
+        ).to_be_visible()
+        expect(
+            page.get_by_text(two_seeded_pathways["pathway_b"]["name"], exact=True)
+        ).to_be_visible()
         assert page_errors == []
 
     def test_selecting_two_pathways_and_submitting_reaches_compare_view(
@@ -164,48 +172,114 @@ class TestExploreAndCompareJourney:
         assert page_errors == []
 
 
-class TestRequirementsAndTimelinePagesNotBuiltYet:
-    """docs' own backlog (tasks/BCI-006.md "Not done yet") describes a
-    Requirements screen (built from `GET /eligibility`) and a Timeline/
-    cost-calculator screen (built from `POST /timeline`) -- but as of
-    this task, NEITHER has an actual route. `app/web/pages.py` registers
-    only `/`, `/explore` and `/compare/view` (confirmed by reading that
-    file and app/main.py's router list, and cross-checked against every
-    other active worktree this session -- no /requirements/view or
-    /timeline/view exists anywhere yet, in this repo or in flight
-    elsewhere). This task is test-infrastructure-only (no app/ or
-    template changes), so these routes are not built here either.
+@pytest.fixture
+def eligibility_pathway(admin_client: Client) -> Iterator[dict[str, Any]]:
+    """A career + pathway with one published minimum_age=17 claim on a
+    real official source -- mirrors tests/db/test_api_eligibility.py's
+    fixture of the same name, kept minimal since this suite's job is
+    proving the page renders in a real browser, not re-proving every
+    criterion/outcome combination (already thorough at the HTTP level
+    in tests/db/test_web_pages.py's TestRequirementsPage)."""
+    official_source = (
+        admin_client.table("sources")
+        .insert(
+            {
+                "authority_name": "E2E TEST ELIGIBILITY SOURCE (fixture)",
+                "official_url": "https://example.invalid/e2e-eligibility-source",
+                "source_type": "official",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    career = (
+        admin_client.table("careers")
+        .insert({"name": "E2E eligibility test career"})
+        .execute()
+        .data[0]
+    )
+    pathway = (
+        admin_client.table("pathways")
+        .insert(
+            {
+                "career_id": career["id"],
+                "name": "E2E eligibility test pathway",
+                "description": "Seeded by tests/e2e/test_smoke.py",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    claim = (
+        admin_client.table("claims")
+        .insert(
+            {
+                "entity_type": "Pathway",
+                "entity_id": pathway["id"],
+                "field": "minimum_age",
+                "value": "17",
+                "source_id": official_source["id"],
+                "verification_date": "2026-09-01",
+                "verifier": "e2e-smoke-test-fixture",
+                "status": "published",
+                "review_due_date": "2099-01-01",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    yield {"career": career, "pathway": pathway, "claim": claim}
+    admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+    admin_client.table("pathways").delete().eq("id", pathway["id"]).execute()
+    admin_client.table("careers").delete().eq("id", career["id"]).execute()
+    admin_client.table("sources").delete().eq("id", official_source["id"]).execute()
 
-    Writing a "smoke test" against a route that 404s on every single run
-    would not be a genuine test -- it would always fail for a reason
-    that has nothing to do with what this file exists to catch. Skipped
-    instead, with a reason a human can act on, rather than either faked
-    or silently dropped (CLAUDE.md: "never claim a test passed without
-    having run it" cuts the other way too -- never claim one is testing
-    something it structurally cannot). The underlying JSON APIs these
-    pages would render are already fully live-tested:
-    tests/db/test_api_eligibility.py and tests/unit/test_api_timeline.py.
-    Un-skip and fill these in once app/web/pages.py actually grows the
-    routes.
+
+class TestRequirementsAndTimelineJourney:
+    """/requirements/view and /timeline/view landed after this suite's
+    first version (which correctly skipped them -- see git history for
+    that commit's reasoning). Un-skipped and filled in now that both
+    routes are real (app/web/pages.py's requirements_page/timeline_page).
     """
 
-    @pytest.mark.skip(
-        reason="/requirements/view does not exist yet -- no route registered in "
-        "app/web/pages.py as of this task. See this class's docstring."
-    )
     def test_requirements_view_loads_and_shows_the_criteria_list(
-        self, page: Page, live_server: str
+        self, page: Page, live_server: str, eligibility_pathway: dict[str, Any]
     ) -> None:
-        raise NotImplementedError
+        page_errors: list[str] = []
+        page.on("pageerror", lambda exc: page_errors.append(str(exc)))
 
-    @pytest.mark.skip(
-        reason="/timeline/view does not exist yet -- no route registered in "
-        "app/web/pages.py as of this task. See this class's docstring."
-    )
+        page.goto(f"{live_server}/requirements/view?pathway_id={eligibility_pathway['pathway']['id']}")
+
+        expect(page.locator("h1")).to_have_text("Requirements")
+        expect(page.get_by_text("Minimum age", exact=False)).to_be_visible()
+
+        # Fill in a matching age and resubmit via the plain GET form --
+        # the zero-JS "shareable URL" journey this page is built around.
+        page.locator("#age").fill("18")
+        page.get_by_role("button", name="Check my eligibility").click()
+        page.wait_for_url("**/requirements/view*age=18*")
+        expect(page.get_by_text("Meets this requirement", exact=False)).to_be_visible()
+        assert page_errors == []
+
     def test_timeline_view_computes_a_total_from_one_filled_stage(
         self, page: Page, live_server: str
     ) -> None:
-        raise NotImplementedError
+        page_errors: list[str] = []
+        page.on("pageerror", lambda exc: page_errors.append(str(exc)))
+
+        page.goto(f"{live_server}/timeline/view")
+        expect(page.locator("h1")).to_have_text("Timeline calculator")
+
+        page.locator("#stage_name_1").fill("Class 12")
+        page.locator("#stage_duration_weeks_1").fill("52")
+        page.get_by_role("button", name="Calculate timeline").click()
+
+        expect(page.get_by_text("52 weeks")).to_be_visible()
+        # The form re-renders pre-filled with what was submitted, not
+        # blank -- the whole point of this screen's "edit and resubmit"
+        # loop (docs/UI.md "assumptions editable without re-entering").
+        expect(page.locator("#stage_name_1")).to_have_value("Class 12")
+        assert page_errors == []
 
 
 class TestReviewerConsoleZeroJsJourney:
