@@ -5,6 +5,57 @@ never deleted.
 
 ---
 
+## 2026-09-22 — CSRF for cookie sessions: Origin check, Referer fallback, fail closed
+**Decision.** A state-changing request (POST/PUT/PATCH/DELETE) that carries one
+of this app's session cookies is rejected with 403 unless every origin-declaring
+header it sends names a host in `ALLOWED_HOSTS` (`Settings.allowed_hosts_list`,
+the same list `TrustedHostMiddleware` uses), and it sends at least one. `Origin`
+is the primary; `Referer` is the fallback for browsers that omit `Origin` on a
+same-site navigation. When BOTH are present both are checked — a disagreement is
+a rejection, not "whichever one passes". A cookie-bearing POST with NEITHER
+header is rejected: fail closed, never fail open. `Origin: null` has no host and
+falls under the same rule.
+**Why no CSRF token.** The reviewer console's forms are deliberately zero-JS, so
+there is no client-side script to carry a per-session token into a hidden field,
+and inventing one would mean giving up the zero-JS requirement. `SameSite=Lax`
+on the cookie stays the first defence; this is the second, for what SameSite
+does not cover (a client that ignores the attribute, a same-site different-host
+subdomain, any future relaxation of the cookie's flags). The reviewer cookie's
+flags are UNCHANGED by SEC-2 — SameSite=Lax, HttpOnly, Secure in production only.
+**Shape.** `app/core/csrf.py`'s `require_same_origin(*cookie_names)` returns a
+FastAPI dependency, applied per route rather than as middleware, because these
+routes must also read the session. SEC-1's `OriginCheckMiddleware` keeps the same
+rule for the future `bcion_student_session`; the dependency is never more
+permissive than it, and a unit test pins that so the two cannot drift. Merging
+them is a one-line follow-up for whichever task next owns `app/main.py`.
+**Sign-in is deliberately not gated.** The sign-in POST does not yet carry the
+cookie — it is the request that creates it — so the guard is a no-op there;
+gating it would lock reviewers out of signing in, which is worse than the login
+CSRF it would prevent. The dependency is still attached, so an already-signed-in
+session re-posting the form IS checked. `POST /reviewer/sign-out` is deliberately
+unguarded (forced sign-out alters no verified data and is the escape hatch if a
+client ever holds a cookie but sends no Origin).
+**Two operational consequences worth recording.** (1) `ALLOWED_HOSTS` must list
+EXACT hostnames — `TrustedHostMiddleware` understands `*.example.com` and this
+check deliberately does not, so a wildcard entry passes the Host check and fails
+the origin check (closed, but it will look like "the console stopped accepting
+posts"). (2) SEC-1 sets `Referrer-Policy: no-referrer` app-wide, so real browsers
+send no `Referer` to this app at all: `Origin` is the header actually doing the
+work, and the `Referer` fallback is for clients and intermediaries that behave
+differently.
+**Error surfaces carry codes, not prose.** `/reviewer/queue?error=` was a
+URL-encoded free-text message reproduced verbatim in an authenticated page's
+error alert — no markup injection (Jinja autoescapes) but a ready-made
+text-injection/phishing surface. It is now a short code looked up in a fixed
+dict; an unrecognised code renders a generic message. The code is the contract,
+the message is not, matching `docs/CONTRACTS.md`'s error shape.
+**Verified live, not just written:** revert-to-prove on both changes (guard
+removed → a forged cross-origin POST really does publish a claim, confirmed by
+reading the row back independently, not just checking the status code; error map
+reverted → the two reflection tests fail). 856 unit / 319 db tests passing in
+the branch's own worktree before merge; 320 db tests passing against the shared
+local stack after merge.
+
 ## 2026-09-22 — RULES-10's Money type: a fee claim with no currency now shows as unavailable, not INR
 **Event:** RULES-10 (cost engine multi-component sums, merged today) also
 built the `Money(amount, currency)` type `docs/CONTRACTS.md`'s "Money and

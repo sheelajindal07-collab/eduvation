@@ -108,7 +108,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] CONSENT-2 - Owner names safeguarding people and the non-author reviewer [W0, owner, day 3]
 - [x] AUTH-1 - Session, guest and plan-store contract (owner explicit yes) [W1, contract burst]
 - [x] CONSENT-3 - Consent and safeguarding design doc (placeholders; human read follows) [W1, contract burst]
-- [ ] SEC-2 - CSRF contract for cookie sessions [W2]
+- [x] SEC-2 - CSRF contract for cookie sessions [W2]
 - [x] AUTH-4 - Migration 0009: guest server session [W2]
 - [x] AUTH-5 - Migration 0010: next actions, plan validation [W2]
 - [ ] AUTH-6 - My Plan and Save controls, guest mode, new files only, cross-user lines [W3a]
