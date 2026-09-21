@@ -53,6 +53,28 @@ class Settings(BaseSettings):
 
     n8n_webhook_url: str | None = Field(default=None)
 
+    # --- Guardian-consent confirmation link (app/api/guardian_consent.py) ---
+    # Needed to build an absolute GET /consent/confirm?token=... URL for
+    # the guardian email — a relative path alone means nothing in an
+    # email client. Defaults to local dev; set to the real public origin
+    # once one exists (docs/DECISIONS.md "Public domain").
+    app_base_url: str = Field(default="http://localhost:8000")
+
+    # --- Email sending (app/notifications/) ---
+    # No real provider is configured anywhere in this codebase yet — see
+    # app/notifications/logging_sender.py. These fields exist so
+    # app/notifications/smtp_sender.py's SmtpEmailSender can be
+    # constructed once the owner provisions a real SMTP relay (any
+    # provider's SMTP endpoint — SendGrid/SES/Mailgun/Resend/etc. all
+    # expose one), mirroring gemini_api_key's own "field exists, value
+    # unset until the owner provisions the account" shape above. All
+    # unset today; the app boots and every test passes without them.
+    smtp_host: str | None = Field(default=None)
+    smtp_port: int = Field(default=587)
+    smtp_username: str | None = Field(default=None)
+    smtp_password: str | None = Field(default=None)
+    smtp_from_address: str | None = Field(default=None)
+
     @property
     def db_configured(self) -> bool:
         """Whether Supabase is provisioned yet (see docs/DECISIONS.md)."""
@@ -62,6 +84,14 @@ class Settings(BaseSettings):
     def ai_configured(self) -> bool:
         """Whether the AI provider adapter can make live calls."""
         return bool(self.gemini_api_key)
+
+    @property
+    def email_configured(self) -> bool:
+        """Whether a real SmtpEmailSender can be constructed. False in
+        every environment today — see app/notifications/logging_sender.py
+        for what actually runs instead, and STATUS.md for the owner
+        action needed before this flips true anywhere."""
+        return bool(self.smtp_host and self.smtp_username and self.smtp_password)
 
 
 @lru_cache
