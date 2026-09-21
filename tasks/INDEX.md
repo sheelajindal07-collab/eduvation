@@ -81,7 +81,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] RULES-4 - RuleSet, registry, cycle and jurisdiction guard, honest empty result [W2]
 - [x] RULES-5 - Reference exam module: NEET-UG [W2]
 - [x] RULES-6 - JEE Main and GUJCET modules (one implementer) [W2]
-- [ ] RULES-10 - Itemised cost, Money type, public `safe_source_url` [W2]
+- [x] RULES-10 - Itemised cost, Money type, public `safe_source_url` [W2] -- Money type + multi-component sums done and verified live; `safe_source_url` is still 3 separate private copies (comparison.py, eligibility.py, reviewer/queue.py), not yet consolidated to one public helper -- left for SCOPE-4, which needs it next anyway (see docs/DECISIONS.md 2026-09-22)
 - [x] SEC-5 - Move eligibility inputs out of URLs [W2]
 - [x] SCOPE-5 - State/UT and country code list, domicile select [W2]
 - [ ] UI-5 - Career card and pathway detail page [W3a]

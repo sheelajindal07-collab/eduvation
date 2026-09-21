@@ -5,6 +5,40 @@ never deleted.
 
 ---
 
+## 2026-09-22 — RULES-10's Money type: a fee claim with no currency now shows as unavailable, not INR
+**Event:** RULES-10 (cost engine multi-component sums, merged today) also
+built the `Money(amount, currency)` type `docs/CONTRACTS.md`'s "Money and
+currency" section had already settled, including its explicit rule: a
+claim with a null `currency` renders `not_available` rather than being
+assumed INR. Confirmed by running the full `tests/db` suite live before
+pushing (not just trusting the merge): exactly one test failure,
+`test_net_to_arrange_is_computed_live_and_assumption_is_editable`, whose
+own fixture claim never set `currency` and expected the old
+assume-a-total behaviour. Fixed by setting `currency: "INR"` on that
+fixture — the correct fix, not a workaround, since a real reviewer
+verifying an INR fee would now need to record that too.
+**Consequence for content, not code:** `db/migrations/0008_jurisdiction_currency.sql`
+deliberately gives `currency` no backfill default (unlike `jurisdiction`,
+which does default existing rows to `IN`) — so **every fee-shaped claim
+written from here on must have `currency` set at write time**, or its
+`net_to_arrange`/total will correctly, silently show as unavailable
+rather than a wrong number. This is not a live-content regression today
+— `STATUS.md`'s "Not claimed" section already states nothing real has
+been published as a verified fact yet, only synthetic fixtures — but it
+is a real requirement for whoever builds the content-import path next
+(`CONTENT-6`/`PUB-2` and later, per the plan) and for `scripts/
+seed_synthetic.py`, which already passes `currency="INR"` on its own fee
+fixtures and needs no change.
+**Also disclosed, not yet fixed:** a null-currency claim's OWN display
+field (`cost.verified_charges`, built by the still-untouched
+`assemble_cost_breakdown`/`ProgrammeCostBreakdown` path) still shows its
+normal trust label even when the computed total next to it is
+unavailable — a visible inconsistency a student would see, pinned by a
+new regression test (`test_a_fee_claim_with_no_currency_makes_
+net_to_arrange_unavailable`) so SCOPE-4 has a failing case to turn green
+when it unifies the two display paths, per its own scoped job in the
+CONTRACTS.md note above.
+
 ## 2026-09-22 — Shell-lane follow-ups closed; PUB-5 unblocks the reviewer-auth serial chain
 **Event:** Two disclosed gaps from the Shell lane merge closed same day:
 `app/web/consent_pages.py` now imports the one shared Jinja environment
