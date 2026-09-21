@@ -302,7 +302,13 @@ content/design pass.
    move toward public reachability.
 2. **Public domain** — hold until item 1 is resolved. Once it is, send a
    domain/subdomain and I'll add an nginx site.
-3. **Pilot state** — still assumed Gujarat, confirm or correct.
+3. **Pilot scope widened (2026-09-21, resolved)** — admission rules now
+   all-India (was one-state/Gujarat), plus foreign/study-abroad pathways
+   for Indian students added as new scope. See `docs/DECISIONS.md`
+   2026-09-21. **Open follow-up**: whether the numeric ceilings (20–30
+   career families, 50–100 programme records, 12-week schedule) also
+   change or whether the wider scope is phased in within them — not yet
+   answered.
 4. **Named content reviewers**, **Gemini model** — not blocking.
 
 ## Content drafts — NEET (UG) added and cross-checked (2026-09-19)

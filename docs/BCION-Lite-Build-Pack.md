@@ -20,12 +20,13 @@ Lite is Phase −2 of the national plan. It produces what Phase 0 asks for anywa
 | Exams | 8–10: JEE Main, NEET-UG, GUJCET, CUET-UG, CLAT, NDA, SSC CGL, IBPS PO, GPSC Class 1–2, plus one on demand | A rule function with test cases per exam |
 | Programme records | 50–100 with sourced fees, seats and admission route | Government institutions in the pilot state first, plus NIRF top-50 nationally |
 | Scholarships | 10–20 | State schemes plus NSP and PM Vidyalaxmi |
-| Admission rules | One state, in detail | Gujarat if confirmed: Gujarat board, GUJCET, ACPC, ACPUGMEC, GCAS; verify current names and rules |
+| Admission rules | All-India (2026-09-21, supersedes one-state) | Each state's board/counselling body verified independently; sourcing volume is the long pole — see `docs/DECISIONS.md` 2026-09-21 |
+| Foreign pathways | New (2026-09-21) | Study-abroad routes for Indian students; no schema support yet — foreign fee currencies, visa/entry requirements, non-Indian source verification all undesigned |
 | Languages | English and Hindi; Roman-script Hindi accepted as input | Critical content reviewed in both; Gujarati UI strings only if the cohort is Gujarati-medium |
 
 First vertical slice: three careers, two exams, five programmes as unmistakably synthetic fixtures. Synthetic records never appear as verified facts.
 
-**Left out.** Mock tests, social features, native apps, inbound WhatsApp bot, voice, lender integrations, psychometric scoring, autonomous web research, counselling service, national coverage, paid rankings.
+**Left out.** Mock tests, social features, native apps, inbound WhatsApp bot, voice, lender integrations, psychometric scoring, autonomous web research, counselling service, paid rankings. (National coverage was here; removed 2026-09-21 per `docs/DECISIONS.md` — admission rules are now all-India.)
 
 ## 3. Decisions taken from the four source documents
 

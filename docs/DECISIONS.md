@@ -5,6 +5,37 @@ never deleted.
 
 ---
 
+## 2026-09-21 — Pilot scope widened: all-India admission rules, foreign
+## pathways for Indian students added — supersedes the one-state build pack
+**Event:** Owner decided, in response to a direct question, to widen Lite's
+scope beyond `docs/BCION-Lite-Build-Pack.md` section 2 as originally written:
+1. **Admission rules go all-India**, replacing "one state, in detail
+   (Gujarat if confirmed)". The build pack's "Left out" list explicitly named
+   "national coverage" as out of scope for the pilot — that line is now
+   superseded and removed.
+2. **Foreign/study-abroad pathways for Indian students are new pilot scope**
+   — not present anywhere in the original build pack, data model, or DPR
+   Lite tab. Previously undiscussed.
+**Reason:** owner's direct call on pilot ambition, not a technical finding.
+**What this does NOT change (not asked, not assumed):** the 10–100
+user/25-session load ceiling; the 20–30 career-family and 50–100
+programme-record ceilings; the AI/consent/publishing non-negotiables in
+CLAUDE.md; the FastAPI/Supabase/no-Next.js stack pin. These ceilings were
+sized against a one-state pilot — all-India admission rules alone (36
+states/UTs, each with its own board, counselling body and quota rules) is a
+materially larger sourcing/verification workload than the build pack's
+12-week schedule assumed, and foreign pathways add a second content
+category (foreign fee currencies, visa/entry requirements, non-Indian
+source verification) with no schema support yet. **Flagging for the owner,
+not deciding unilaterally:** the career-family/programme-record ceilings
+and the 12-week/16-step schedule in build-pack section 9 likely need
+revisiting given this scope; not touched here since that wasn't asked.
+**Owner action needed:** confirm whether the pilot's numeric ceilings
+(career families, programme records, timeline) should also change, or
+whether all-India + foreign scope is meant to be phased in gradually within
+the existing ceilings (e.g. widen state coverage incrementally rather than
+all 36 at once).
+
 ## 2026-09-20 — Migration 0003 applied: M4 genuinely verified, 4 real test
 ## bugs found and fixed (none in the trigger/migration itself)
 **Event:** Owner applied `db/migrations/0003_maker_checker.sql` to the
