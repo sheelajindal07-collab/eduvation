@@ -59,6 +59,10 @@ class Settings(BaseSettings):
 
     ai_provider: str = Field(default="gemini")  # docs/DECISIONS.md, owner-confirmed 2026-09-19
     gemini_api_key: str | None = Field(default=None)
+    ai_model: str | None = Field(default=None)
+    ai_max_input_tokens: int | None = Field(default=None)
+    ai_max_output_tokens: int | None = Field(default=None)
+    ai_per_account_daily_cap: int | None = Field(default=None)
     ai_monthly_spend_cap_inr: int = Field(default=5000)
     ai_request_timeout_seconds: int = Field(default=15)
     # Pilot-scale spend guard (app/ai/budget.py) — a request count, not a
