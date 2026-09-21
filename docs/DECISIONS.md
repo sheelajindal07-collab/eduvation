@@ -5,6 +5,36 @@ never deleted.
 
 ---
 
+## 2026-09-21 — Rule approval lives in git JSON, not a database table —
+## a stated deviation from build pack section 6
+**Event:** the Wave 1 contract burst (`docs/CONTRACTS.md` "Rule approval
+lives in git JSON") settled a conflict it found and flagged for the lead
+to decide, rather than deciding it itself: build pack section 6 says
+"Rule functions are reviewed, versioned and cite their source" without
+specifying the versioning mechanism, and the existing `RuleSet`/case-table
+design (`app/rules/`, `tests/unit/test_eligibility.py`) already stores an
+exam's approved rule case table as a JSON file reviewed in a pull request,
+not a database row.
+**Decision:** keep it that way. A rule set's approved version is a
+reviewed, committed JSON case table; `rule_version` on a `RuleSet` is that
+file's own declared version string; changing a rule is a reviewed PR,
+never a runtime edit through any console.
+**Reason:** git already gives an immutable, attributable, diffable
+approval trail for free. A `rule_versions` database table (as one reading
+of build pack section 6 might imply) would need its own maker-checker
+console, migration, and RLS policies for a mechanism this pilot's scale
+does not need — 8-10 exams, each reviewed by a person before merge, not a
+live-editable catalogue.
+**What this does NOT change:** claims about facts (fees, eligibility
+criteria's cited source, deadlines) still go through the real
+maker-checker publishing workflow (`0003_maker_checker.sql`,
+`app/api/claims.py`) exactly as before — this decision is scoped to the
+rule *logic* (the Python function and its JSON case table), not the
+factual claims that logic operates on.
+**Deferred, not decided:** a formal `rule_versions` table remains possible
+later (tracked as task RULES-18) if the pilot's scale or a reviewer
+workflow ever needs it; nothing here forecloses that.
+
 ## 2026-09-21 — Guardian-consent gate mechanism decided and built —
 ## closes the CRITICAL gap flagged 2026-09-19, not yet fully live
 **Event:** Owner decided the mechanism for the consent gate CLAUDE.md and

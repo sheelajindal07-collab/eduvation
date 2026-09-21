@@ -112,7 +112,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] AUTH-4 - Migration 0009: guest server session [W2]
 - [ ] AUTH-5 - Migration 0010: next actions, plan validation [W2]
 - [ ] AUTH-6 - My Plan and Save controls, guest mode, new files only, cross-user lines [W3a]
-- [ ] CONSENT-4 - Migration 0014: consent gate tables, fail-closed RLS (after the human read) [W4, else float]
+- [ ] CONSENT-4 - Migration 0014: **card text is stale, rewrite before carding** — the merged guardian-consent gate (0004-0006) already created `account_status`; this task now EXTENDS that enum additively (`frozen`, `deletion_due`) and adds the admission axis (`admitted_at`, `is_admitted()`, invite redemption via `pilot_invites`/`redeem_invite`) — see `docs/CONSENT.md` sections 2-4 for the full, already-settled design. Its RLS must gate `saved_plans`/`student_profiles` writes on `is_admitted()` (`docs/CONSENT.md` §7) [W4, else float]
 - [ ] AUTH-2 - Student cookie session [float]
 - [ ] AUTH-3 - Sign-in, sign-up (flagged off), sign-out pages [float]
 - [ ] AUTH-14 - My Plan signed-in mode, `needs_review` banner [float]
@@ -156,7 +156,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 ## Step 10 Real pilot dataset (M4) - OPEN (drafts only)
 - [ ] CONTENT-1 - Owner names editor, checker, corrections owner [W0, owner, day 3]
 - [ ] TRIAL-7 - Open the editor-hours log [W0, owner, day 4]
-- [ ] CONTENT-2 - Import contract: CSV templates, closed vocabulary, hash rule [W1, contract burst]
+- [~] CONTENT-2 - Import contract: CSV templates, closed vocabulary, hash rule — **contract half done** (the content-hash field list and source_version rule are frozen in `docs/CONTRACTS.md` "Publishing evidence in Phase 1"); **artefacts still open**: `docs/CONTENT-IMPORT.md`, `content/templates/claims_import.csv`, `content/templates/sources_register.csv`, the closed `field` vocabulary — deliberately left outside the contract-burst agent's owned files, needs its own small session before CONTENT-3 [W1, contract burst]
 - [ ] CONTENT-3 - Offline draft extractor and inventory [W1]
 - [ ] QA-12 - Sweep test residue out of the live project (before DATA-10a) [W2]
 - [ ] CONTENT-4 - Source register and allow-list checker (`make content-check`) [W2-W3, mixed]
