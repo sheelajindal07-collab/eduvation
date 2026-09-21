@@ -10,11 +10,14 @@ simulation -- `tests/db/test_web_pages.py` and
 *correct* at the HTTP-request level; nothing before this directory ever
 launched a real browser at all.
 
-Same as `tests/db/conftest.py`, this needs a real, configured Supabase
-project (careers/pathways/claims to seed, a real reviewer to sign in as)
-to be genuinely useful, so this whole directory skips cleanly, with a
-clear reason, when that project isn't configured -- never silently
-"passes" a check that didn't run. Mirrors that file's skip-reason style
+Same as `tests/db/conftest.py`, this needs a real, configured database
+(careers/pathways/claims to seed, a real reviewer to sign in as) to be
+genuinely useful -- since QA-2 that means the local, throwaway
+`supabase start` stack, and the target guard below refuses to let this
+directory run against anything that isn't loopback. It skips cleanly,
+with a clear reason, when no stack is configured -- never silently
+"passes" a check that didn't run -- or fails outright under
+BCION_REQUIRE_LIVE=1. Mirrors that file's skip-reason style
 rather than reusing its `pytest_collection_modifyitems` hook directly:
 this hook's own skip reason is e2e-specific (a real running app + a real
 browser, not just RLS-scoped queries), and none of `tests/db/conftest

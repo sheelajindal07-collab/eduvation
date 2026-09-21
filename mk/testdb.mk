@@ -23,8 +23,11 @@
 #     make test-db-reset   # wipe the database and re-apply migrations
 
 TEST_ENV_FILE ?= .env.test
+# Both the combined log and the short-lived per-suite logs are named
+# `*.log`, which .gitignore already covers — so `make verify` leaves
+# nothing untracked behind and needs no new ignore rule.
 VERIFY_LOG ?= verify.log
-VERIFY_DIR ?= .verify
+VERIFY_LOG_PREFIX ?= verify-
 
 # How `supabase status` field names map onto this repo's variable names
 # (.env.example / app/core/config.py). Note `auth.anon_key`, NOT the
@@ -162,28 +165,32 @@ print('PostgREST schema cache reloaded')"
 #
 # $(1) = short label, $(2) = command to run.
 define bcion_verify_suite
-	@mkdir -p $(VERIFY_DIR); \
-	if $(2) > $(VERIFY_DIR)/$(1).log 2>&1; then status=PASS; else status=FAIL; fi; \
-	summary=$$(grep -aE '(passed|failed|error|skipped|no tests ran|All checks passed)' $(VERIFY_DIR)/$(1).log \
+	@log=$(VERIFY_LOG_PREFIX)$(1).log; \
+	if $(2) > $$log 2>&1; then status=PASS; else status=FAIL; fi; \
+	summary=$$(grep -aE '(passed|failed|error|skipped|no tests ran|All checks passed)' $$log \
 		| tail -1 | sed -e 's/^[= ]*//' -e 's/[= ]*$$//'); \
 	if [ -z "$$summary" ]; then summary="(no summary line; see $(VERIFY_LOG))"; fi; \
 	if [ "$$status" = PASS ] && echo "$$summary" | grep -q 'skipped' \
 		&& ! echo "$$summary" | grep -qE '[0-9]+ passed'; then status=SKIP; fi; \
 	printf '%-6s %-5s %s\n' '$(1)' "$$status" "$$summary"; \
 	{ printf '\n===================== %s (%s) =====================\n' '$(1)' "$$status"; \
-	  cat $(VERIFY_DIR)/$(1).log; } >> $(VERIFY_LOG); \
+	  cat $$log; } >> $(VERIFY_LOG); \
 	if [ "$$status" = FAIL ]; then \
-		echo "--- $(1) output ---"; cat $(VERIFY_DIR)/$(1).log; echo "--- end $(1) ---"; \
-		touch $(VERIFY_DIR)/failed; \
-	fi
+		echo "--- $(1) output ---"; cat $$log; echo "--- end $(1) ---"; \
+		echo '$(1)' >> $(VERIFY_LOG_PREFIX)failures.log; \
+	fi; \
+	rm -f $$log
 endef
 
 verify:
-	@rm -rf $(VERIFY_DIR); mkdir -p $(VERIFY_DIR); : > $(VERIFY_LOG)
+	@rm -f $(VERIFY_LOG_PREFIX)failures.log; : > $(VERIFY_LOG)
 	@echo "verify — full logs: $(VERIFY_LOG)"
 	$(call bcion_verify_suite,lint,ruff check app tests)
 	$(call bcion_verify_suite,unit,pytest tests/unit -q)
 	$(call bcion_verify_suite,db,pytest tests/db -q)
 	$(call bcion_verify_suite,e2e,pytest tests/e2e -q)
-	@if [ -e $(VERIFY_DIR)/failed ]; then echo "verify: FAILED"; exit 1; fi
+	@if [ -e $(VERIFY_LOG_PREFIX)failures.log ]; then \
+		echo "verify: FAILED —" $$(tr '\n' ' ' < $(VERIFY_LOG_PREFIX)failures.log); \
+		rm -f $(VERIFY_LOG_PREFIX)failures.log; exit 1; \
+	fi
 	@echo "verify: all suites green"
