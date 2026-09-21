@@ -121,6 +121,82 @@ class TestExplorePage:
         assert two_pathways["pathway_a"]["name"] in response.text
         assert two_pathways["pathway_b"]["name"] in response.text
 
+    def test_skip_link_is_the_first_focusable_element(self) -> None:
+        """A11Y-2 acceptance: the skip link must be the FIRST focusable
+        element in rendered HTML order (not just present somewhere in the
+        markup) -- a keyboard/screen-reader user's very first Tab must
+        reach it before the header wordmark, session state or nav.
+        Works regardless of whether any careers are seeded -- base.html's
+        skip link renders on every page."""
+        response = client.get("/explore")
+        assert response.status_code == 200
+        focusable = re.findall(
+            r"<(?:a|button|input|select|textarea|summary)\b[^>]*>", response.text
+        )
+        assert focusable, "expected at least one focusable element on the page"
+        assert focusable[0].startswith('<a href="#main"')
+
+    def test_no_careers_shows_the_empty_state_with_role_status(self) -> None:
+        """A11Y-2: explore.html's own empty copy ("No careers published
+        yet...") now renders through _states.html's `empty_state()`
+        macro, which the task requires to carry role="status"
+        (informational -- nothing failed), never role="alert". Forced via
+        a dependency override rather than relying on the shared local
+        stack actually having zero careers -- never guaranteed, since
+        STATUS.md notes this repo is sometimes run by more than one
+        concurrent session."""
+        from app.api.deps import get_db_client
+
+        class _EmptyResult:
+            data: list[Any] = []
+
+        class _EmptyQuery:
+            def execute(self) -> _EmptyResult:
+                return _EmptyResult()
+
+        class _EmptyTable:
+            def select(self, *args: Any, **kwargs: Any) -> _EmptyQuery:
+                return _EmptyQuery()
+
+        class _EmptyDbClient:
+            def table(self, name: str) -> _EmptyTable:
+                return _EmptyTable()
+
+        def _override() -> Iterator[Any]:
+            yield _EmptyDbClient()
+
+        app.dependency_overrides[get_db_client] = _override
+        try:
+            response = client.get("/explore")
+        finally:
+            app.dependency_overrides.pop(get_db_client, None)
+        assert response.status_code == 200
+        assert "No careers published yet" in response.text
+        assert 'role="status"' in response.text
+        assert "<script" not in response.text
+
+    def test_explore_script_is_external_not_inline_and_selection_count_is_live(
+        self, two_pathways: dict[str, Any]
+    ) -> None:
+        """A11Y-2: explore.html's compare-selection progressive
+        enhancement moved out of an inline <script> into
+        app/static/js/explore-select.js (a pre-existing flagged
+        CSP-tightening follow-up -- app/main.py's own comment on
+        `_CONTENT_SECURITY_POLICY` names this exact script). Every
+        <script> tag left on this page must be external (a `src`
+        attribute, no inline body); `#selection-count` is now a live
+        region so a screen-reader user hears the count change too, not
+        only a sighted one."""
+        response = client.get("/explore")
+        assert response.status_code == 200
+        script_bodies = re.findall(r"<script\b[^>]*>(.*?)</script>", response.text, re.DOTALL)
+        assert script_bodies, "expected at least one <script> tag once careers are seeded"
+        for body in script_bodies:
+            assert body.strip() == "", "a <script> tag on this page has an inline body"
+        assert '<script src="/static/js/explore-select.js">' in response.text
+        assert 'id="selection-count"' in response.text
+        assert 'aria-live="polite"' in response.text
+
 
 class TestComparePage:
     def test_wrong_pathway_count_shows_a_friendly_message_not_a_bare_error(
@@ -132,6 +208,19 @@ class TestComparePage:
         assert response.status_code == 200
         assert "Pick 2 or 3 pathways" in response.text
         assert "Back to explore" in response.text
+
+    def test_wrong_pathway_count_error_alert_has_role_alert(
+        self, two_pathways: dict[str, Any]
+    ) -> None:
+        """A11Y-2: the hand-rolled `.alert alert--caution` on this screen
+        now renders through _states.html's `alert()` macro, which must
+        carry role="alert" for a user-actionable error like this one
+        (docs/UI.md State-pattern table)."""
+        response = client.get(
+            "/compare/view", params={"pathway_id": [two_pathways["pathway_a"]["id"]]}
+        )
+        assert response.status_code == 200
+        assert 'role="alert"' in response.text
 
     def test_malformed_pathway_id_shows_the_friendly_message_not_a_500(self) -> None:
         """ux-qa-reviewer finding, 2026-09-19: a truncated/garbled shared
@@ -527,6 +616,33 @@ class TestRequirementsPage:
         )
         assert response.status_code == 200
         assert "doesn&#39;t point to a valid pathway" in response.text
+
+    def test_missing_pathway_id_error_alert_has_role_alert(self) -> None:
+        """A11Y-2: same role="alert" requirement as compare.html's
+        equivalent error alert, now that both render through the same
+        shared `alert()` macro."""
+        response = client.get("/requirements/view")
+        assert response.status_code == 200
+        assert 'role="alert"' in response.text
+
+    def test_no_published_requirements_shows_the_empty_state_with_role_status(
+        self, two_pathways: dict[str, Any]
+    ) -> None:
+        """A11Y-2: requirements.html's own empty copy ("No published
+        eligibility requirements yet for this pathway") now renders
+        through _states.html's `empty_state()` macro, which must carry
+        role="status" (informational -- nothing failed), not
+        role="alert". `two_pathways["pathway_b"]` has zero claims of any
+        kind (the fixture's only claim is on pathway_a), so this
+        pathway's criteria list is deterministically empty regardless of
+        anything else in the shared local stack."""
+        response = client.get(
+            "/requirements/view",
+            params={"pathway_id": two_pathways["pathway_b"]["id"]},
+        )
+        assert response.status_code == 200
+        assert "No published eligibility requirements yet for this pathway." in response.text
+        assert 'role="status"' in response.text
 
     def test_criteria_show_trust_label_alongside_the_eligibility_outcome(
         self, requirements_pathway: dict[str, Any]

@@ -8,6 +8,8 @@ live in tests/unit/, not tests/db/.
 
 from __future__ import annotations
 
+import re
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -24,6 +26,19 @@ class TestTimelinePageGet:
         assert 'name="stage_duration_weeks_1"' in response.text
         # No result section yet -- nothing has been submitted.
         assert "Missing a duration for" not in response.text
+
+    def test_skip_link_is_the_first_focusable_element(self) -> None:
+        """A11Y-2 acceptance: the skip link must be the FIRST focusable
+        element in rendered HTML order (not just present somewhere in the
+        markup) -- base.html renders it on every page, including this
+        fully stateless one."""
+        response = client.get("/timeline/view")
+        assert response.status_code == 200
+        focusable = re.findall(
+            r"<(?:a|button|input|select|textarea|summary)\b[^>]*>", response.text
+        )
+        assert focusable, "expected at least one focusable element on the page"
+        assert focusable[0].startswith('<a href="#main"')
 
 
 class TestTimelinePagePost:
@@ -106,6 +121,25 @@ class TestTimelinePagePost:
         # Still the same editable form, not a crash page.
         assert 'name="stage_name_1"' in response.text
         assert 'value="Stage A"' in response.text
+
+    def test_overlap_error_alert_has_role_alert(self) -> None:
+        """A11Y-2: this screen's hand-rolled `.alert alert--caution` now
+        renders through _states.html's `alert()` macro, which must carry
+        role="alert" for a user-actionable error like this one."""
+        response = client.post(
+            "/timeline/view",
+            data={
+                "stage_name_1": "Stage A",
+                "stage_duration_weeks_1": "4",
+                "stage_required_1": "on",
+                "stage_name_2": "Stage B",
+                "stage_duration_weeks_2": "10",
+                "stage_required_2": "on",
+                "stage_overlap_weeks_with_previous_2": "20",
+            },
+        )
+        assert response.status_code == 200
+        assert 'role="alert"' in response.text
 
     def test_parallel_activity_is_shown_but_never_added_to_the_total(self) -> None:
         response = client.post(

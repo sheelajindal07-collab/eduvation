@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_states.html" import alert %}
 {% block title %}Timeline calculator &mdash; BCION Lite{% endblock %}
 {% block content %}
   <h1 class="text-2xl font-semibold text-charcoal mb-2">Timeline calculator</h1>
@@ -9,10 +10,7 @@
   </p>
 
   {% if error %}
-    <div class="alert alert--caution mb-6">
-      <span aria-hidden="true">&#9888;</span>
-      <span>{{ error }}</span>
-    </div>
+    {{ alert(error, variant="caution", class_names="mb-6") }}
   {% endif %}
 
   {% if result %}

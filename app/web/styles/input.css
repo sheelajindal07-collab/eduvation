@@ -18,6 +18,21 @@
   body {
     @apply bg-warm-white text-charcoal font-sans;
   }
+
+  /* A11Y-2: a visible keyboard-focus indicator on every link, app-wide --
+     not per-component (a plain in-content link like "Back to explore" or
+     "See requirements for X" had no focus style of its own at all before
+     this). `:focus-visible` rather than `:focus` so a mouse click does
+     not draw the ring, only real keyboard/assistive-tech navigation
+     does -- matching docs/UI.md "Visual direction": a state is a real
+     signal, never noise on every click. This does not replace
+     `.skip-link`'s own `:focus` rule above/below (different job: that
+     one reveals sr-only text, this one rings whatever is already
+     visible) -- the two stack harmlessly when the skip link itself is
+     focused. */
+  a:focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 rounded-sm;
+  }
 }
 
 @layer components {

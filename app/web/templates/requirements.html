@@ -3,6 +3,7 @@
 {# UI-1 pre-wires UI-11's eligibility-line "Ask BCION" entry here. It
    renders nothing today; this screen's own content is unchanged. #}
 {% from "_ask.html" import ask_bcion %}
+{% from "_states.html" import alert, empty_state %}
 {% block title %}Requirements &mdash; BCION Lite{% endblock %}
 {# FIX 8 (nitpick): the generic name.replace('_', ' ')|capitalize
    treatment reads naturally for every criterion except "domicile_in"
@@ -13,10 +14,9 @@
   <h1 class="text-2xl font-semibold text-charcoal mb-2">Requirements</h1>
 
   {% if error %}
-    <div class="alert alert--caution mb-6">
-      <span aria-hidden="true">&#9888;</span>
-      <span>{{ error }} <a href="/explore" class="underline">Back to explore</a>.</span>
-    </div>
+    {% call alert(error, variant="caution", class_names="mb-6") %}
+      <a href="/explore" class="underline">Back to explore</a>.
+    {% endcall %}
   {% else %}
     <p class="text-neutral mb-6">
       {{ pathway_name or "This pathway" }} &mdash; fill in your own details to see whether you
@@ -121,10 +121,7 @@
         {% endfor %}
       </div>
     {% else %}
-      <div class="alert alert--neutral">
-        <span aria-hidden="true">&#8505;</span>
-        <span>No published eligibility requirements yet for this pathway.</span>
-      </div>
+      {{ empty_state("No published eligibility requirements yet for this pathway.") }}
     {% endif %}
 
     <p class="mt-8 text-center">

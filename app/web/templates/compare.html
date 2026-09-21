@@ -8,15 +8,15 @@
 {% from "_save.html" import save_action %}
 {% from "_why.html" import why_am_i_seeing_this %}
 {% from "_components.html" import pathway_detail_link %}
+{% from "_states.html" import alert %}
 {% block title %}Compare pathways &mdash; BCION Lite{% endblock %}
 {% block content %}
   <h1 class="text-2xl font-semibold text-charcoal mb-6">Compare</h1>
 
   {% if error %}
-    <div class="alert alert--caution mb-6">
-      <span aria-hidden="true">&#9888;</span>
-      <span>{{ error }} <a href="/explore" class="underline">Back to explore</a>.</span>
-    </div>
+    {% call alert(error, variant="caution", class_names="mb-6") %}
+      <a href="/explore" class="underline">Back to explore</a>.
+    {% endcall %}
   {% else %}
     {# docs/UI.md "Comparison screen": "Desktop: side-by-side columns.
        Mobile: stacked sections ... never a sideways-scrolling table."
