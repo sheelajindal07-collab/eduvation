@@ -10,11 +10,14 @@ simulation -- `tests/db/test_web_pages.py` and
 *correct* at the HTTP-request level; nothing before this directory ever
 launched a real browser at all.
 
-Same as `tests/db/conftest.py`, this needs a real, configured Supabase
-project (careers/pathways/claims to seed, a real reviewer to sign in as)
-to be genuinely useful, so this whole directory skips cleanly, with a
-clear reason, when that project isn't configured -- never silently
-"passes" a check that didn't run. Mirrors that file's skip-reason style
+Same as `tests/db/conftest.py`, this needs a real, configured database
+(careers/pathways/claims to seed, a real reviewer to sign in as) to be
+genuinely useful -- since QA-2 that means the local, throwaway
+`supabase start` stack, and the target guard below refuses to let this
+directory run against anything that isn't loopback. It skips cleanly,
+with a clear reason, when no stack is configured -- never silently
+"passes" a check that didn't run -- or fails outright under
+BCION_REQUIRE_LIVE=1. Mirrors that file's skip-reason style
 rather than reusing its `pytest_collection_modifyitems` hook directly:
 this hook's own skip reason is e2e-specific (a real running app + a real
 browser, not just RLS-scoped queries), and none of `tests/db/conftest
@@ -48,11 +51,21 @@ import pytest
 from app.core.config import get_settings
 
 # Re-exported for tests/e2e/test_smoke.py -- same fixtures tests/db/ uses
-# to seed/tear down throwaway users and rows against the real project,
+# to seed/tear down throwaway users and rows against the local stack,
 # not a second, parallel seeding mechanism.
+#
+# Importing this module is also what loads `.env.test` into the process
+# environment (tests/db/conftest.py does it at import time), which is
+# what makes `pytest tests/e2e` on its own target the local stack -- and
+# what the `live_server` fixture below silently depends on, since it
+# hands its own os.environ straight to the uvicorn subprocess.
 from tests.db.conftest import (  # noqa: F401
+    _mark_unavailable,
+    _register_bcion_markers,
     _service_role_configured,
+    _target_guard_problem,
     admin_client,
+    fail_if_unavailable,
     guest_client,
     reviewer,
     second_reviewer,
@@ -66,22 +79,45 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 _SKIP_REASON = (
     "SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY / SUPABASE_SERVICE_ROLE_KEY "
     "not fully set. e2e smoke tests need a real running app talking to a "
-    "real Supabase project (same requirement as tests/db/, plus a real "
-    "browser to drive) so Playwright has real pages and real seeded rows "
-    "to navigate -- see db/migrations/README.md and .env.example. "
-    "Expected until the owner provisions their own Supabase project "
-    "(docs/DECISIONS.md)."
+    "real database (same requirement as tests/db/, plus a real browser "
+    "to drive) so Playwright has real pages and real seeded rows to "
+    "navigate. Run `make test-db-up` to bring up the local stack -- see "
+    "supabase/config.toml, .env.test.example and db/migrations/README.md."
 )
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Same target guard as tests/db/conftest.py, applied independently.
+
+    Deliberately a second definition rather than an import of that
+    module's hook: pytest discovers hooks by NAME in a conftest's own
+    namespace, so importing it would register the identical function
+    twice under two plugins. The shared body lives in tests/db/conftest
+    .py; only this thin wrapper is duplicated. (Same reason the module
+    docstring gives for this file having its own
+    `pytest_collection_modifyitems`.)
+    """
+    _register_bcion_markers(config)
+    problem = _target_guard_problem()
+    if problem is not None:
+        raise pytest.UsageError(problem)
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    fail_if_unavailable(item)
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Skip every test collected under tests/e2e/ when no real Supabase
-    project is configured -- see module docstring for why this is its
-    own hook rather than a reuse of tests/db/conftest.py's."""
+    """Skip every test collected under tests/e2e/ when no local Supabase
+    stack is configured -- or fail them, under BCION_REQUIRE_LIVE=1.
+    See module docstring for why this is its own hook rather than a
+    reuse of tests/db/conftest.py's."""
+    own_directory = Path(__file__).resolve().parent
+    own_items = [item for item in items if own_directory in Path(str(item.fspath)).parents]
+    if not own_items:
+        return
     if not (get_settings().db_configured and _service_role_configured()):
-        skip_marker = pytest.mark.skip(reason=_SKIP_REASON)
-        for item in items:
-            item.add_marker(skip_marker)
+        _mark_unavailable(own_items, _SKIP_REASON)
 
 
 def _free_port() -> int:
@@ -105,10 +141,18 @@ def live_server() -> Iterator[str]:
     and tears down its OWN rows via the imported admin_client-based
     fixtures instead).
 
-    Runs with `cwd=REPO_ROOT` so `app.core.config.Settings`' own
-    `env_file=".env"` (resolved relative to the process's current
-    working directory, not this file's location) finds the same `.env`
-    this test process itself was configured from.
+    Runs with `cwd=REPO_ROOT` because the app resolves paths relative to
+    the process's working directory, not to this file's location —
+    `app.main` mounts `app/static` that way, and
+    `app.core.config.Settings` resolves its `env_file` that way.
+
+    The child inherits this process's os.environ, which
+    tests/db/conftest.py has already loaded `.env.test` into at import
+    time. That inheritance is the ONLY thing pointing the server at the
+    local stack: the repo no longer carries a `.env` for it to fall back
+    on, and it must never grow one. So the server under test and the
+    test process always agree on the target, and the target has already
+    been proven to be loopback by `pytest_configure`'s guard above.
     """
     port = _free_port()
     base_url = f"http://127.0.0.1:{port}"

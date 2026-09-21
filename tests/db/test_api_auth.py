@@ -22,11 +22,51 @@ from fastapi.testclient import TestClient
 from supabase import Client
 
 from app.main import app
+from tests.db.conftest import target_is_localhost
 
 client = TestClient(app)
 
 # Comfortably 18+ as of any date this suite will realistically run.
 _ADULT_DOB = "1990-01-01"
+
+
+def _tolerate_rate_limit(response: Any) -> bool:
+    """Whether this response's 429 may be shrugged off (QA-2).
+
+    Against the owner's cloud project, a 429 from Supabase Auth was a
+    real, observed condition with nothing to do with the code under
+    test: that project has a shared, per-project email-sending rate
+    limit these tests genuinely tripped, so tolerating it was the only
+    way to keep the suite usable.
+
+    Against the local stack that accommodation is a bug in disguise.
+    supabase/config.toml raises every GoTrue rate limit far beyond
+    anything a test run can reach, so a 429 on localhost means something
+    is actually wrong — a stale config that was never `supabase stop`ped
+    and restarted, or a genuine regression in app/api/auth.py's error
+    propagation — and quietly returning would hide it while showing a
+    green tick. So on localhost this refuses to tolerate it, and says
+    which of those two to go and look at.
+
+    The escape hatch stays open for a non-loopback target reached
+    through BCION_TEST_TARGET, where the shared-limiter reasoning still
+    applies.
+    """
+    if response.status_code != 429:
+        return False
+    if target_is_localhost():
+        pytest.fail(
+            "Supabase Auth returned 429 against the LOCAL stack. That is "
+            "not an acceptable outcome here: supabase/config.toml sets "
+            "[auth.rate_limit] sign_in_sign_ups/token_refresh to 30000 per "
+            "5 minutes precisely so a test run cannot reach them. Either "
+            "the running stack predates that config (`make test-db-down && "
+            "make test-db-up` to reload it — the CLI only reads config.toml "
+            "at start), or app/api/auth.py has started propagating the "
+            "wrong status. Do not re-add a 429 tolerance to make this pass.",
+            pytrace=False,
+        )
+    return True
 
 
 @pytest.fixture
@@ -117,7 +157,10 @@ class TestSignUp:
         a session, or 202 pending confirmation) — and of Supabase's own
         project-level email-sending rate limit, which this specific
         request genuinely can trigger since it exercises the real
-        email-sending path.
+        email-sending path. That last tolerance now applies ONLY to a
+        non-loopback target: on the local stack a 429 fails the test
+        outright (see `_tolerate_rate_limit`), because the limits in
+        supabase/config.toml put it out of reach.
 
         Checks the real HTTP status (429) Supabase Auth itself returns
         for a rate limit, not a guess at the message's wording
@@ -138,7 +181,7 @@ class TestSignUp:
                 "date_of_birth": _ADULT_DOB,
             },
         )
-        if response.status_code == 429:
+        if _tolerate_rate_limit(response):
             return
 
         assert response.status_code in (201, 202)
@@ -156,16 +199,41 @@ class TestSignUp:
     def test_sign_up_with_already_registered_confirmed_email_does_not_error(
         self, registered_user: dict[str, str]
     ) -> None:
-        """Supabase Auth's own anti-enumeration design: re-attempting
-        sign-up with an email that's already registered and confirmed
-        returns the SAME ambiguous "pending confirmation"-shaped response
-        as a genuinely new email, never a distinguishing error — the
-        same principle already applied to sign-in's error handling
-        (never reveal whether an email exists). This is correct,
-        intentional behaviour on Supabase's part, not a gap in this
-        endpoint: it must not return 200/201 (that would mean a second
-        real account got created), and must not return an error that
-        leaks the email is taken."""
+        """Re-attempting sign-up with an already-registered, confirmed
+        email must never create a second account, and must never crash.
+
+        What Supabase Auth returns beyond that is decided by ONE server
+        setting, not by this codebase, and the two values disagree:
+
+        * `enable_confirmations = true` (the owner's cloud project):
+          GoTrue's anti-enumeration design returns the SAME ambiguous
+          "pending confirmation" 202 as a genuinely new email, never a
+          distinguishing error. Same principle sign-in's error handling
+          already applies — never reveal whether an email exists.
+        * `enable_confirmations = false` (the local stack —
+          supabase/config.toml): there is no confirmation step to hide
+          behind, so GoTrue answers honestly, 422 "User already
+          registered", and app/api/auth.py faithfully propagates that
+          status.
+
+        Confirmations are deliberately OFF locally, and this test is the
+        price of that choice rather than a reason to reverse it: turning
+        them on would make three other sign-up tests in this file and
+        tests/db/test_guardian_consent.py take their early-return 202
+        branch and stop exercising the one true end-to-end path
+        (sign-up -> session -> plan migration) at all. A test that
+        returns early is not a test that passed. Paying for that
+        coverage with an explicitly weaker assertion HERE, in one place,
+        with the divergence written down, beats paying for it silently
+        in three.
+
+        So this asserts what holds in both configurations, and narrows
+        to the exact expected status per configuration. The cloud's
+        anti-enumeration property genuinely cannot be proven on the
+        local stack — that gap is the local-vs-cloud GoTrue divergence
+        the plan tracks separately (QA-16), not something to paper over
+        by accepting any status at all.
+        """
         response = client.post(
             "/auth/sign-up",
             json={
@@ -174,8 +242,24 @@ class TestSignUp:
                 "date_of_birth": _ADULT_DOB,
             },
         )
+        # Holds everywhere: no second real account, and no 5xx.
         assert response.status_code != 201
-        if response.status_code != 429:
+        assert response.status_code < 500
+        if _tolerate_rate_limit(response):
+            return
+
+        if target_is_localhost():
+            assert response.status_code == 422, (
+                "Local GoTrue with enable_confirmations=false is expected to "
+                "reject a duplicate sign-up outright. A 202 here would mean "
+                "the local stack has confirmations ON, which silently guts "
+                "three other sign-up tests in this suite — check "
+                "supabase/config.toml's [auth.email] and restart the stack."
+            )
+            # Even when it admits the account exists, it must not hand
+            # back the address itself or anything else about the holder.
+            assert registered_user["email"] not in response.text
+        else:
             assert response.status_code == 202
 
 
@@ -305,7 +389,7 @@ class TestSignUpWithPendingPlan:
                 },
             },
         )
-        if response.status_code == 429:
+        if _tolerate_rate_limit(response):
             return
         if response.status_code == 202:
             # Email confirmation required by this project's settings —
