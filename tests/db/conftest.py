@@ -24,6 +24,7 @@ running application must never read it (docs/SECURITY.md).
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import uuid
@@ -789,6 +790,36 @@ def _create_test_user(admin: Client) -> tuple[str, Client]:
     return user_id, user_client
 
 
+def _release_test_client(client: Client) -> None:
+    """Give back the OS resources a signed-in test client holds (QA-6
+    finding, 2026-09-22): `sign_in_with_password` starts a refresh-token
+    `threading.Timer` (supabase_auth's `_start_auto_refresh_token`) whose
+    callback closes over the client, so a LIVE THREAD keeps it reachable
+    -- it is not garbage, and no amount of `gc.collect()` reclaims it or
+    its pooled sockets. Every fixture below that signs a user in must
+    call this in its teardown, or a `tests/db` run climbs to hundreds of
+    live threads/clients and dies with `OSError: [Errno 24] Too many open
+    files`, taking every test file after it down too (measured: ~256
+    threads/~510 clients without this, 2-3/~30 with it, same suite).
+    Cancelling the timer also stops a background "token refresh failed"
+    log line firing after this fixture has already deleted the user it
+    belongs to."""
+    auth = getattr(client, "auth", None)
+    timer = getattr(auth, "_refresh_token_timer", None)
+    if timer is not None:
+        with contextlib.suppress(Exception):
+            timer.cancel()
+        with contextlib.suppress(Exception):
+            auth._refresh_token_timer = None
+    if auth is not None:
+        with contextlib.suppress(Exception):
+            auth.close()
+    postgrest = getattr(client, "_postgrest", None)
+    if postgrest is not None:
+        with contextlib.suppress(Exception):
+            postgrest.aclose()
+
+
 @pytest.fixture
 def guest_client() -> Client:
     """Anon-key client, no user session — the 'guest' row of the access
@@ -802,6 +833,7 @@ def guest_client() -> Client:
 def student_a(admin_client: Client) -> Iterator[tuple[str, Client]]:
     user_id, client = _create_test_user(admin_client)
     yield user_id, client
+    _release_test_client(client)
     admin_client.auth.admin.delete_user(user_id)
 
 
@@ -809,6 +841,7 @@ def student_a(admin_client: Client) -> Iterator[tuple[str, Client]]:
 def student_b(admin_client: Client) -> Iterator[tuple[str, Client]]:
     user_id, client = _create_test_user(admin_client)
     yield user_id, client
+    _release_test_client(client)
     admin_client.auth.admin.delete_user(user_id)
 
 
@@ -817,6 +850,7 @@ def reviewer(admin_client: Client) -> Iterator[tuple[str, Client]]:
     user_id, client = _create_test_user(admin_client)
     admin_client.table("reviewers").insert({"user_id": user_id}).execute()
     yield user_id, client
+    _release_test_client(client)
     admin_client.auth.admin.delete_user(user_id)  # cascades to reviewers row
 
 
@@ -837,6 +871,7 @@ def second_reviewer(admin_client: Client) -> Iterator[tuple[str, Client]]:
     user_id, client = _create_test_user(admin_client)
     admin_client.table("reviewers").insert({"user_id": user_id}).execute()
     yield user_id, client
+    _release_test_client(client)
     admin_client.auth.admin.delete_user(user_id)
 
 
