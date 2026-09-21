@@ -24,6 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 
+from app.data.jurisdictions import resolve_jurisdiction
 from app.data.models import EligibilityOutcome
 
 
@@ -285,8 +286,27 @@ def domicile_in(
     docstring promise that only a genuinely unclear input becomes
     `insufficient_information` rather than a confident-looking rejection.
     The *display* text (explanation, published state list) always shows
-    the original casing, never the normalised form."""
+    the original casing, never the normalised form.
+
+    SCOPE-5: beyond the plain literal comparison above (kept as-is, so
+    every pre-existing behaviour — including a non-English state name
+    like 'पश्चिम बंगाल' matched against itself — still works exactly as
+    before), both sides are ALSO resolved through
+    `app.data.jurisdictions.resolve_jurisdiction` to a canonical code.
+    This is what lets a claim's 'domicile_states' value and a student's
+    own answer match via a code or an alias even when their literal text
+    differs (e.g. a published 'Delhi' and a student-typed 'NCT of
+    Delhi'). A student input that resolves to NO known jurisdiction at
+    all (and doesn't literally match either) is `insufficient_information`
+    — never a guessed `does_not_meet` — since the rule genuinely can't be
+    evaluated against an input nobody can identify (docs/CONTRACTS.md's
+    three-outcomes rule). An entry in `allowed_states` that resolves to
+    nothing is simply dropped from the resolved side; it still
+    participates in the literal-text comparison above."""
     normalized_allowed = frozenset(s.strip().lower() for s in allowed_states)
+    resolved_allowed = frozenset(
+        code for s in allowed_states if (code := resolve_jurisdiction(s)) is not None
+    )
 
     def check(inp: EligibilityInput) -> CriterionResult:
         if inp.domicile_state is None:
@@ -296,20 +316,35 @@ def domicile_in(
                 explanation="Domicile state is needed to check this eligibility rule.",
                 source_claim_id=source_claim_id,
             )
-        if inp.domicile_state.strip().lower() not in normalized_allowed:
+        candidate = inp.domicile_state.strip().lower()
+        resolved_candidate = resolve_jurisdiction(inp.domicile_state)
+        matches = candidate in normalized_allowed or (
+            resolved_candidate is not None and resolved_candidate in resolved_allowed
+        )
+        if matches:
             return CriterionResult(
                 name="domicile_in",
-                outcome=EligibilityOutcome.does_not_meet,
+                outcome=EligibilityOutcome.meets,
+                explanation="Meets the domicile requirement.",
+                source_claim_id=source_claim_id,
+            )
+        if resolved_candidate is None:
+            return CriterionResult(
+                name="domicile_in",
+                outcome=EligibilityOutcome.insufficient_information,
                 explanation=(
-                    f"Requires domicile in {', '.join(sorted(allowed_states))}; "
-                    f"given domicile is {inp.domicile_state}."
+                    f"'{inp.domicile_state}' isn't a recognised state, union territory "
+                    "or country, so this domicile rule can't be checked."
                 ),
                 source_claim_id=source_claim_id,
             )
         return CriterionResult(
             name="domicile_in",
-            outcome=EligibilityOutcome.meets,
-            explanation="Meets the domicile requirement.",
+            outcome=EligibilityOutcome.does_not_meet,
+            explanation=(
+                f"Requires domicile in {', '.join(sorted(allowed_states))}; "
+                f"given domicile is {inp.domicile_state}."
+            ),
             source_claim_id=source_claim_id,
         )
 

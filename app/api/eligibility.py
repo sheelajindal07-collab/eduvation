@@ -1,5 +1,5 @@
-"""GET /eligibility — the first real wiring of app/rules/eligibility.py
-into a request-handling route.
+"""GET/POST /eligibility — the first real wiring of
+app/rules/eligibility.py into a request-handling route.
 
 Criteria are built dynamically from a pathway's own published claims —
 never hardcoded per exam in application code (that belongs to the
@@ -10,7 +10,10 @@ exist. Recognised claim fields on a Pathway:
   maximum_age                  int
   minimum_marks_percentage     float
   required_subjects            comma-separated string, e.g. "Physics,Chemistry,Biology"
-  domicile_states               comma-separated string, e.g. "Gujarat,Maharashtra"
+  domicile_states               comma-separated string of state/country names,
+                                ISO codes or aliases, e.g. "Gujarat,IN-MH" —
+                                resolved by app.rules.eligibility.domicile_in
+                                via app.data.jurisdictions (SCOPE-5)
 
 Any of these that isn't published simply contributes no criterion at
 all — it is not the same as "insufficient_information" (that's reserved
@@ -19,6 +22,12 @@ pathway with none of these claims published returns `meets` (vacuously;
 see app/rules/eligibility.py's empty-criteria-list test) rather than a
 misleading "insufficient_information" about rules that were never
 stated in the first place.
+
+SEC-5: age, marks_percentage, subjects_studied and domicile_state are
+personal inputs and must never be a query param or reach a URL
+(docs/CONTRACTS.md "Every personal input ... is POST-only") — GET below
+accepts `pathway_id` only, and a new POST variant carries every personal
+field in its JSON body instead.
 """
 
 from __future__ import annotations
@@ -180,17 +189,28 @@ def _criteria_from_claims(claim_rows: list[dict[str, Any]]) -> list[Criterion]:
     return criteria
 
 
-@router.get("/eligibility", response_model=EligibilityResponse)
 def check_eligibility(
-    pathway_id: str = Query(...),
-    age: int | None = Query(default=None),
-    marks_percentage: float | None = Query(default=None),
-    subjects_studied: str | None = Query(
-        default=None, description="Comma-separated, e.g. Physics,Chemistry,Biology"
-    ),
-    domicile_state: str | None = Query(default=None),
-    db: Client = Depends(get_db_client),
+    pathway_id: str,
+    age: int | None,
+    marks_percentage: float | None,
+    subjects_studied: str | None,
+    domicile_state: str | None,
+    db: Client,
 ) -> EligibilityResponse:
+    """The actual eligibility-checking logic — deliberately a plain,
+    directly-callable function rather than a route itself.
+
+    SEC-5: personal inputs (age, marks_percentage, subjects_studied,
+    domicile_state) must never be a query param or reach a URL
+    (docs/CONTRACTS.md "Every personal input ... is POST-only"), so this
+    is now called from TWO routes below — `GET /eligibility`
+    (pathway_id only) and `POST /eligibility` (every field, in the
+    body) — instead of being the GET route directly. It is also still
+    called straight from Python by app/web/requirements_pages.py's own
+    requirements screen (one fetch/rule-evaluation, reused, never a
+    second copy of this logic or an HTTP round-trip to our own JSON
+    route) — unchanged by the GET/POST split above it.
+    """
     claims_result = (
         db.table("claims")
         .select("*")
@@ -251,3 +271,48 @@ def check_eligibility(
             )
         )
     return EligibilityResponse(outcome=result.outcome.value, criteria=criteria_out)
+
+
+class EligibilityCheckRequest(BaseModel):
+    """POST body for `POST /eligibility` (SEC-5). `pathway_id` travels
+    here too, alongside the personal fields, rather than staying a query
+    param on the POST — a request body is the one place none of this can
+    end up echoed into a URL, a Location header or browser history."""
+
+    pathway_id: str
+    age: int | None = None
+    marks_percentage: float | None = None
+    subjects_studied: str | None = None
+    """Comma-separated, e.g. Physics,Chemistry,Biology."""
+    domicile_state: str | None = None
+
+
+@router.get("/eligibility", response_model=EligibilityResponse)
+def get_eligibility(
+    pathway_id: str = Query(...),
+    db: Client = Depends(get_db_client),
+) -> EligibilityResponse:
+    """SEC-5: GET keeps `pathway_id` only — no personal input may ever
+    be a query param (docs/CONTRACTS.md "Every personal input ... is
+    POST-only"). Every criterion comes back `insufficient_information`
+    (nothing about a student is known yet); that is this endpoint's
+    normal pre-fill response, not an error. Personal fields moved to
+    `POST /eligibility` below."""
+    return check_eligibility(pathway_id, None, None, None, None, db)
+
+
+@router.post("/eligibility", response_model=EligibilityResponse)
+def post_eligibility(
+    body: EligibilityCheckRequest, db: Client = Depends(get_db_client)
+) -> EligibilityResponse:
+    """SEC-5: the only route that accepts age, marks_percentage,
+    subjects_studied or domicile_state — always in a POST body, never a
+    query string."""
+    return check_eligibility(
+        body.pathway_id,
+        body.age,
+        body.marks_percentage,
+        body.subjects_studied,
+        body.domicile_state,
+        db,
+    )

@@ -20,12 +20,17 @@
       meet each requirement. Leave anything blank to see just what's required.
     </p>
 
-    {# GET, not POST: same "shareable/bookmarkable URL" reasoning as
-       /compare/view -- this product's real usage is a link sent over
-       WhatsApp, and a GET form keeps every submission a plain URL
-       someone else can open with no re-entry. #}
+    {# POST, not GET (SEC-5): age/marks/subjects/domicile are personal
+       inputs and must never end up in a URL, a Location header or
+       browser history (docs/CONTRACTS.md "Every personal input ... is
+       POST-only"). This route renders the result directly in its POST
+       response -- no redirect -- so submitting stays a single request
+       and the address bar never carries what was typed in. pathway_id
+       is the only value still safe to share/bookmark on its own (see
+       GET /requirements/view?pathway_id=... above), so it travels as a
+       plain hidden field here too, not re-derived from the URL. #}
     <section class="card mb-6">
-      <form method="get" action="/requirements/view" class="space-y-4">
+      <form method="post" action="/requirements/view" class="space-y-4">
         <input type="hidden" name="pathway_id" value="{{ pathway_id }}" />
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -53,10 +58,31 @@
           </div>
           <div>
             <label class="field-label" for="domicile_state">Domicile state</label>
-            <input
-              class="field-input" type="text" id="domicile_state" name="domicile_state"
-              value="{{ domicile_state or '' }}" placeholder="e.g. Gujarat"
-            />
+            {# SCOPE-5: a plain, zero-JS <select> over the canonical
+               state/UT + pilot-country list (app/data/jurisdictions.py)
+               instead of a free-text input -- app.rules.eligibility.
+               domicile_in resolves the chosen code against a claim's
+               own domicile_states value (itself a name, code or alias),
+               so this never needs client-side script to work. #}
+            <select class="field-input" id="domicile_state" name="domicile_state">
+              <option value="" {% if not domicile_state %}selected{% endif %}>
+                -- Select your state, union territory or country --
+              </option>
+              <optgroup label="India — states and union territories">
+                {% for j in jurisdictions if j.kind == "state" %}
+                  <option value="{{ j.code }}" {% if domicile_state == j.code %}selected{% endif %}>
+                    {{ j.name }}
+                  </option>
+                {% endfor %}
+              </optgroup>
+              <optgroup label="Other countries">
+                {% for j in jurisdictions if j.kind == "country" %}
+                  <option value="{{ j.code }}" {% if domicile_state == j.code %}selected{% endif %}>
+                    {{ j.name }}
+                  </option>
+                {% endfor %}
+              </optgroup>
+            </select>
             <p class="field-hint">Your state of domicile, e.g. Gujarat</p>
           </div>
         </div>

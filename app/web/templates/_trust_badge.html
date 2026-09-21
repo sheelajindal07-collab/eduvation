@@ -37,7 +37,7 @@
      it had this inline). #}
   {% if source_url %}
     <p class="text-xs text-neutral mt-1">
-      <a href="{{ source_url }}" class="underline hover:text-accent" target="_blank" rel="noopener">
+      <a href="{{ source_url }}" class="underline hover:text-accent" target="_blank" rel="noopener noreferrer">
         {{ source_authority or "Source" }}
         {%- if label == "institution_reported" %} (institution-reported){% endif -%}
         {%- if label == "needs_rechecking" %} (recheck due){% endif -%}

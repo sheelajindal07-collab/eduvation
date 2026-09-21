@@ -263,12 +263,17 @@ class TestRequirementsAndTimelineJourney:
         expect(page.locator("h1")).to_have_text("Requirements")
         expect(page.get_by_text("Minimum age", exact=False)).to_be_visible()
 
-        # Fill in a matching age and resubmit via the plain GET form --
-        # the zero-JS "shareable URL" journey this page is built around.
+        # Fill in a matching age and resubmit via the plain POST form
+        # (SEC-5) -- the zero-JS journey this page is built around, now
+        # POST-and-render rather than a GET whose query string would
+        # otherwise carry the student's own age.
         page.locator("#age").fill("18")
         page.get_by_role("button", name="Check my eligibility").click()
-        page.wait_for_url("**/requirements/view*age=18*")
         expect(page.get_by_text("Meets this requirement", exact=False)).to_be_visible()
+        # SEC-5: no personal value ever reaches the URL -- the address
+        # bar stays exactly the POST target, never "...?age=18".
+        assert "age=18" not in page.url
+        assert page.url.endswith("/requirements/view")
         assert page_errors == []
 
     def test_timeline_view_computes_a_total_from_one_filled_stage(
