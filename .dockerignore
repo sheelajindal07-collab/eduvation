@@ -1,0 +1,53 @@
+# DEPLOY-3: keep secrets and dev-only files out of every image layer,
+# not just the final one — .dockerignore applies to the whole build
+# context, so none of this can ever be COPYed in by accident.
+
+# Secrets / local env
+.env
+.env.*
+
+# Agent tooling / repo memory — never belongs in a shipped image
+.claude/
+
+# Node toolchain — app/static/css/app.css is already committed/compiled;
+# this image never runs a Node build stage
+node_modules/
+
+# Tests and docs — not part of the running application
+tests/
+docs/
+
+# VCS and CI
+.git/
+.github/
+
+# Project docs / task tracking
+*.md
+tasks/
+
+# Content-sourcing metadata, DB migrations, one-off scripts, Supabase CLI
+# local config — none of these are read by the running app
+content/
+db/
+scripts/
+supabase/
+
+# Python/tooling caches and local virtualenvs
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

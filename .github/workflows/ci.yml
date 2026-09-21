@@ -1,16 +1,24 @@
 name: CI
 
-# BCION Lite CI skeleton (M0). Runs lint, typecheck and unit tests on every
-# push/PR — no production secrets are available to this workflow (see
-# docs/ARCHITECTURE.md "Deployment flow" and docs/DECISIONS.md). test-db
-# and test-e2e stay commented out until a staging Postgres / UI exist
-# (Lite Build Pack §9 milestones M1+); enabling them early would just fail red for
-# lack of a target, which is noise, not signal.
+# BCION Lite CI. Runs lint, typecheck, unit tests and the DB/RLS policy
+# suite on every push/PR — no production secrets are available to this
+# workflow (see docs/ARCHITECTURE.md "Deployment flow" and
+# docs/DECISIONS.md). test-db is live and required (has been since QA-2
+# stood up the local Supabase stack this job's repo secrets point at) and
+# is never allowed to silently skip in CI. test-e2e stays commented out
+# below until a UI exists to drive it (Lite Build Pack §9 milestones M1+);
+# enabling it early would just fail red for lack of a target, which is
+# noise, not signal.
 #
 # SEC-7: dependencies install only from the hashed, pinned lockfile
 # (requirements-dev.lock, generated for Linux/py3.11 to match this
 # runner — see that file's own header), plus a dependency audit
 # (pip-audit) and a secret scan (gitleaks) run on every push/PR.
+#
+# DEPLOY-3: `build-image` builds the runtime Docker image (amd64, no
+# push anywhere) from the repo-root Dockerfile, as a smoke check that it
+# still builds — separate job so a Docker build failure doesn't block or
+# get blocked by lint-typecheck-test's own dependency install.
 
 on:
   push:
@@ -77,3 +85,13 @@ jobs:
       # - name: E2E tests (Playwright)
       #   run: make test-e2e
       #   # Needs a UI to drive — wire up after M1's first vertical slice.
+
+  build-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build runtime image (amd64, no push)
+        run: docker build --platform linux/amd64 -t bcion-lite:ci .
+        # Smoke check only — same Dockerfile `make build` runs locally.
+        # No registry login, no push step: this never leaves the runner.
