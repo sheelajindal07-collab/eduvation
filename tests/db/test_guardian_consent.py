@@ -23,6 +23,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from postgrest.exceptions import APIError
+from postgrest.types import ReturnMethod
 from supabase import Client
 
 from app.api.guardian_consent import create_guardian_consent_request
@@ -247,9 +248,15 @@ class TestUnder18SignUpValidation:
                 "guardian_email": guardian_email,
             },
         )
+        # Supabase's own email-send rate limit -- same tolerance as the
+        # sibling test below; hit for real on the first live run. A 429
+        # still proves what this test is about: the request got PAST the
+        # self-email check (that check would have been a 400).
+        if response.status_code == 429:
+            return
         assert response.status_code == 201
         body = response.json()
-        assert body["status"] == "pending_guardian_consent"
+        assert body["account_status"] == "pending_guardian_consent"
         users = admin_client.auth.admin.list_users()
         match = next((u for u in users if u.email == email.casefold()), None)
         if match is not None:
@@ -881,36 +888,39 @@ class TestTokenAndExpiryAreServerGenerated:
         user_id = confirmed_adult["user_id"]
         attacker_chosen_token = "attacker-chosen-not-random-" + uuid.uuid4().hex
 
+        # returning=minimal, found live 2026-09-21: the default
+        # return=representation makes Postgres apply SELECT policies to the
+        # RETURNING row, and guardian_consents has none by design, so a
+        # student-scoped insert that asks for its row back fails outright
+        # (the bug 0005's RPC exists to close for the app itself). The row
+        # is read back through the service-role client instead -- the
+        # student's own client is never supposed to be able to.
         scoped = get_user_scoped_client(access_token)
         try:
-            result = (
-                scoped.table("guardian_consents")
-                .insert(
-                    {
-                        "student_id": user_id,
-                        "guardian_email": "not-a-real-guardian@example.com",
-                        "token": attacker_chosen_token,
-                    }
-                )
-                .execute()
-            )
+            scoped.table("guardian_consents").insert(
+                {
+                    "student_id": user_id,
+                    "guardian_email": "not-a-real-guardian@example.com",
+                    "token": attacker_chosen_token,
+                },
+                returning=ReturnMethod.minimal,
+            ).execute()
         finally:
             scoped.postgrest.aclose()
 
         # The row IS created (a client-supplied token is overwritten,
         # not rejected outright) but never with the attacker's value.
-        assert len(result.data) == 1
-        assert result.data[0]["token"] != attacker_chosen_token
-
-        real_token = (
+        rows = (
             admin_client.table("guardian_consents")
             .select("token")
             .eq("student_id", user_id)
             .execute()
-            .data[0]["token"]
+            .data
         )
+        assert len(rows) == 1
+        real_token = rows[0]["token"]
         assert real_token != attacker_chosen_token
-        assert real_token == result.data[0]["token"]
+        assert len(real_token) == 64  # 32 random bytes, hex-encoded
 
         # The core proof: the attacker's own chosen value can never
         # activate anything via the public confirmation endpoint.
@@ -934,23 +944,29 @@ class TestTokenAndExpiryAreServerGenerated:
         access_token = sign_in.json()["access_token"]
         user_id = confirmed_adult["user_id"]
 
+        # returning=minimal + service-role read-back: see the test above.
         scoped = get_user_scoped_client(access_token)
         try:
-            result = (
-                scoped.table("guardian_consents")
-                .insert(
-                    {
-                        "student_id": user_id,
-                        "guardian_email": "not-a-real-guardian-2@example.com",
-                        "expires_at": "2099-01-01T00:00:00+00:00",
-                    }
-                )
-                .execute()
-            )
+            scoped.table("guardian_consents").insert(
+                {
+                    "student_id": user_id,
+                    "guardian_email": "not-a-real-guardian-2@example.com",
+                    "expires_at": "2099-01-01T00:00:00+00:00",
+                },
+                returning=ReturnMethod.minimal,
+            ).execute()
         finally:
             scoped.postgrest.aclose()
 
-        expires_at = datetime.fromisoformat(result.data[0]["expires_at"])
+        rows = (
+            admin_client.table("guardian_consents")
+            .select("expires_at")
+            .eq("student_id", user_id)
+            .execute()
+            .data
+        )
+        assert len(rows) == 1
+        expires_at = datetime.fromisoformat(rows[0]["expires_at"])
         assert expires_at.year < 2099
         # Roughly 72 hours out (the named assumption) — generous
         # tolerance for however long the test itself takes to run.
@@ -983,20 +999,30 @@ class TestOnlyOnePendingConsentPerStudent:
 
         scoped = get_user_scoped_client(access_token)
         try:
-            first = (
-                scoped.table("guardian_consents")
-                .insert({"student_id": user_id, "guardian_email": "guardian-one@example.com"})
-                .execute()
-            )
-            assert len(first.data) == 1
+            # returning=minimal on both: see
+            # TestTokenAndExpiryAreServerGenerated's first test for why.
+            scoped.table("guardian_consents").insert(
+                {"student_id": user_id, "guardian_email": "guardian-one@example.com"},
+                returning=ReturnMethod.minimal,
+            ).execute()
 
             with pytest.raises(APIError) as exc_info:
                 scoped.table("guardian_consents").insert(
-                    {"student_id": user_id, "guardian_email": "guardian-two@example.com"}
+                    {"student_id": user_id, "guardian_email": "guardian-two@example.com"},
+                    returning=ReturnMethod.minimal,
                 ).execute()
             assert exc_info.value.code == "23505"
         finally:
             scoped.postgrest.aclose()
+
+        rows = (
+            admin_client.table("guardian_consents")
+            .select("guardian_email")
+            .eq("student_id", user_id)
+            .execute()
+            .data
+        )
+        assert [r["guardian_email"] for r in rows] == ["guardian-one@example.com"]
 
         admin_client.table("guardian_consents").delete().eq("student_id", user_id).execute()
 
