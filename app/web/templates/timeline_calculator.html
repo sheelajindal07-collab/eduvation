@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Timeline calculator &mdash; BCION Lite{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-2">Timeline calculator</h1>
+  <p class="text-neutral mb-6">
+    A standalone what-if calculator &mdash; not tied to any one pathway. Add the stages of your
+    own plan below, in weeks, to see the total time. Adjust anything and recalculate as often as
+    you like.
+  </p>
+
+  {% if error %}
+    <div class="alert alert--caution mb-6">
+      <span aria-hidden="true">&#9888;</span>
+      <span>{{ error }}</span>
+    </div>
+  {% endif %}
+
+  {% if result %}
+    <section class="card mb-6">
+      <h2 class="text-lg font-semibold text-charcoal mb-2">Result</h2>
+      {% if result.total_weeks is not none %}
+        <p class="text-2xl font-semibold text-charcoal">{{ result.total_weeks }} weeks</p>
+        <p class="text-sm text-neutral mt-1">
+          Complete &mdash; every stage below has a duration.
+        </p>
+      {% else %}
+        <span class="eligibility-badge eligibility-badge--insufficient_information">
+          <span aria-hidden="true">&#8505;</span> Total not available yet
+        </span>
+        {% if unknown_stage_names %}
+          <p class="text-sm text-neutral mt-2">
+            Missing a duration for: {{ unknown_stage_names | join(", ") }}. Fill it in below and
+            recalculate.
+          </p>
+        {% else %}
+          <p class="text-sm text-neutral mt-2">Add at least one stage with a duration below.</p>
+        {% endif %}
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <section class="card">
+    <form method="post" action="/timeline/view" class="space-y-8">
+      <div>
+        <h2 class="text-lg font-semibold text-charcoal mb-1">Stages</h2>
+        <p class="field-hint mb-3">
+          Leave a row's name blank to skip it. "Required" is shown for your own reference only
+          &mdash; every filled-in stage still counts toward the total.
+        </p>
+        <div class="space-y-4">
+          {% for row in stage_rows %}
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 border-b border-charcoal/10 pb-4">
+              <div>
+                <label class="field-label" for="stage_name_{{ loop.index }}">
+                  Stage {{ loop.index }} name
+                </label>
+                <input
+                  class="field-input" type="text"
+                  id="stage_name_{{ loop.index }}" name="stage_name_{{ loop.index }}"
+                  value="{{ row.name }}"
+                />
+              </div>
+              <div>
+                <label class="field-label" for="stage_duration_weeks_{{ loop.index }}">
+                  Duration (weeks)
+                </label>
+                <input
+                  class="field-input" type="number" min="0"
+                  id="stage_duration_weeks_{{ loop.index }}"
+                  name="stage_duration_weeks_{{ loop.index }}"
+                  value="{{ row.duration_weeks }}"
+                />
+              </div>
+              <div>
+                <label class="field-label" for="stage_overlap_weeks_with_previous_{{ loop.index }}">
+                  Overlap with previous stage (weeks)
+                </label>
+                <input
+                  class="field-input" type="number" min="0"
+                  id="stage_overlap_weeks_with_previous_{{ loop.index }}"
+                  name="stage_overlap_weeks_with_previous_{{ loop.index }}"
+                  value="{{ row.overlap_weeks_with_previous }}"
+                />
+              </div>
+              <div class="flex items-end">
+                <label
+                  class="flex items-center gap-2 text-sm text-charcoal min-h-11"
+                  for="stage_required_{{ loop.index }}"
+                >
+                  <input
+                    class="h-5 w-5 rounded border-charcoal/30 text-accent focus:ring-accent"
+                    type="checkbox"
+                    id="stage_required_{{ loop.index }}" name="stage_required_{{ loop.index }}"
+                    {% if row.required %}checked{% endif %}
+                  />
+                  Required
+                </label>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div>
+        <h2 class="text-lg font-semibold text-charcoal mb-1">Parallel activities (optional)</h2>
+        <p class="field-hint mb-3">
+          Shown for awareness only &mdash; never added into the total above.
+        </p>
+        <div class="space-y-4">
+          {% for row in parallel_rows %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 border-b border-charcoal/10 pb-4">
+              <div>
+                <label class="field-label" for="parallel_name_{{ loop.index }}">
+                  Activity {{ loop.index }} name
+                </label>
+                <input
+                  class="field-input" type="text"
+                  id="parallel_name_{{ loop.index }}" name="parallel_name_{{ loop.index }}"
+                  value="{{ row.name }}"
+                />
+              </div>
+              <div>
+                <label class="field-label" for="parallel_duration_weeks_{{ loop.index }}">
+                  Duration (weeks)
+                </label>
+                <input
+                  class="field-input" type="number" min="0"
+                  id="parallel_duration_weeks_{{ loop.index }}"
+                  name="parallel_duration_weeks_{{ loop.index }}"
+                  value="{{ row.duration_weeks }}"
+                />
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <button type="submit" class="btn-primary">Calculate timeline</button>
+    </form>
+  </section>
+{% endblock %}

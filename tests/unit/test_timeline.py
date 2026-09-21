@@ -107,7 +107,7 @@ class TestOverlappingDurationsAreNotBlindlySummed:
         """There is no previous stage for the very first entry to
         overlap — a content-authoring error, not a value to guess at."""
         stages = [Stage("Class 12", duration_weeks=52, overlap_weeks_with_previous=4)]
-        with pytest.raises(ValueError, match="no previous stage"):
+        with pytest.raises(ValueError, match="can't overlap with a previous stage"):
             compute_timeline(stages)
 
     def test_overlap_exactly_equal_to_shorter_stage_is_allowed(self) -> None:

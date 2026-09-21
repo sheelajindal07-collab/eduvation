@@ -46,6 +46,16 @@
                         <span class="block text-neutral">{{ pathway.description }}</span>
                       </span>
                     </label>
+                    {# Smallest sensible wiring to the new Requirements
+                       screen -- a plain link outside the checkbox
+                       label above, so it can't interfere with the
+                       compare-selection form/JS. #}
+                    <a
+                      href="/requirements/view?pathway_id={{ pathway.id }}"
+                      class="block text-xs text-accent underline ml-2 mb-1"
+                    >
+                      See requirements for {{ pathway.name }}
+                    </a>
                   </li>
                 {% endfor %}
               </ul>

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% from "_trust_badge.html" import eligibility_outcome_badge, evidence_line, trust_badge %}
+{% block title %}Requirements &mdash; BCION Lite{% endblock %}
+{# FIX 8 (nitpick): the generic name.replace('_', ' ')|capitalize
+   treatment reads naturally for every criterion except "domicile_in"
+   ("Domicile in") -- a display-only override here, not a change to the
+   underlying rule-function name in app/rules/eligibility.py. #}
+{% set CRITERION_DISPLAY_NAMES = {"domicile_in": "Domicile"} %}
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-2">Requirements</h1>
+
+  {% if error %}
+    <div class="alert alert--caution mb-6">
+      <span aria-hidden="true">&#9888;</span>
+      <span>{{ error }} <a href="/explore" class="underline">Back to explore</a>.</span>
+    </div>
+  {% else %}
+    <p class="text-neutral mb-6">
+      {{ pathway_name or "This pathway" }} &mdash; fill in your own details to see whether you
+      meet each requirement. Leave anything blank to see just what's required.
+    </p>
+
+    {# GET, not POST: same "shareable/bookmarkable URL" reasoning as
+       /compare/view -- this product's real usage is a link sent over
+       WhatsApp, and a GET form keeps every submission a plain URL
+       someone else can open with no re-entry. #}
+    <section class="card mb-6">
+      <form method="get" action="/requirements/view" class="space-y-4">
+        <input type="hidden" name="pathway_id" value="{{ pathway_id }}" />
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="field-label" for="age">Age</label>
+            <input
+              class="field-input" type="number" min="0" id="age" name="age"
+              value="{{ age if age is not none else '' }}"
+            />
+          </div>
+          <div>
+            <label class="field-label" for="marks_percentage">Marks percentage</label>
+            <input
+              class="field-input" type="number" min="0" max="100" step="0.01"
+              id="marks_percentage" name="marks_percentage"
+              value="{{ marks_percentage if marks_percentage is not none else '' }}"
+            />
+          </div>
+          <div>
+            <label class="field-label" for="subjects_studied">Subjects studied</label>
+            <input
+              class="field-input" type="text" id="subjects_studied" name="subjects_studied"
+              value="{{ subjects_studied or '' }}" placeholder="Physics,Chemistry,Biology"
+            />
+            <p class="field-hint">Comma-separated, e.g. Physics,Chemistry,Biology</p>
+          </div>
+          <div>
+            <label class="field-label" for="domicile_state">Domicile state</label>
+            <input
+              class="field-input" type="text" id="domicile_state" name="domicile_state"
+              value="{{ domicile_state or '' }}" placeholder="e.g. Gujarat"
+            />
+            <p class="field-hint">Your state of domicile, e.g. Gujarat</p>
+          </div>
+        </div>
+        <button type="submit" class="btn-primary">Check my eligibility</button>
+      </form>
+    </section>
+
+    {% if result.criteria %}
+      <div class="mb-4">
+        {{ eligibility_outcome_badge(result.outcome, overall=true) }}
+      </div>
+      <div class="space-y-4">
+        {% for c in result.criteria %}
+          <section class="card">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <h2 class="text-base font-semibold text-charcoal">
+                {{ CRITERION_DISPLAY_NAMES.get(c.name, c.name.replace("_", " ") | capitalize) }}
+              </h2>
+              {# Two distinct badges, both shown -- is the underlying
+                 published fact trustworthy (trust_badge, docs/UI.md's
+                 five-value vocabulary), and does the student's own input
+                 meet it (eligibility_outcome_badge, a different
+                 three-value vocabulary). Neither replaces the other. #}
+              <div class="flex items-center gap-2 flex-wrap">
+                {{ trust_badge(c.trust_label) }}
+                {{ eligibility_outcome_badge(c.outcome) }}
+              </div>
+            </div>
+            <p class="text-sm text-charcoal mt-2">{{ c.explanation }}</p>
+            {{ evidence_line(c.source_authority, c.source_url, c.verification_date) }}
+          </section>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="alert alert--neutral">
+        <span aria-hidden="true">&#8505;</span>
+        <span>No published eligibility requirements yet for this pathway.</span>
+      </div>
+    {% endif %}
+
+    <p class="mt-8 text-center">
+      <a href="/explore" class="text-accent underline">Back to explore</a>
+    </p>
+  {% endif %}
+{% endblock %}

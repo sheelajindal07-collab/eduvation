@@ -26,6 +26,50 @@
   {% endif %}
 {% endmacro %}
 
+{% macro evidence_line(source_authority, source_url, verification_date, label=none) %}
+  {# The "source authority ... official link, verification date" line
+     docs/UI.md requires per fact -- factored out of field_value() below
+     so a caller with the same three evidence fields but no FieldValue
+     wrapper (e.g. requirements.html's eligibility criteria) can reuse
+     the exact same evidence-display pattern instead of a second,
+     drifting copy of it. `label` is optional and only changes the
+     trailing qualifier text (matches field_value's own behaviour when
+     it had this inline). #}
+  {% if source_url %}
+    <p class="text-xs text-neutral mt-1">
+      <a href="{{ source_url }}" class="underline hover:text-accent" target="_blank" rel="noopener">
+        {{ source_authority or "Source" }}
+        {%- if label == "institution_reported" %} (institution-reported){% endif -%}
+        {%- if label == "needs_rechecking" %} (recheck due){% endif -%}
+        <span class="sr-only"> (opens in a new tab)</span>
+      </a>
+      {% if verification_date %} &middot; verified {{ verification_date }}{% endif %}
+    </p>
+  {% endif %}
+{% endmacro %}
+
+{% macro eligibility_outcome_badge(outcome, overall=false) %}
+  {# app/rules/eligibility.py's three outcomes -- deliberately a
+     separate vocabulary/macro from trust_badge() above, not a sixth
+     trust label; see .eligibility-badge in app/web/styles/input.css. #}
+  {% if outcome == "meets" %}
+    <span class="eligibility-badge eligibility-badge--meets">
+      <span aria-hidden="true">&#10003;</span>
+      {{ "You meet the published requirements" if overall else "Meets this requirement" }}
+    </span>
+  {% elif outcome == "does_not_meet" %}
+    <span class="eligibility-badge eligibility-badge--does_not_meet">
+      <span aria-hidden="true">&#10007;</span>
+      {{ "At least one published requirement isn't met" if overall else "Does not meet this requirement" }}
+    </span>
+  {% else %}
+    <span class="eligibility-badge eligibility-badge--insufficient_information">
+      <span aria-hidden="true">&#8505;</span>
+      {{ "Enter your details above to check this" if overall else "Not yet known" }}
+    </span>
+  {% endif %}
+{% endmacro %}
+
 {% macro field_value(fv, money=false) %}
   {# fv is a FieldValueOut-shaped dict/object: value, label, source_url,
      verification_date, source_authority. Never renders `value` when the
@@ -49,21 +93,11 @@
       {% endif %}
     {% endif %}
     {{ trust_badge(fv.label) }}
-    {% if fv.source_url %}
-      {# ux-qa-reviewer finding, 2026-09-19: this used to say "Official
-         source" for every label, including institution_reported and
-         needs_rechecking -- directly contradicting the badge shown one
-         line above it. Link text now names the actual authority and
-         matches what the badge already says, instead of overriding it. #}
-      <p class="text-xs text-neutral mt-1">
-        <a href="{{ fv.source_url }}" class="underline hover:text-accent" target="_blank" rel="noopener">
-          {{ fv.source_authority or "Source" }}
-          {%- if fv.label == "institution_reported" %} (institution-reported){% endif -%}
-          {%- if fv.label == "needs_rechecking" %} (recheck due){% endif -%}
-          <span class="sr-only"> (opens in a new tab)</span>
-        </a>
-        {% if fv.verification_date %} &middot; verified {{ fv.verification_date }}{% endif %}
-      </p>
-    {% endif %}
+    {# ux-qa-reviewer finding, 2026-09-19: this used to say "Official
+       source" for every label, including institution_reported and
+       needs_rechecking -- directly contradicting the badge shown one
+       line above it. Link text now names the actual authority and
+       matches what the badge already says, instead of overriding it. #}
+    {{ evidence_line(fv.source_authority, fv.source_url, fv.verification_date, fv.label) }}
   </div>
 {% endmacro %}

@@ -243,6 +243,21 @@ def required_subjects(
 def domicile_in(
     allowed_states: frozenset[str], *, source_claim_id: str | None = None
 ) -> Criterion:
+    """Matching is case- and whitespace-insensitive (both sides
+    `.strip().lower()`'d before comparison) — unlike `required_subjects`,
+    where 'Français' vs 'Francais' is deliberately NOT collapsed (accent
+    stripping loses real information about what subject was actually
+    studied). A state name has no equivalent ambiguity: 'delhi' and
+    'Delhi' name the same place, and a plausible free-text capitalisation
+    mismatch (this field has no dropdown, just a text input) must not
+    silently turn into a hard `does_not_meet` when the student's answer
+    was actually fine — that would contradict this module's own
+    docstring promise that only a genuinely unclear input becomes
+    `insufficient_information` rather than a confident-looking rejection.
+    The *display* text (explanation, published state list) always shows
+    the original casing, never the normalised form."""
+    normalized_allowed = frozenset(s.strip().lower() for s in allowed_states)
+
     def check(inp: EligibilityInput) -> CriterionResult:
         if inp.domicile_state is None:
             return CriterionResult(
@@ -251,7 +266,7 @@ def domicile_in(
                 explanation="Domicile state is needed to check this eligibility rule.",
                 source_claim_id=source_claim_id,
             )
-        if inp.domicile_state not in allowed_states:
+        if inp.domicile_state.strip().lower() not in normalized_allowed:
             return CriterionResult(
                 name="domicile_in",
                 outcome=EligibilityOutcome.does_not_meet,

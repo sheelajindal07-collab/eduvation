@@ -6,6 +6,7 @@ asserting on rendered HTML content instead of a JSON body.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from typing import Any
 
@@ -184,6 +185,50 @@ class TestComparePage:
         )
         assert "Which option would you like to investigate further?" in response.text
 
+    def test_compare_links_to_requirements_for_each_compared_pathway(
+        self, two_pathways: dict[str, Any]
+    ) -> None:
+        """A student finishing a 3-way comparison must be able to keep
+        going on any of the compared pathways, not just backtrack to
+        Explore."""
+        response = client.get(
+            "/compare/view",
+            params={
+                "pathway_id": [
+                    two_pathways["pathway_a"]["id"],
+                    two_pathways["pathway_b"]["id"],
+                ]
+            },
+        )
+        assert response.status_code == 200
+        assert (
+            f'/requirements/view?pathway_id={two_pathways["pathway_a"]["id"]}'
+            in response.text
+        )
+        assert (
+            f'/requirements/view?pathway_id={two_pathways["pathway_b"]["id"]}'
+            in response.text
+        )
+
+    def test_compare_page_header_links_to_the_timeline_calculator(
+        self, two_pathways: dict[str, Any]
+    ) -> None:
+        """The Timeline calculator is pathway-independent and must be
+        reachable from every screen via base.html's global header link,
+        including Compare."""
+        response = client.get(
+            "/compare/view",
+            params={
+                "pathway_id": [
+                    two_pathways["pathway_a"]["id"],
+                    two_pathways["pathway_b"]["id"],
+                ]
+            },
+        )
+        assert response.status_code == 200
+        assert 'href="/timeline/view"' in response.text
+        assert "Timeline calculator" in response.text
+
     def test_evidence_link_names_the_actual_source_and_varies_by_trust_label(
         self, admin_client: Client, two_pathways: dict[str, Any]
     ) -> None:
@@ -288,3 +333,336 @@ class TestComparePage:
             assert distinctive_value not in response.text
         finally:
             admin_client.table("claims").delete().eq("id", draft_claim["id"]).execute()
+
+
+@pytest.fixture
+def requirements_pathway(
+    admin_client: Client,
+) -> Iterator[dict[str, Any]]:
+    """Same shape as tests/db/test_api_eligibility.py's `eligibility_
+    pathway` fixture: a real pathway with four published eligibility
+    claims (minimum_age=17, minimum_marks_percentage=50,
+    required_subjects=Physics,Chemistry,Biology) plus a source, so
+    /requirements/view has real criteria (with real evidence) to render,
+    not just the vacuous "meets" of a claims-free pathway."""
+    official_source = (
+        admin_client.table("sources")
+        .insert(
+            {
+                "authority_name": "WEB UI REQUIREMENTS TEST SOURCE (fixture)",
+                "official_url": "https://example.invalid/requirements-web-ui-source",
+                "source_type": "official",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    career = (
+        admin_client.table("careers")
+        .insert({"name": "Requirements web UI test career (SYNTHETIC)"})
+        .execute()
+        .data[0]
+    )
+    pathway = (
+        admin_client.table("pathways")
+        .insert(
+            {
+                "career_id": career["id"],
+                "name": "Requirements web UI test pathway (SYNTHETIC)",
+                "description": "Seeded by tests/db/test_web_pages.py",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    claim_specs = [
+        ("minimum_age", "17"),
+        ("minimum_marks_percentage", "50"),
+        ("required_subjects", "Physics,Chemistry,Biology"),
+    ]
+    claims = []
+    for field, value in claim_specs:
+        claims.append(
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": pathway["id"],
+                    "field": field,
+                    "value": value,
+                    "source_id": official_source["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": "test-fixture-reviewer",
+                    "status": "published",
+                    "review_due_date": "2099-01-01",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+
+    yield {"career": career, "pathway": pathway, "source": official_source}
+
+    for claim in claims:
+        admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+    admin_client.table("pathways").delete().eq("id", pathway["id"]).execute()
+    admin_client.table("careers").delete().eq("id", career["id"]).execute()
+    admin_client.table("sources").delete().eq("id", official_source["id"]).execute()
+
+
+class TestRequirementsPage:
+    """Live regression tests for GET /requirements/view -- the HTML page
+    wrapping GET /eligibility's own check_eligibility(), same wrapping
+    relationship /compare/view has with assemble_comparisons()."""
+
+    def test_no_student_inputs_shows_the_criteria_list_without_crashing(
+        self, requirements_pathway: dict[str, Any]
+    ) -> None:
+        """On first load (pathway_id only), this is the screen's normal
+        starting state -- every criterion needing student input shows
+        as "insufficient_information"/"Not yet known", which is correct
+        and expected, not an error."""
+        response = client.get(
+            "/requirements/view",
+            params={"pathway_id": requirements_pathway["pathway"]["id"]},
+        )
+        assert response.status_code == 200
+        assert "Minimum age" in response.text
+        assert "Minimum marks percentage" in response.text
+        assert "Required subjects" in response.text
+        assert "Not yet known" in response.text
+        assert "WEB UI REQUIREMENTS TEST SOURCE (fixture)" in response.text
+
+    def test_matching_student_inputs_shows_meets(
+        self, requirements_pathway: dict[str, Any]
+    ) -> None:
+        response = client.get(
+            "/requirements/view",
+            params={
+                "pathway_id": requirements_pathway["pathway"]["id"],
+                "age": 18,
+                "marks_percentage": 72,
+                "subjects_studied": "Physics,Chemistry,Biology,English",
+            },
+        )
+        assert response.status_code == 200
+        assert "You meet the published requirements" in response.text
+        assert "Meets this requirement" in response.text
+        assert "verified 2026-09-01" in response.text
+
+    def test_non_matching_student_input_shows_does_not_meet(
+        self, requirements_pathway: dict[str, Any]
+    ) -> None:
+        response = client.get(
+            "/requirements/view",
+            params={
+                "pathway_id": requirements_pathway["pathway"]["id"],
+                "age": 18,
+                "marks_percentage": 30,  # below the published 50% minimum
+                "subjects_studied": "Physics,Chemistry,Biology",
+            },
+        )
+        assert response.status_code == 200
+        # Jinja autoescapes the apostrophe to &#39; in rendered HTML (this
+        # is correct, safe output -- the assertion matches what a
+        # browser actually receives, not a raw literal apostrophe).
+        assert "At least one published requirement isn&#39;t met" in response.text
+        assert "Does not meet this requirement" in response.text
+
+    def test_missing_pathway_id_degrades_to_a_friendly_message_not_a_crash(self) -> None:
+        response = client.get("/requirements/view")
+        assert response.status_code == 200
+        # Jinja autoescapes the apostrophe to &#39; -- see comment above.
+        assert "doesn&#39;t point to a valid pathway" in response.text
+        assert "Back to explore" in response.text
+
+    def test_malformed_pathway_id_degrades_to_a_friendly_message_not_a_500(self) -> None:
+        """Same class of bug already fixed for /compare/view: entity_id
+        is a `uuid` column (db/migrations/0001_init.sql), so an
+        unvalidated garbled id would otherwise reach Postgres raw and
+        crash to a bare 500."""
+        response = client.get(
+            "/requirements/view", params={"pathway_id": "not-a-uuid-at-all"}
+        )
+        assert response.status_code == 200
+        assert "doesn&#39;t point to a valid pathway" in response.text
+
+    def test_criteria_show_trust_label_alongside_the_eligibility_outcome(
+        self, requirements_pathway: dict[str, Any]
+    ) -> None:
+        """FIX 2: a criterion's outcome (does the STUDENT's input meet
+        it) and the underlying claim's trust label (should the FACT
+        itself be trusted) are two different questions -- both must be
+        visible, not just the outcome. The fixture's claims are a fresh
+        official-source publication, so every criterion's trust label is
+        "checked_against_official_source"."""
+        response = client.get(
+            "/requirements/view",
+            params={"pathway_id": requirements_pathway["pathway"]["id"]},
+        )
+        assert response.status_code == 200
+        assert "Checked against official source" in response.text
+        # Still shown alongside the eligibility outcome, not replacing it:
+        assert "Not yet known" in response.text
+
+    def test_domicile_criterion_display_name_is_not_the_awkward_generic_one(
+        self, admin_client: Client, requirements_pathway: dict[str, Any]
+    ) -> None:
+        """FIX 8: 'domicile_in' must render as 'Domicile', not the
+        generic name.replace('_', ' ')|capitalize result 'Domicile in'."""
+        domicile_claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": requirements_pathway["pathway"]["id"],
+                    "field": "domicile_states",
+                    "value": "Gujarat",
+                    "source_id": requirements_pathway["source"]["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": "test-fixture-reviewer",
+                    "status": "published",
+                    "review_due_date": "2099-01-01",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get(
+                "/requirements/view",
+                params={"pathway_id": requirements_pathway["pathway"]["id"]},
+            )
+            assert response.status_code == 200
+            assert re.search(r"<h2[^>]*>\s*Domicile\s*</h2>", response.text)
+            assert "Domicile in" not in response.text
+        finally:
+            admin_client.table("claims").delete().eq("id", domicile_claim["id"]).execute()
+
+    def test_domicile_case_mismatch_still_meets_not_a_hard_rejection(
+        self, admin_client: Client, requirements_pathway: dict[str, Any]
+    ) -> None:
+        """FIX 4 (part B): domicile_state is a bare text input with no
+        dropdown -- a plausible case mismatch ('gujarat' vs the
+        published 'Gujarat') must not silently produce a hard
+        does_not_meet."""
+        domicile_claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": requirements_pathway["pathway"]["id"],
+                    "field": "domicile_states",
+                    "value": "Gujarat",
+                    "source_id": requirements_pathway["source"]["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": "test-fixture-reviewer",
+                    "status": "published",
+                    "review_due_date": "2099-01-01",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get(
+                "/requirements/view",
+                params={
+                    "pathway_id": requirements_pathway["pathway"]["id"],
+                    "age": 18,
+                    "marks_percentage": 72,
+                    "subjects_studied": "Physics,Chemistry,Biology,English",
+                    "domicile_state": "gujarat",
+                },
+            )
+            assert response.status_code == 200
+            assert "You meet the published requirements" in response.text
+        finally:
+            admin_client.table("claims").delete().eq("id", domicile_claim["id"]).execute()
+
+    def test_domicile_hint_is_present_matching_subjects_studied_treatment(
+        self, requirements_pathway: dict[str, Any]
+    ) -> None:
+        """FIX 4 (part A): domicile_state gets a placeholder/hint, same
+        treatment subjects_studied already has. Needs a well-formed
+        pathway_id -- the form only renders on the "else" (non-error)
+        branch of the page."""
+        response = client.get(
+            "/requirements/view",
+            params={"pathway_id": requirements_pathway["pathway"]["id"]},
+        )
+        assert 'placeholder="e.g. Gujarat"' in response.text
+        assert "Your state of domicile" in response.text
+
+    def test_malformed_age_and_marks_percentage_degrade_not_a_422(
+        self, requirements_pathway: dict[str, Any]
+    ) -> None:
+        """FIX 5: age/marks_percentage used to be native int/float query
+        params, so a non-numeric value never reached this route at all --
+        FastAPI's own request validation rejected it first with a raw
+        JSON 422. A garbled value from a hand-edited/shared link must
+        degrade the same way an omitted one already does."""
+        response = client.get(
+            "/requirements/view",
+            params={
+                "pathway_id": requirements_pathway["pathway"]["id"],
+                "age": "not-a-number",
+                "marks_percentage": "also-not-a-number",
+                "subjects_studied": "Physics,Chemistry,Biology",
+            },
+        )
+        assert response.status_code == 200
+        # age/marks_percentage are treated as not provided -- their
+        # criteria are still "insufficient_information", not an error
+        # and not silently treated as some default value.
+        assert "Not yet known" in response.text
+
+
+class TestDbUnavailableDegradesGracefully:
+    """FIX 6: app/db/client.py's SupabaseNotConfiguredError docstring
+    says callers should catch it and degrade gracefully -- neither
+    compare_page nor requirements_page did. Simulated here via a
+    dependency override (app.web.pages._db_client_or_none) rather than
+    actually unsetting the live project's config, since these two live
+    tests share a TestClient/app with every other test in this module."""
+
+    def test_compare_page_shows_a_friendly_message_not_a_500(self) -> None:
+        from app.web.pages import _db_client_or_none
+
+        def _unavailable() -> Iterator[Client | None]:
+            yield None
+
+        app.dependency_overrides[_db_client_or_none] = _unavailable
+        try:
+            response = client.get(
+                "/compare/view",
+                params={
+                    "pathway_id": [
+                        "00000000-0000-0000-0000-000000000001",
+                        "00000000-0000-0000-0000-000000000002",
+                    ]
+                },
+            )
+        finally:
+            app.dependency_overrides.pop(_db_client_or_none, None)
+        assert response.status_code == 200
+        assert "trouble reaching our data" in response.text
+        assert "try again shortly" in response.text
+
+    def test_requirements_page_shows_a_friendly_message_not_a_500(self) -> None:
+        from app.web.pages import _db_client_or_none
+
+        def _unavailable() -> Iterator[Client | None]:
+            yield None
+
+        app.dependency_overrides[_db_client_or_none] = _unavailable
+        try:
+            response = client.get(
+                "/requirements/view",
+                params={"pathway_id": "00000000-0000-0000-0000-000000000001"},
+            )
+        finally:
+            app.dependency_overrides.pop(_db_client_or_none, None)
+        assert response.status_code == 200
+        assert "trouble reaching our data" in response.text
+        assert "try again shortly" in response.text
