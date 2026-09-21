@@ -1,6 +1,6 @@
 # BCION Lite - task index and checklist
 
-**DRAFT - generated 2026-09-21, not yet owner-approved.** Nothing here authorises work. DOCS-3 finalises this file: it adds BCI card numbers (BCI-007 and up), card links and the lockboard columns.
+**DRAFT - generated 2026-09-21, finalised by DOCS-3 (sixth pass) - not yet owner-approved.** Nothing here authorises work.
 
 Sources:
 
@@ -15,10 +15,10 @@ How to read it:
 
 - Steps are the build pack section 9 steps. A task sits under the step named in its audit, so some early work appears under a late step (for example DEPLOY-6 under Step 14). The tag in brackets says **when** it runs: `W0`-`W5` = Phase 1 wave, `float` = Phase 1 only if a lane is free (else P2-A), `P2` / `P3` = later phase, `owner` = you do it, `new` = added by the plan (no inventory entry; defined in plan section 3).
 - The inventory's own "Wave: N" field is a dependency depth, not these waves. Ignore it.
-- 248 audit tasks + 11 added = 259. 19 are dropped for the pilot (listed at the end, no checkbox).
-- Existing cards: BCI-001..006 (done). Sessions 1-3 of plan section 15 become BCI-007 (DOCS-1), BCI-008 (CONSENT-1), BCI-009 (DOCS-3).
+- 248 audit tasks + 12 added = 260. 19 are dropped for the pilot (listed at the end, no checkbox). One audited task (CONSENT-1) is listed but marked SUPERSEDED, not built - see Step 8.
+- Existing cards: BCI-001..006 (done). Sessions 1 and 3 of plan section 15 become BCI-007 (DOCS-1), BCI-008 (DOCS-3). Session 2 (CONSENT-1) is skipped, superseded - no BCI-008 slot for it.
 
-Migration ledger (Phase 1 order): 0004 DATA-12, 0005 SCOPE-3, 0006 AUTH-4, 0007 AUTH-5, 0008 PUB-2, 0009 PUB-3, 0010 SEC-6, 0011 CONSENT-4. Phase 2: AUTH-7, AUTH-10, DATA-4, I18N-7, I18N-8, AUTH-15, OPS-6, TRIAL-5, AI-4. Owner apply batches: DATA-10a (through 0005), DATA-10b (through 0007), PUB-4 (through 0009), DATA-10c (through 0011).
+Migration ledger (Phase 1 order): 0006 DATA-12, 0007 SCOPE-3, 0008 AUTH-4, 0009 AUTH-5, 0010 PUB-2, 0011 PUB-3, 0012 SEC-6, 0013 CONSENT-4. Phase 2: AUTH-7, AUTH-10, DATA-4, I18N-7, I18N-8, AUTH-15, OPS-6, TRIAL-5, AI-4. Owner apply batches: DATA-10a (through 0007), DATA-10b (through 0009), PUB-4 (through 0011), DATA-10c (through 0013). **PROVISIONAL — re-verify against `ls db/migrations/` before the migration lane opens**: 0004 and 0005 are already real, taken by another session's guardian-consent gate, not this plan's — that is why the ledger starts at 0006, not 0004 (see docs/DEVELOPMENT-PLAN.md section 16 for the two collisions that moved this).
 
 Lockboard (lead only): `RESET` line goes here before the shared local stack is reset. Currently: none.
 
@@ -41,9 +41,9 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] QA-2 - Local Supabase stack, target guard, strict no-skip, `make verify` [W1]
 - [ ] QA-3 - Run-tagged fixtures, sweeper, xdist (exclusive window on tests/db and tests/e2e) [W1]
 - [ ] DESIGN-5 - Three journeys plus the teacher demonstration journey [W1]
-- [ ] SCOPE-3 - Migration 0005: jurisdiction, cycle, currency columns, freeze-trigger update [W2]
+- [ ] SCOPE-3 - Migration 0007: jurisdiction, cycle, currency columns, freeze-trigger update [W2]
 - [ ] QA-6 - Cross-user access matrix with a table guard [W2]
-- [ ] SEC-6 - Migration 0010: grants and exposure hardening, catalogue test [W4]
+- [ ] SEC-6 - Migration 0012: grants and exposure hardening, catalogue test [W4]
 
 ## Step 5 Private staging (M1) - PARTIAL (app on the VM, localhost only)
 - [ ] CONSENT-18 - Supabase dashboard sign-ups OFF [W0, owner, new]
@@ -51,9 +51,9 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] DEPLOY-18 - Flags and wiring stub (config flags, middleware and router registry, mk/*.mk) [W1, new]
 - [ ] DEPLOY-5 - Readiness endpoint and read-only smoke script [W1]
 - [ ] DATA-15 - `--through NNNN` for apply_migrations.py [W2, new]
-- [ ] DATA-12 - Migration 0004: DB-gated demo mode for synthetic data [W2]
+- [ ] DATA-12 - Migration 0006: DB-gated demo mode for synthetic data [W2]
 - [ ] DATA-8 - Synthetic seed script [W2]
-- [ ] DEPLOY-2 - Environment contract, hosting docs, pinned-stack deviation draft [W2]
+- [ ] DEPLOY-2 - Environment contract, hosting docs (its hosting facts for `docs/DECISIONS.md`/`STATUS.md` come back as proposed lines; the lead drafts D13/D16 in DOCS-5, not here) [W2]
 - [ ] DEPLOY-3 - Dockerfile, install from requirements.lock, make build, CI image build [W2]
 - [ ] DEPLOY-4 - Compose file and nginx site templates [W2]
 - [ ] DEPLOY-15 - Behind-proxy and config hardening; refuse unknown sign-up flag names [W2]
@@ -64,7 +64,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] DESIGN-1 - Component and state contract v1 in docs/UI.md [W1]
 - [ ] DESIGN-3 - Banned-phrase lint test [W1]
 - [ ] I18N-1 - i18n mechanism, shared Jinja env, frozen key contract [W2]
-- [ ] UI-1 - App shell, nav, stub partials, macros, sample-data ribbon, `_save.html` includes [W2]
+- [ ] UI-1 - App shell, nav, stub partials, macros, sample-data ribbon (2 sessions; does **not** edit the journey templates — A11Y-2 adds the `_save.html` include lines) [W2]
 - [ ] DESIGN-18 - Content component macros; fills `_ask` and `_why` stubs [W2]
 - [ ] I18N-3 - Extract strings from existing templates, split by file; string-lint merges last [W3a]
 - [ ] UI-3 - Landing page and stateless quick start [W3a]
@@ -104,15 +104,15 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] I18N-15 - Message codes for eligibility and timeline text [P2]
 
 ## Step 8 Sign-in, plans, consent (M3) - PARTIAL and BLOCKED (no age or consent gate)
-- [ ] CONSENT-1 - Sign-up kill switch, fail closed (`SIGNUP_ENABLED`) [W0]
+- ~~CONSENT-1~~ - **SUPERSEDED, not built.** Another session merged a real age + guardian-email consent gate (`db/migrations/0004_guardian_consent.sql`, `0005_guardian_consent_request_rpc.sql`, confirmed live in production) while this plan was being written — it does the actual job this stopgap was a cheap stand-in for, more completely. No checkbox; not counted in the 260 total's checklist.
 - [ ] CONSENT-2 - Owner names safeguarding people and the non-author reviewer [W0, owner, day 3]
 - [ ] AUTH-1 - Session, guest and plan-store contract (owner explicit yes) [W1, contract burst]
 - [ ] CONSENT-3 - Consent and safeguarding design doc (placeholders; human read follows) [W1, contract burst]
 - [ ] SEC-2 - CSRF contract for cookie sessions [W2]
-- [ ] AUTH-4 - Migration 0006: guest server session [W2]
-- [ ] AUTH-5 - Migration 0007: next actions, plan validation [W2]
+- [ ] AUTH-4 - Migration 0008: guest server session [W2]
+- [ ] AUTH-5 - Migration 0009: next actions, plan validation [W2]
 - [ ] AUTH-6 - My Plan and Save controls, guest mode, new files only, cross-user lines [W3a]
-- [ ] CONSENT-4 - Migration 0011: consent gate tables, fail-closed RLS (after the human read) [W4, else float]
+- [ ] CONSENT-4 - Migration 0013: consent gate tables, fail-closed RLS (after the human read) [W4, else float]
 - [ ] AUTH-2 - Student cookie session [float]
 - [ ] AUTH-3 - Sign-in, sign-up (flagged off), sign-out pages [float]
 - [ ] AUTH-14 - My Plan signed-in mode, `needs_review` banner [float]
@@ -139,9 +139,9 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] PUB-13a - Owner names reviewers [W0, owner, day 3]
 - [ ] PUB-1 - Publishing contract incl. content hash (owner explicit yes) [W1, contract burst]
 - [ ] PUB-5 - Split reviewer_pages.py into a package [W1]
-- [ ] PUB-2 - Migration 0008: identity enforcement, source versions, claim columns [W3]
-- [ ] PUB-3 - Migration 0009: audit events, atomic publish functions, plan flag [W3]
-- [ ] PUB-4 - Owner applies through 0009 after the adversarial review [W3-W4, owner]
+- [ ] PUB-2 - Migration 0010: identity enforcement, source versions, claim columns [W3]
+- [ ] PUB-3 - Migration 0011: audit events, atomic publish functions, plan flag [W3]
+- [ ] PUB-4 - Owner applies through 0011 after the adversarial review [W3-W4, owner]
 - [ ] PUB-13b - Owner: checker account, reviewers rows, critical_authorised on staging [W3-W4, owner, new]
 - [ ] SCOPE-13 - Reviewer-side currency and jurisdiction integrity [W4]
 - [ ] PUB-6 - Sources and source-version API [P2]
@@ -277,13 +277,14 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] TRIAL-18 - DPR measurements write-up (measurement 8 "not measured") [P3]
 
 ## Cross-cutting
-- [ ] DOCS-1 - Commit pending memory edits, one CLAUDE.md line, clean stale worktrees [W0]
-- [ ] SEC-15 - Owner: move live Supabase keys out of the repo folder (blocks any fan-out) [W0, owner, new]
+- [x] DOCS-1 - Commit pending memory edits, one CLAUDE.md line, clean stale worktrees [W0] — **done**: `.claude/settings.json` deny rules and the CLAUDE.md line are committed and pushed (`2a9d6d2`); main is clean; the one existing worktree (`wf_9b7797a4-e76-1`) has real uncommitted work (the "Held, not merged" student sign-up UI, `STATUS.md`) and is deliberately left alone, not removed
+- [x] SEC-15 - Owner: move live Supabase keys out of the repo folder (blocks any fan-out) [W0, owner, new] — **done, owner-confirmed 2026-09-21**
+- [ ] SEC-16 - Owner: rotate the staging service-role key, JWT secret and DB password once QA-2 is merged (earlier agent sessions could read the pre-SEC-15 values) — hard precondition of DEPLOY-7 and PUB-13b [W1-W2, owner, new]
 - [ ] TRIAL-1 - Owner kickoff: name people, recruit adult round-1 testers, name a second moderator [W0, owner]
 - [ ] SCOPE-1 - Owner confirms phasing and the trial coverage set (explicit yes) [W0, owner]
 - [ ] RULES-17 - Owner answers the six rules decisions [W0, owner]
 - [ ] CONSENT-17 - Record the DigiLocker route as deferred [W0, owner]
-- [ ] DOCS-3 - Task-card template, this index finalised, ledgers, card stubs [W0]
+- [~] DOCS-3 - Task-card template, this index finalised, ledgers, card stubs [W0] — **3a done** (this index finalised, ledger, `tasks/TEMPLATE.md`, `docs/CONTRACTS.md` skeleton); **3b open** (per-task card stubs — mechanical, does not gate fan-out, generated from the inventories on demand)
 - [ ] DOCS-2 - Slim STATUS.md [W0-W1]
 - [ ] DOCS-5 - KNOWN_ISSUES.md, decisions digest, D16 draft [W0-W1]
 - [ ] DOCS-4 - Parallel-work protocol (docs/PARALLEL.md) [W1]
@@ -295,11 +296,11 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] CONTENT-18 - Scrub researcher email from drafts [W1]
 - [ ] QA-4 - Parallel-agent testing contract (docs/TESTING.md) [W2]
 - [ ] DOCS-12 - Refresh CLAUDE.md links and verified commands [W2]
-- [ ] DATA-10a - Owner: QA-12 sweep, apply through 0005, synthetic seed [W2, owner]
-- [ ] DATA-10b - Owner: apply through 0007, redeploy staging [W3, owner]
-- [ ] DATA-10c - Owner: apply through 0011 [W4-W5, owner]
+- [ ] DATA-10a - Owner: QA-12 sweep, apply through 0007, synthetic seed [W2, owner]
+- [ ] DATA-10b - Owner: apply through 0009, redeploy staging [W3, owner]
+- [ ] DATA-10c - Owner: apply through 0013 [W4-W5, owner]
 - [ ] SEC-8 - Data-flow map confirmed, owner acceptance [P2]
 - [ ] AUTH-18 - Contingency fix session for review findings [P2, only if needed]
 
 ## Dropped for the pilot (19; decision D16 lists the build-pack deviations)
-A11Y-13, SCOPE-12, RULES-14, RULES-18, SEC-11, CONSENT-13, CONSENT-15, CONSENT-16, PUB-16, OPS-11, OPS-13, UI-16, AUTH-13 (banner substitute in AUTH-14), I18N-14 (Gujarati strings restored only for a Gujarati-medium cohort), AI-14, CONTENT-19, DEPLOY-14, DOCS-10 (its deny rules moved into DOCS-13), TRIAL-15.
+A11Y-13, SCOPE-12, RULES-14, RULES-18, SEC-11, CONSENT-13, CONSENT-15, CONSENT-16, PUB-16, OPS-11, OPS-13, UI-16, AUTH-13 (banner substitute in AUTH-14), I18N-14 (Gujarati strings restored only for a Gujarati-medium cohort), AI-14, CONTENT-19, DEPLOY-14, DOCS-10 (its deny rules land with DOCS-1 on day 1, before any fan-out; DOCS-13 adds only the implementer allowlist), TRIAL-15.

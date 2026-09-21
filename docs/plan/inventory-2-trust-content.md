@@ -1,6 +1,6 @@
 # Task inventory - Trust, content and AI
 
-Generated 2026-09-21 by the planning workflow from verified area audits. DRAFT - task cards under tasks/ still need owner approval before work starts.
+**ARCHIVED - lead-only reading; task cards under tasks/ (tasks/TEMPLATE.md) supersede this file.** Generated 2026-09-21 by the planning workflow from verified area audits, then superseded once DOCS-3 finalised tasks/INDEX.md the same day. Migration numbers and a few task descriptions here are stale — docs/DEVELOPMENT-PLAN.md's ledger and a task's own card are what agents follow; find a task with Grep on its id heading, never a whole-file read.
 
 ## Consent gate and safeguarding workflow (launch gate)
 
