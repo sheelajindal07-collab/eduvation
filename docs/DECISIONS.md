@@ -5,6 +5,25 @@ never deleted.
 
 ---
 
+## 2026-09-21 — "No agent swarm" working rule removed: parallel
+## multi-agent workflows allowed
+**Event:** Owner instructed, directly, to remove the "No agent swarm" rule
+from `CLAUDE.md`'s working rules, alongside a request to plan and run the
+remaining build with as many parallel agents as useful.
+**Reason:** owner's call — speed to the first phase, with quality kept by
+review passes rather than by limiting concurrency.
+**What replaces it:** one bounded task per *agent* (not per session);
+parallel implementers only on disjoint files in separate worktrees; never
+parallel edits to a migration, lockfile or shared schema; the lead session
+verifies (runs the suite itself) and merges. These guardrails are the build
+pack's own section 7 "Agents" conditions, kept — only the concurrency
+ceiling ("lead plus one specialist" by default) is lifted.
+**What this does NOT change:** every non-negotiable in `CLAUDE.md`; "no
+whole-product attempts"; no student data to development agents; reviewer
+agents stay read-and-test-only. The build pack's section 7 text still says
+"default concurrency: lead plus one specialist" — superseded by this entry
+per the conflict order, not edited (that file mirrors the online doc).
+
 ## 2026-09-21 — Pilot scope widened: all-India admission rules, foreign
 ## pathways for Indian students added — supersedes the one-state build pack
 **Event:** Owner decided, in response to a direct question, to widen Lite's

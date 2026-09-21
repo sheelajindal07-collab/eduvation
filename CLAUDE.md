@@ -43,7 +43,15 @@ for Python + ruff + mypy · GitHub Actions with a protected prod environment.
 - `make build` — build the Docker image (once Dockerfile is exercised)
 
 ## Working rules
-- One bounded task per session. No agent swarm; no whole-product attempts.
+- One bounded task per agent; no whole-product attempts. Parallel
+  multi-agent workflows are allowed (owner decision 2026-09-21): disjoint
+  files, separate worktrees, never parallel edits to a migration, lockfile
+  or shared schema; the lead session verifies and merges.
+- Lead session only: before starting or fanning out build work, Grep
+  `docs/DEVELOPMENT-PLAN.md` for "### 8.8" (workflows at once per wave,
+  agents per workflow, cut-backs) and "### 6.4" (never-parallel groups) and
+  work to them; never exceed a cap without the owner's yes. Implementers
+  and reviewers never open that file or `docs/plan/` — they get a task card.
 - Read `STATUS.md` and the specific files a task touches — not the whole
   repo.
 - Ordinary code for facts, rules and arithmetic. AI only for grounded
