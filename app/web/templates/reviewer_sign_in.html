@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Reviewer sign-in &mdash; BCION Lite{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-2">Reviewer sign-in</h1>
+  <p class="text-neutral mb-6">Sign in to review and publish claims.</p>
+
+  {% if error %}
+    <div class="alert alert--caution mb-6">
+      <span aria-hidden="true">&#9888;</span>
+      <span>{{ error }}</span>
+    </div>
+  {% endif %}
+
+  {# Zero-JS: a plain HTML form POST is the whole mechanism. No client-
+     side validation replaces the server's own checks. #}
+  <form action="/reviewer/sign-in" method="post" class="card max-w-sm space-y-4">
+    <div>
+      <label for="email" class="block text-sm font-medium text-charcoal mb-1">Email</label>
+      <input
+        type="email"
+        name="email"
+        id="email"
+        required
+        autocomplete="email"
+        class="input"
+      />
+    </div>
+    <div>
+      <label for="password" class="block text-sm font-medium text-charcoal mb-1">Password</label>
+      <input
+        type="password"
+        name="password"
+        id="password"
+        required
+        autocomplete="current-password"
+        class="input"
+      />
+    </div>
+    <button type="submit" class="btn-primary w-full">Sign in</button>
+  </form>
+{% endblock %}

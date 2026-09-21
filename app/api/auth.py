@@ -37,6 +37,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 from supabase import Client
 from supabase_auth.errors import AuthApiError
+from supabase_auth.types import Session
 
 from app.db import get_anon_client
 
@@ -193,21 +194,33 @@ def sign_up(request: SignUpRequest) -> AuthResponse:
         client.postgrest.aclose()
 
 
+def authenticate(client: Client, email: str, password: str) -> Session:
+    """The one place this app calls Supabase Auth's
+    `sign_in_with_password` — shared by this route and by the reviewer
+    console's cookie-based session (`app/web/reviewer_pages.py`), so
+    neither caller reimplements the actual auth call (that module's own
+    docstring explains why it needs this rather than the trimmed
+    `AuthResponse` below: it needs the real `Session.expires_in` to size
+    its cookie to the token's actual lifetime, not a guessed default).
+
+    Never distinguishes "no such email" from "wrong password" — that
+    distinction is an account-enumeration leak — so every failure raises
+    the same 401 with the same message, regardless of caller.
+    """
+    try:
+        result = client.auth.sign_in_with_password({"email": email, "password": password})
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Invalid email or password.") from exc
+    if result.session is None or result.user is None:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    return result.session
+
+
 @router.post("/sign-in", response_model=AuthResponse)
 def sign_in(request: SignInRequest) -> AuthResponse:
     client = get_anon_client()
     try:
-        try:
-            result = client.auth.sign_in_with_password(
-                {"email": request.email, "password": request.password}
-            )
-        except Exception as exc:
-            # Never distinguish "no such email" from "wrong password" —
-            # that distinction is an account-enumeration leak.
-            raise HTTPException(status_code=401, detail="Invalid email or password.") from exc
-
-        if result.session is None or result.user is None:
-            raise HTTPException(status_code=401, detail="Invalid email or password.")
-        return AuthResponse(access_token=result.session.access_token, user_id=result.user.id)
+        session = authenticate(client, request.email, request.password)
+        return AuthResponse(access_token=session.access_token, user_id=session.user.id)
     finally:
         client.postgrest.aclose()
