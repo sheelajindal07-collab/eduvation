@@ -32,7 +32,10 @@
       "Bash(python -m ruff*)",
       "Bash(python -m mypy*)",
       "Bash(npm ci)",
-      "Bash(npm run*)"
+      "Bash(npm run*)",
+      "Bash(pip install*)",
+      "Bash(pip-compile*)",
+      "Bash(uv *)"
     ]
   }
 }
