@@ -181,6 +181,13 @@ entry for the exact shape. Also disclosed, not fixed: a non-`IN`
 fallback path, contrary to `docs/CONTRACTS.md` — no live impact today
 (no foreign-pathway content exists yet), flagged for a follow-up.
 
+**`A11Y-5` merged** — a guard test scans `app/web/templates/` and
+`app/static/` and fails on any `serviceWorker`/`localStorage`/
+`sessionStorage`/`indexedDB`/`caches.`/`sw.js` reference, proven (via a
+planted-string fixture) to actually catch something rather than
+passing vacuously. Nothing on the tree trips it today. `tests/unit`:
+968 passed.
+
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
 - `GET /compare?pathway_id=X&pathway_id=Y` — trust-labelled fields plus
