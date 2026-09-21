@@ -444,9 +444,14 @@ class TestRequirementsPage:
         assert "Not yet known" in response.text
         assert _REQUIREMENTS_SOURCE_NAME in response.text
 
-    def test_matching_student_inputs_shows_meets(
+    def test_get_ignores_a_personal_field_smuggled_into_the_query_string(
         self, requirements_pathway: dict[str, Any]
     ) -> None:
+        """SEC-5: GET /requirements/view only ever declares pathway_id --
+        age/marks_percentage/subjects_studied tacked onto the query
+        string anyway (a hand-edited or legacy shared link) have no
+        route parameter to bind to and are never read into the
+        eligibility check."""
         response = client.get(
             "/requirements/view",
             params={
@@ -457,16 +462,41 @@ class TestRequirementsPage:
             },
         )
         assert response.status_code == 200
+        assert "Not yet known" in response.text
+        assert "You meet the published requirements" not in response.text
+
+    def test_matching_student_inputs_shows_meets(
+        self, requirements_pathway: dict[str, Any]
+    ) -> None:
+        # SEC-5: age/marks_percentage/subjects_studied are personal
+        # inputs, POST-only -- the form now submits as a plain
+        # x-www-form-urlencoded POST (same as the real zero-JS <form>),
+        # never a query string.
+        response = client.post(
+            "/requirements/view",
+            data={
+                "pathway_id": requirements_pathway["pathway"]["id"],
+                "age": 18,
+                "marks_percentage": 72,
+                "subjects_studied": "Physics,Chemistry,Biology,English",
+            },
+        )
+        assert response.status_code == 200
         assert "You meet the published requirements" in response.text
         assert "Meets this requirement" in response.text
         assert "verified 2026-09-01" in response.text
+        # POST-and-render: no redirect, so the URL a browser would end up
+        # on is still exactly the POST target, never carrying "age=18" or
+        # any other personal value.
+        assert str(response.url).endswith("/requirements/view")
+        assert "age" not in str(response.url)
 
     def test_non_matching_student_input_shows_does_not_meet(
         self, requirements_pathway: dict[str, Any]
     ) -> None:
-        response = client.get(
+        response = client.post(
             "/requirements/view",
-            params={
+            data={
                 "pathway_id": requirements_pathway["pathway"]["id"],
                 "age": 18,
                 "marks_percentage": 30,  # below the published 50% minimum
@@ -556,7 +586,8 @@ class TestRequirementsPage:
         """FIX 4 (part B): domicile_state is a bare text input with no
         dropdown -- a plausible case mismatch ('gujarat' vs the
         published 'Gujarat') must not silently produce a hard
-        does_not_meet."""
+        does_not_meet. SEC-5: now submitted via POST, not a query
+        string."""
         domicile_claim = (
             admin_client.table("claims")
             .insert(
@@ -576,9 +607,9 @@ class TestRequirementsPage:
             .data[0]
         )
         try:
-            response = client.get(
+            response = client.post(
                 "/requirements/view",
-                params={
+                data={
                     "pathway_id": requirements_pathway["pathway"]["id"],
                     "age": 18,
                     "marks_percentage": 72,
@@ -608,14 +639,14 @@ class TestRequirementsPage:
     def test_malformed_age_and_marks_percentage_degrade_not_a_422(
         self, requirements_pathway: dict[str, Any]
     ) -> None:
-        """FIX 5: age/marks_percentage used to be native int/float query
-        params, so a non-numeric value never reached this route at all --
-        FastAPI's own request validation rejected it first with a raw
-        JSON 422. A garbled value from a hand-edited/shared link must
-        degrade the same way an omitted one already does."""
-        response = client.get(
+        """FIX 5: a garbled age/marks_percentage from a hand-edited or
+        malfunctioning client must degrade the same friendly way an
+        omitted one already does, not surface a raw 422 -- true whether
+        the value arrives via a query param (the old GET form) or, now
+        (SEC-5), a POST body field."""
+        response = client.post(
             "/requirements/view",
-            params={
+            data={
                 "pathway_id": requirements_pathway["pathway"]["id"],
                 "age": "not-a-number",
                 "marks_percentage": "also-not-a-number",

@@ -109,9 +109,11 @@ def eligibility_pathway(
 
 class TestEligibilityEndpoint:
     def test_eligible_student_meets(self, eligibility_pathway: dict[str, Any]) -> None:
-        response = client.get(
+        # SEC-5: age/marks_percentage/subjects_studied are personal
+        # inputs, POST-only (docs/CONTRACTS.md) -- never a query param.
+        response = client.post(
             "/eligibility",
-            params={
+            json={
                 "pathway_id": eligibility_pathway["pathway"]["id"],
                 "age": 18,
                 "marks_percentage": 72,
@@ -136,9 +138,9 @@ class TestEligibilityEndpoint:
     def test_missing_subject_gives_does_not_meet(
         self, eligibility_pathway: dict[str, Any]
     ) -> None:
-        response = client.get(
+        response = client.post(
             "/eligibility",
-            params={
+            json={
                 "pathway_id": eligibility_pathway["pathway"]["id"],
                 "age": 18,
                 "marks_percentage": 72,
@@ -157,6 +159,32 @@ class TestEligibilityEndpoint:
         )
         assert response.status_code == 200
         body = response.json()
+        assert body["outcome"] == "insufficient_information"
+
+    def test_get_ignores_a_personal_field_smuggled_into_the_query_string(
+        self, eligibility_pathway: dict[str, Any]
+    ) -> None:
+        """SEC-5: GET /eligibility only ever declares `pathway_id` --
+        an `age` tacked onto the query string anyway (a hand-edited or
+        legacy shared link) has no route parameter to bind to and is
+        silently unused, never read into the eligibility check. This is
+        the structural version of "GET never accepts a personal input":
+        it isn't validated away, there is simply nothing on this route
+        that would ever look at it."""
+        response = client.get(
+            "/eligibility",
+            params={
+                "pathway_id": eligibility_pathway["pathway"]["id"],
+                "age": 18,
+                "marks_percentage": 72,
+                "subjects_studied": "Physics,Chemistry,Biology,English",
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        # Every criterion is still unevaluated -- the smuggled fields
+        # were never read, so this is identical to the pathway_id-only
+        # GET case, not a partial or accidental "meets".
         assert body["outcome"] == "insufficient_information"
 
     def test_pathway_with_no_eligibility_claims_vacuously_meets(
@@ -255,8 +283,8 @@ class TestDangerousSourceUrlSchemeIsNeverRendered:
             .data[0]
         )
         try:
-            response = client.get(
-                "/eligibility", params={"pathway_id": pathway["id"], "age": 18}
+            response = client.post(
+                "/eligibility", json={"pathway_id": pathway["id"], "age": 18}
             )
             assert response.status_code == 200
             body = response.json()
@@ -372,9 +400,9 @@ class TestDraftClaimsNeverAffectEligibilityOutcome:
     ) -> None:
         _reviewer_id, reviewer_client = reviewer
         token = reviewer_client.auth.get_session().access_token
-        response = client.get(
+        response = client.post(
             "/eligibility",
-            params={
+            json={
                 "pathway_id": pathway_with_a_draft_criterion["pathway"]["id"],
                 "age": 18,
                 "marks_percentage": 72,
