@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from supabase import Client
 
 from app.api.deps import get_db_client
-from app.data.models import Claim, ClaimStatus, Source, SourceType
+from app.data.models import DEFAULT_JURISDICTION, Claim, ClaimStatus, Source, SourceType
 from app.planning.comparison import (
     FieldValue,
     ProgrammeCostBreakdown,
@@ -145,6 +145,17 @@ def _row_to_claim(row: dict[str, Any]) -> Claim:
         superseded_by=row.get("superseded_by"),
         approved_draft_version=row.get("approved_draft_version"),
         extracted_by=row.get("extracted_by", "human"),
+        # SCOPE-3. `or DEFAULT_JURISDICTION` rather than a plain
+        # `.get(..., DEFAULT_JURISDICTION)`: the key IS present on every
+        # row once 0008 is applied, so the fallback is really for the
+        # deploy window where this code is live and that migration is
+        # not — and in that window PostgREST omits the key entirely.
+        # `currency`/`academic_cycle` keep a None fallback because None
+        # is their real, meaningful value (CONTRACTS.md: a money claim
+        # with a null currency renders not_available), never a stand-in.
+        jurisdiction=row.get("jurisdiction") or DEFAULT_JURISDICTION,
+        academic_cycle=row.get("academic_cycle"),
+        currency=row.get("currency"),
     )
 
 
@@ -154,6 +165,7 @@ def _row_to_source(row: dict[str, Any]) -> Source:
         authority_name=row["authority_name"],
         official_url=row["official_url"],
         source_type=SourceType(row["source_type"]),
+        jurisdiction=row.get("jurisdiction") or DEFAULT_JURISDICTION,
     )
 
 

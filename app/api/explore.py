@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from supabase import Client
 
 from app.api.deps import get_db_client
+from app.data.models import DEFAULT_JURISDICTION
 
 router = APIRouter(tags=["explore"])
 
@@ -29,6 +30,13 @@ class PathwaySummary(BaseModel):
     career_id: str
     name: str
     description: str
+    jurisdiction: str = DEFAULT_JURISDICTION
+    """SCOPE-3. Needed on the list screen, not just on Compare, because
+    docs/CONTRACTS.md makes a non-`IN` pathway's fields display-only —
+    the UI has to be able to tell which ones those are before the
+    student opens one. Defaulted so this still validates in the deploy
+    window where db/migrations/0008_jurisdiction_currency.sql has not
+    been applied yet and PostgREST omits the column."""
 
 
 class ExploreResponse(BaseModel):
@@ -77,7 +85,15 @@ def _demo_mode(db: Client) -> bool:
 @router.get("/careers", response_model=ExploreResponse)
 def list_careers(db: Client = Depends(get_db_client)) -> ExploreResponse:
     careers_result = db.table("careers").select("id, name, nco_anchor").execute()
-    pathways_result = db.table("pathways").select("id, career_id, name, description").execute()
+    # `*` rather than a column list (SCOPE-3): naming `jurisdiction`
+    # explicitly would 400 in the deploy window where this code is live
+    # but db/migrations/0008_jurisdiction_currency.sql is not yet applied
+    # — PostgREST rejects a select for a column that does not exist.
+    # With `*` the column is simply absent and `PathwaySummary`'s default
+    # covers it. `pathways` is world-readable and holds no personal data,
+    # so there is nothing here that a column list was protecting; the
+    # same `*` shape app/api/compare.py already uses for claims/sources.
+    pathways_result = db.table("pathways").select("*").execute()
     return ExploreResponse(
         careers=[CareerSummary.model_validate(row) for row in careers_result.data],
         pathways=[PathwaySummary.model_validate(row) for row in pathways_result.data],

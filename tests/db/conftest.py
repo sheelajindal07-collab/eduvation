@@ -577,6 +577,29 @@ _DEMO_MODE_SKIP_REASON = (
 )
 
 
+def _scope_migration_applied() -> bool:
+    """Same marker-function pattern as 0003-0007, for
+    0008_jurisdiction_currency.sql. That migration adds no new table —
+    only columns, constraints, an index and a re-created trigger
+    function — so there is nothing for `_saved_plans_table_exists`'s
+    "select from it" shape to check."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("scope_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_SCOPE_SKIP_REASON = (
+    "db/migrations/0008_jurisdiction_currency.sql not yet applied to this "
+    "stack. Run `make test-db-up`; see db/migrations/README.md. A stale "
+    "PostgREST schema cache looks identical — `make test-db-migrate` "
+    "reloads it."
+)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Enforce the target guard before anything is collected or run.
 
@@ -662,6 +685,10 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     # Same pattern, for 0007_demo_mode.sql.
     if not _demo_mode_migration_applied():
         _mark_unavailable(_in(("test_demo_mode.py",)), _DEMO_MODE_SKIP_REASON)
+
+    # Same pattern, for 0008_jurisdiction_currency.sql.
+    if not _scope_migration_applied():
+        _mark_unavailable(_in(("test_scope_columns.py",)), _SCOPE_SKIP_REASON)
 
 
 @pytest.fixture(scope="module")
