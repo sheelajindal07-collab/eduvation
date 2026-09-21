@@ -79,6 +79,7 @@ from app.api.health import router as health_router
 from app.api.plans import router as plans_router
 from app.api.timeline import router as timeline_router
 from app.core.config import Settings, get_settings
+from app.core.logging import RequestIdLoggingMiddleware, configure_observability
 from app.web.consent_pages import router as consent_pages_router
 from app.web.pages import router as pages_router
 from app.web.reviewer_pages import router as reviewer_pages_router
@@ -302,7 +303,7 @@ def build_middleware_slots(settings: Settings) -> list[MiddlewareSlot]:
         ),
         MiddlewareSlot("security_headers", SecurityHeadersMiddleware, {"settings": settings}),
         MiddlewareSlot("maintenance", _ReservedSlotMiddleware),  # reserved, not built yet
-        MiddlewareSlot("request_id_logging", _ReservedSlotMiddleware),  # reserved
+        MiddlewareSlot("request_id_logging", RequestIdLoggingMiddleware),  # OPS-2
         MiddlewareSlot("cache_policy", _ReservedSlotMiddleware),  # reserved
         MiddlewareSlot("origin_check", OriginCheckMiddleware, {"settings": settings}),
         MiddlewareSlot("usage_events", _ReservedSlotMiddleware),  # optional, not built yet
@@ -417,6 +418,7 @@ def create_app(
         docs_url="/docs" if settings.app_env != "production" else None,
     )
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
+    configure_observability(app)  # OPS-2: JSON formatter + redaction filter, root logger
 
     # Reversed: Starlette's `add_middleware` prepends to its own internal
     # list, so the last one added ends up outermost (first to see a
