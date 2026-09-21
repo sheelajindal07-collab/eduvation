@@ -1,4 +1,8 @@
 {% extends "base.html" %}
+{# UI-1: no student navigation on a reviewer page — see
+   reviewer_queue.html's own note. #}
+{% block student_nav %}{% endblock %}
+{% block utility_menu %}{% endblock %}
 {% block title %}Reviewer sign-in &mdash; BCION Lite{% endblock %}
 {% block content %}
   <h1 class="text-2xl font-semibold text-charcoal mb-2">Reviewer sign-in</h1>

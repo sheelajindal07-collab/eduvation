@@ -1,0 +1,81 @@
+{# UI-1 — the shared content components named in docs/UI.md's frozen
+   component set. Signatures are frozen here and documented in
+   docs/UI.md ("Shell and stub macro contract"); the bodies are
+   DESIGN-18's, except `pathway_detail_link`, whose owner is the
+   pathway-detail screen task.
+
+   Everything here is presentation only. No macro fetches, decides or
+   computes anything: a caller passes already-published, already-checked
+   values (app/planning/*, app/api/*), and a macro renders them. A
+   value with trust label `not_available` is never rendered as a value
+   — `field_value()` in `_trust_badge.html` is the one place that rule
+   is enforced, and these macros go through it rather than re-deciding. #}
+{% from "_trust_badge.html" import field_value, trust_badge %}
+{% from "_ask.html" import ask_bcion %}
+
+
+{% macro comparison_section(heading, field=none, money=false, note=none, divider=false) %}
+  {#- One labelled section inside a pathway column on the Compare
+      screen: a heading, one published field (via `field_value`, so the
+      trust badge and evidence line come with it), and an optional
+      plain-language note underneath.
+
+      heading   the section label ("Entry requirements", "Time", ...)
+      field     a FieldValueOut-shaped value, or none for a `{% call %}`
+                body
+      money     format the value as rupees
+      note      plain-language qualifier shown under the value
+      divider   draw the top rule that separates cost from the fields
+                above it
+
+      Called with `{% call %}` when a section's body is not a single
+      field (the Compare cost card, which is four numbers). -#}
+{% endmacro %}
+
+
+{% macro career_card(career, entry_routes=none, investigate=none, why=none,
+                     reality_check=none, detail_url=none) %}
+  {#- The Build Pack's career card: "What would I do; how could I
+      enter; what should I investigate; why am I seeing this. A
+      reality-check section: common misunderstandings, hard parts, what
+      to try before committing, routes worth comparing."
+
+      Four questions, in that order, plus the reality check. A section
+      with nothing published says so; it is never quietly dropped, or
+      the card would read as complete when it is not. -#}
+{% endmacro %}
+
+
+{% macro why_seeing_this(reasons=none, preferences=none, unknowns=none,
+                         change_preferences_url=none, heading=none) %}
+  {#- The rendered "why am I seeing this" block. `_why.html`'s
+      `why_am_i_seeing_this` is the per-screen slot that calls this —
+      see that file on why there are two names. -#}
+{% endmacro %}
+
+
+{% macro what_changed_list(changes=none, heading=none, empty_message=none) %}
+  {#- docs/UI.md "'What changed' surface": "field, old value, new value,
+      date, source — the interface side of the public correction log". -#}
+{% endmacro %}
+
+
+{% macro reminder_opt_in(subject, action_url=none, opted_in=false,
+                         channel=none, deadline=none, note=none) %}
+  {#- An explicit, per-deadline opt-in. Off unless the student turns it
+      on, one deadline at a time, never a blanket subscription. -#}
+{% endmacro %}
+
+
+{% macro ask_bcion_entry(prompts=none, pathway_id=none, career_id=none,
+                         ai_enabled=false, heading=none) %}
+  {#- Canned prompts only, and nothing at all when AI is off. -#}
+{% endmacro %}
+
+
+{% macro pathway_detail_link(pathway_id, label=none, class_names=none) %}
+  {#- Pre-wired slot for the pathway-detail screen (its card: "The
+      detail link on Explore/Compare is a slot pre-wired by UI-1 in
+      _components.html"). Renders nothing until /pathways/{id}/view
+      exists — a link to a route that 404s is worse than no link. -#}
+{% endmacro %}

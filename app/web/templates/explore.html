@@ -1,10 +1,21 @@
 {% extends "base.html" %}
+{# UI-1 pre-wires the per-owner stub partials here so their call sites
+   exist before their owners build them (see each partial's own header).
+   Every one of them renders nothing today; none of this screen's own
+   content changed. #}
+{% from "_why.html" import why_am_i_seeing_this %}
+{% from "_save.html" import save_action %}
+{% from "_components.html" import pathway_detail_link %}
 {% block title %}Explore careers &mdash; BCION Lite{% endblock %}
 {% block content %}
   <h1 class="text-2xl font-semibold text-charcoal mb-2">Explore</h1>
   <p class="text-neutral mb-6">
     Pick 2 or 3 pathways below, then compare them side by side.
   </p>
+
+  {# Why this list, once there is a quick start and a suggestion engine
+     to have a reason. #}
+  {{ why_am_i_seeing_this() }}
 
   {% if not careers_with_pathways %}
     <div class="alert alert--neutral">
@@ -56,6 +67,11 @@
                     >
                       See requirements for {{ pathway.name }}
                     </a>
+                    {# Pre-wired slots (UI-1): the pathway-detail link
+                       and the save toggle, both empty until their own
+                       tasks land. #}
+                    {{ pathway_detail_link(pathway.id, label=pathway.name) }}
+                    {{ save_action("pathway", pathway.id, return_to="/explore") }}
                   </li>
                 {% endfor %}
               </ul>

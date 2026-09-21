@@ -1,3 +1,10 @@
+{# UI-1 pre-wires the "Report an issue" slot into `evidence_line` below:
+   docs/UI.md requires every consequential fact to offer one, and this
+   is the single macro every consequential fact already goes through.
+   `report_issue` renders nothing until the Ops/support area builds the
+   endpoint — see `_report.html`. #}
+{% from "_report.html" import report_issue %}
+
 {# docs/UI.md "Trust labels (per field)": exactly these five, "with text +
    icon, never colour alone" (Visual direction). The glyph lives here, in
    markup, not as a CSS ::before someone could strip without noticing the
@@ -46,6 +53,10 @@
       {% if verification_date %} &middot; verified {{ verification_date }}{% endif %}
     </p>
   {% endif %}
+  {# The report slot sits OUTSIDE the `source_url` guard on purpose: a
+     fact with no official link is exactly the kind a reader is most
+     likely to want to dispute. Renders nothing today. #}
+  {{ report_issue() }}
 {% endmacro %}
 
 {% macro eligibility_outcome_badge(outcome, overall=false) %}

@@ -1,5 +1,13 @@
 {% extends "base.html" %}
 {% from "_trust_badge.html" import field_value %}
+{# UI-1 pre-wires the per-owner stub partials here so their call sites
+   exist before their owners build them (see each partial's own header).
+   Every one of them renders nothing today; none of this screen's own
+   content or field order changed. #}
+{% from "_ask.html" import ask_bcion %}
+{% from "_save.html" import save_action %}
+{% from "_why.html" import why_am_i_seeing_this %}
+{% from "_components.html" import pathway_detail_link %}
 {% block title %}Compare pathways &mdash; BCION Lite{% endblock %}
 {% block content %}
   <h1 class="text-2xl font-semibold text-charcoal mb-6">Compare</h1>
@@ -25,6 +33,12 @@
           <h2 class="text-lg font-semibold text-charcoal mb-4">
             {{ pathway_names.get(c.pathway_id, "This pathway") }}
           </h2>
+
+          {# Pre-wired slots (UI-1), all empty today: the pathway-level
+             "Ask BCION" entry, the detail link and the save toggle. #}
+          {{ ask_bcion("pathway_overview", pathway_id=c.pathway_id) }}
+          {{ pathway_detail_link(c.pathway_id, label=pathway_names.get(c.pathway_id)) }}
+          {{ save_action("pathway", c.pathway_id, return_to="/compare/view") }}
 
           {# docs/UI.md's field order for this screen: entry requirements
              -> main stages -> time -> total cost -> funding -> location
@@ -100,6 +114,8 @@
                       Verified charges aren't published for this pathway yet.
                     </p>
                   {% endif %}
+                  {# UI-11's cost-card entry point, pre-wired by UI-1. #}
+                  {{ ask_bcion("cost_breakdown", pathway_id=c.pathway_id) }}
                 </div>
               </div>
             </div>
@@ -134,6 +150,9 @@
         </section>
       {% endfor %}
     </div>
+
+    {# Why these pathways are side by side (UI-1 slot, empty today). #}
+    {{ why_am_i_seeing_this() }}
 
     <p class="mt-8 text-center text-charcoal font-medium">
       Which option would you like to investigate further?

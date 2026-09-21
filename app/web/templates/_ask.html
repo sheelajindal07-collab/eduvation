@@ -1,0 +1,46 @@
+{# UI-1 stub partial — the contextual "Ask BCION" entry point.
+
+   OWNER: UI-11, whose own card says the macro body is "already called
+   from cost card, pathway and eligibility line by UI-1". Those three
+   call sites exist as of this task: two in `compare.html` (the cost
+   card and the pathway column) and one in `requirements.html` (the
+   eligibility line).
+
+   THE RULE THIS MACRO CARRIES: docs/UI.md's component set —
+   "Contextual 'Ask BCION' entry points use canned prompts over
+   retrieved records (fixed template ...), never a blank chat box."
+   `template_id` is therefore required and is an id from a fixed server
+   -side list, never free text a student typed. This is also the
+   Tier-0/Tier-1 cost control from the national DPR section 9: a fixed
+   template set is what makes the spend cap predictable.
+
+   WHY IT RENDERS NOTHING TODAY: /ask does not exist (UI-11), and with
+   `AI_ENABLED` false — its default, and the pilot's starting state —
+   the answer page shows the AI-unavailable fallback anyway. An entry
+   point pointing at a route that 404s helps nobody.
+
+   Signature frozen by UI-1 — see docs/UI.md. #}
+
+{% macro ask_bcion(template_id, pathway_id=none, career_id=none, label=none, ai_enabled=false) %}
+  {#- Arguments, for UI-11:
+
+        template_id  REQUIRED. One of the fixed prompt templates, e.g.
+                     "cost_breakdown", "pathway_overview",
+                     "eligibility_gap". Becomes ?template=<id>. Never a
+                     free-text question.
+        pathway_id   the pathway the reader is looking at, so the
+                     answer is grounded in that record's published
+                     claims (?pathway_id=<uuid>)
+        career_id    same, for a career-level question
+        label        override for the visible link text
+        ai_enabled   passed by the caller from app/core/config.py's
+                     AI_ENABLED flag. When false this stays hidden
+                     rather than leading to the fallback page -- see
+                     `ask_bcion_entry` in `_components.html`, which is
+                     the rendered component; this macro is the per-fact
+                     entry point that links to it.
+
+      Only ids travel in the URL: docs/CONTRACTS.md keeps every personal
+      input POST-only, and a student's own question is exactly that.
+  -#}
+{% endmacro %}
