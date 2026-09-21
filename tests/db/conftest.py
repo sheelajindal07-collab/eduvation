@@ -622,6 +622,25 @@ _GUEST_SESSION_SKIP_REASON = (
 )
 
 
+def _plan_actions_migration_applied() -> bool:
+    """Same marker-function pattern as 0003-0009, for
+    0010_plan_actions.sql."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("plan_actions_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_PLAN_ACTIONS_SKIP_REASON = (
+    "db/migrations/0010_plan_actions.sql not yet applied to this stack. "
+    "Run `make test-db-up`; see db/migrations/README.md. A stale PostgREST "
+    "schema cache looks identical — `make test-db-migrate` reloads it."
+)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Enforce the target guard before anything is collected or run.
 
@@ -715,6 +734,16 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     # Same pattern, for 0009_guest_sessions.sql.
     if not _guest_session_migration_applied():
         _mark_unavailable(_in(("test_guest_session.py",)), _GUEST_SESSION_SKIP_REASON)
+
+    # Same pattern, for 0010_plan_actions.sql.
+    #
+    # test_api_plans.py is deliberately NOT gated on this one: AUTH-5's
+    # additions to app/api/plans.py degrade cleanly without 0010
+    # (`PlanOut.is_current` is defaulted, and the plan_actions routes
+    # live in their own test file), so gating it here would skip working
+    # 0002-era tests for a migration they do not actually need.
+    if not _plan_actions_migration_applied():
+        _mark_unavailable(_in(("test_plan_actions.py",)), _PLAN_ACTIONS_SKIP_REASON)
 
 
 @pytest.fixture(scope="module")
