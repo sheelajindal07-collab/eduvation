@@ -84,10 +84,21 @@ numbers used and applied. **CONSENT-1 superseded**, ~25 stale plan
 references fixed.
 **Still open:** the locked worktree `wf_9b7797a4-e76-1` ("Held, not
 merged" student sign-up UI) still needs its own bounded merge task — not
-yet carded. Small flagged follow-ups, not yet started: moving
-`explore.html`'s inline `<script>` to tighten the CSP; `mypy app` is a
-no-op in this environment (a pre-existing numpy-stub issue, confirmed
-reproducible on a clean checkout, unrelated to any of this session's work).
+yet carded. Small flagged follow-up, not yet started: moving
+`explore.html`'s inline `<script>` to tighten the CSP.
+**Root cause found for the "`mypy app` is a no-op" note every agent
+carried this session:** it isn't a project problem — this specific
+Windows dev machine has a stray, unpinned `numpy` install in its user
+Python 3.12 site-packages (not in `requirements-dev.lock` at all; this
+project has no numpy dependency) whose type stub uses Python-3.12-only
+syntax mypy can't parse, aborting the whole run before it reaches any
+real file. **CI's `mypy` has been the only place it actually ran all
+session**, in a clean, lockfile-only, numpy-free install — and it caught
+one genuine issue on the very next push after this note was written: a
+missing `cast(...)` in `app/web/guest_session.py` (migration lane),
+fixed immediately, matching this codebase's own established pattern
+used at five other call sites. Trust CI's `mypy` result, not a local run,
+on this machine, until someone cleans up its global Python install.
 **Next:** the Shell lane (`I18N-1`→`DESIGN-18`) and the Hardening lane's
 `OPS-2` are next up — both now unblocked.
 

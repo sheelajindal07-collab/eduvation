@@ -24,7 +24,7 @@ a URL or a query parameter, and never hands it to a template.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from fastapi import Request, Response
 from supabase import Client
@@ -151,7 +151,7 @@ def list_plans(db: Client, token: str) -> list[GuestPlan]:
     token gives an empty list — never an error, never another session's
     rows."""
     result = db.rpc("list_guest_plans", {"p_token": token}).execute()
-    rows: list[dict[str, Any]] = result.data or []
+    rows = cast("list[dict[str, Any]]", result.data or [])
     return [
         GuestPlan(
             id=row["id"],
