@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Guardian confirmation &mdash; BCION Lite{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-4">Guardian confirmation</h1>
+
+  {% if confirmed %}
+    <div class="alert alert--neutral">
+      <span aria-hidden="true">&#10003;</span>
+      <span>
+        Thank you — the account is now confirmed and active. The student can sign in.
+      </span>
+    </div>
+  {% else %}
+    {# Deliberately one generic message for every failure case (wrong
+       token, expired, already used) -- app/web/consent_pages.py never
+       tells this template which one it was, on purpose (task
+       requirement: don't build a token-enumeration oracle). #}
+    <div class="alert alert--error">
+      <span aria-hidden="true">&#9888;</span>
+      <span>This confirmation link is no longer valid.</span>
+    </div>
+  {% endif %}
+{% endblock %}

@@ -25,7 +25,12 @@ verified healthy, talking to the real database).
 - `POST /auth/sign-up`, `POST /auth/sign-in` — real Supabase Auth,
   proven to actually authenticate against RLS. Sign-up optionally
   accepts a `pending_plan` and saves it as the new account's first plan
-  in the same request — the guest→account migration.
+  in the same request — the guest→account migration. **`date_of_birth`
+  is now required** (see the guardian-consent section below) — no
+  regression for the existing 18+ behaviour, verified live this session.
+- `GET /consent/confirm?token=...` — the guardian-consent confirmation
+  page (new this session; not yet live-verifiable, see the ⚠️ section
+  above and the dedicated section below).
 - `POST/GET/PATCH/DELETE /plans` — save/list/edit/delete a plan, fully
   verified live, including student B provably unable to see or edit
   student A's plan through the real API.
@@ -237,30 +242,135 @@ a person yet — it is a starting point for usability round 1, not a frozen
 component set.
 
 ## Blockers
-None on engineering. **One real blocker on judgment, below.**
+**One real blocker remains, below — narrower than before, not gone.**
 
-## ⚠️ Read this one — sign-up is live with no age/consent gate
-A full security review of M3's auth surface (run this session,
-independent read-only agent, verified live against the real database —
-not a static-analysis guess) confirmed something worth your immediate
-attention, not just a someday item: **`POST /auth/sign-up` accepts
-anyone, any age, right now — no birth-year field, no consent flag,
-nothing in the code that disables a real minor's account.** This project
-exists for Class 8–12 students, i.e. minors are the primary user. Before
-M3, the whole app was anonymous/stateless, so this couldn't matter; M3 is
-exactly what introduced real persistent accounts, and the consent gate
-CLAUDE.md and `docs/SECURITY.md` call a **launch gate** hasn't been
-built.
-**What limits the actual exposure right now**: the app is still
-localhost-only on your VM — nobody outside it can reach `/auth/sign-up`
-today. That's the only thing standing between this and a real problem,
-not any code. **This is a hard blocker before the public-domain request
-below** (item 1) — don't say yes to public exposure until this is
-resolved one way or another (a real consent flow, or a simple interim
-gate like an invite-only/reviewer-approved sign-up for the pilot).
-Full write-up: `docs/DECISIONS.md`, and the review agent's own findings
-(ask either session to relay the full transcript if you want it
-verbatim).
+## ⚠️ Read this one — guardian-consent gate is BUILT, needs two owner actions before it protects anyone
+Per your decision this session (on the mechanism: an age gate at
+sign-up, and for anyone under 18, a guardian email that must confirm via
+a separate emailed link before the account activates), the gate
+described as a hard blocker in this section previously is now built —
+schema, sign-up/sign-in enforcement, the confirmation endpoint, a
+pluggable email sender, and live regression tests. **Two things still
+need you, specifically, before it provides real protection:**
+
+1. **Apply `db/migrations/0004_guardian_consent.sql`** to the live
+   Supabase project — same manual step as 0001/0002/0003 (SQL Editor, or
+   `python scripts/apply_migrations.py` once `DATABASE_URL` is in your
+   own `.env`; see `db/migrations/README.md`). **I could not do this
+   myself this session** — this worktree's `.env` has real
+   `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` values (copied from the
+   repo root, same as prior sessions) but no `DATABASE_URL`, so
+   `scripts/apply_migrations.py` has nothing to connect with, and I did
+   not use the Supabase MCP tool (off-limits for this project per
+   `docs/DECISIONS.md` "Infrastructure accounts"). Confirmed live,
+   this session: `app.api.guardian_consent.guardian_consent_schema_is_live()`
+   returns `False` against your real project right now.
+   **Until this is applied, the app fails CLOSED, not open**: an
+   under-18 sign-up is refused outright (503, "not yet available") rather
+   than silently let through active — verified live this session (see
+   below). Nothing about existing (adult) sign-up/sign-in changes either
+   way.
+2. **Provision a real email provider** (any SMTP relay — SendGrid, SES,
+   Mailgun, Resend, a plain mailbox — all expose one) and put the
+   credentials in your own `.env` (`SMTP_HOST`/`SMTP_USERNAME`/
+   `SMTP_PASSWORD`/`SMTP_FROM_ADDRESS`, see `.env.example`). Until then,
+   `app/notifications/logging_sender.py`'s `LoggingEmailSender` is what
+   actually runs — it logs what would be sent (including the real
+   confirmation link/token) and reaches no real inbox. **This was
+   deliberately not done for you this session** — the task was explicitly
+   scoped not to sign up for or configure a real provider account, the
+   same way `GEMINI_API_KEY` needed you to provision Gemini yourself.
+   `app/notifications/smtp_sender.py`'s `SmtpEmailSender` is a complete,
+   working implementation (stdlib `smtplib`, no new dependency) gated
+   exactly like `app/ai/gemini_provider.py` — flip `Settings.
+   email_configured` true by setting those four values and it's live,
+   nothing else to build.
+
+**Why this split matters, concretely**: right now, the database half of
+this gate is real and tested (once #1 is applied) — a pending account
+genuinely cannot sign in, genuinely cannot self-activate, and the
+under-18 sign-up path is closed rather than silently bypassed while #1
+is outstanding. But without #2, a real guardian's confirmation email
+never reaches them — the mechanism would look complete and quietly
+provide no actual protection if #2 were mistaken for optional. Full
+design writeup and the residual, named risks (self-declared age with no
+identity verification, same limitation `docs/SECURITY.md`'s consent
+section already accepts pilot-wide) are in `db/migrations/
+0004_guardian_consent.sql`'s own docstring and `app/api/guardian_consent.py`'s.
+
+**What I verified live this session** (real Supabase project, this
+worktree's copied `.env`): `db_configured` is `True` (a real project is
+reachable); `guardian_consent_schema_is_live()` is `False` (0004 not
+applied yet); a minor sign-up attempt against the real project correctly
+returns `503` rather than creating an unusable-but-unprotected account
+(confirmed via `python -m app` locally, not a unit-test mock). **What I
+could NOT verify live**: the actual gate behaviour that needs the new
+tables/functions to exist (`tests/db/test_guardian_consent.py` — the
+full sign-up/sign-in/confirm/RLS suite) — it correctly SKIPS with a
+clear reason (`tests/db/conftest.py`'s `_guardian_consent_migration_
+applied` check, mirroring 0003's own established pattern) rather than
+silently passing or erroring. Re-run `pytest tests/db -q` after applying
+0004 to get a real pass/fail on all of it — see the task summary for the
+full list of scenarios it covers.
+
+Previously, this section described `POST /auth/sign-up` as fully open
+with no code path disabling a minor's account at all — that gap is
+closed at the code level now; what remains is deployment, not design.
+
+### What was built this session, file by file
+- `db/migrations/0004_guardian_consent.sql` — `student_accounts`
+  (`date_of_birth`, `account_status`), `guardian_consents` (`token`,
+  `status`, `expires_at`), two enforcement triggers (age-vs-status on
+  insert; insert-must-be-pending, mirroring `0003`'s "insert must be
+  draft"), two security-definer functions (`my_guardian_consent_status`,
+  `confirm_guardian_consent`), RLS with no SELECT policy at all on
+  `guardian_consents` (the token is unreadable through the normal API,
+  by anyone, ever) and no UPDATE policy on either table (only the
+  security-definer confirm function can transition status). Own docstring
+  has the full reasoning, including why two new tables rather than
+  columns on `student_profiles`.
+- `app/api/guardian_consent.py` (new) — age arithmetic
+  (`MINOR_AGE_THRESHOLD_YEARS = 18`, named assumption), the sign-up-time
+  request creator, and `enforce_guardian_consent_gate` — the actual
+  sign-in-time enforcement, called from `app.api.auth.authenticate()` so
+  both `POST /auth/sign-in` and the reviewer console's sign-in get it for
+  free. Also `guardian_consent_schema_is_live()`, the "has 0004 been
+  applied yet" probe that lets the rest of the app degrade safely (fail
+  CLOSED for a minor sign-up, no-op for everyone else) while it hasn't.
+- `app/api/auth.py` — `SignUpRequest.date_of_birth` (required),
+  `.guardian_email` (required only when under 18); `AuthResponse` gained
+  `account_status`/`message`, `access_token` is now optional (null on a
+  pending account). `authenticate()` calls the gate above.
+- `app/notifications/` (new package) — `sender.py` (the `EmailSender`
+  Protocol), `logging_sender.py` (`LoggingEmailSender`, what actually
+  runs everywhere today), `smtp_sender.py` (`SmtpEmailSender`, real and
+  working but gated exactly like `GeminiProvider`, unconfigured
+  everywhere), `factory.py` (`get_email_sender()`, picks between the
+  two), `guardian_consent_email.py` (the email's actual text).
+- `app/web/consent_pages.py` + `templates/consent_confirm.html` (new) —
+  `GET /consent/confirm?token=...`, zero-JS, one generic failure message.
+- `app/core/config.py` — `app_base_url`, `smtp_*` fields (all unset by
+  default), `email_configured` property. `.env.example` documents the
+  new names (values still nowhere in the repo).
+- `tests/db/test_guardian_consent.py` (new, 14 tests, all correctly
+  SKIP today — see above), `tests/unit/test_guardian_consent.py` (new,
+  age-arithmetic + EmailSender-gating unit tests, all passing).
+  `tests/db/test_api_auth.py` updated (`date_of_birth` added to every
+  existing sign-up call) and `tests/db/conftest.py` gained the 0004
+  skip-detection, mirroring 0003's own pattern exactly.
+- **Verified this session, live, against the real (unmigrated) project**:
+  `ruff check app tests` clean; `mypy` clean on every file this task
+  touched (`mypy app --follow-imports=skip` — whole-app baseline, 41
+  files, clean; a plain `mypy app` currently fails on an unrelated,
+  pre-existing environment issue — numpy 2.5.2's own type stub uses
+  Python-3.12-only syntax, reproduced identically on `app/ai/
+  gemini_provider.py` alone, a file this task never touched — not caused
+  by or specific to this session's changes); `pytest tests/unit -q` — 185
+  passed; `pytest tests/db -q` — **110 passed, 14 skipped (the new
+  guardian-consent tests, for the documented reason above), 0 failed** —
+  i.e. every pre-existing live test still passes unchanged, including the
+  adult sign-up/sign-in paths this task's own instructions called out as
+  important not to regress.
 
 ## Other bugs found and fixed this session (not assumed away)
 1. **Security**: the database client was a shared singleton — under real
@@ -329,17 +439,34 @@ content/design pass.
 ## Infrastructure
 | Thing | Status |
 | --- | --- |
-| Supabase | **Live.** Mumbai (`ap-south-1`). Schema `0001`/`0002`/`0003` all applied and verified — the full test suite is genuinely green with nothing skipping. |
+| Supabase | **Live.** Mumbai (`ap-south-1`). Schema `0001`/`0002`/`0003` applied and verified. **`0004_guardian_consent.sql` written this session, NOT yet applied** — see the ⚠️ section above; `tests/db/test_guardian_consent.py` correctly skips until it is. |
 | GitHub | **Live.** `sheelajindal07-collab/eduvation`, CI green. |
 | Oracle hosting | **Live.** `eduvation.service` on `moulding-app-a1`, port 8010 (localhost only — no public domain/nginx site yet). |
 | AI provider | Gemini, owner-confirmed. Not used before M5. |
 
 ## Needs your input
-1. **Consent/safeguarding gate — see the ⚠️ section above.** Blocks
-   item 2 below. Not blocking engineering elsewhere, but blocking any
-   move toward public reachability.
-2. **Public domain** — hold until item 1 is resolved. Once it is, send a
-   domain/subdomain and I'll add an nginx site.
+1. **Consent/safeguarding gate — see the ⚠️ section above.** The
+   mechanism is built; **two concrete actions remain**: apply
+   `db/migrations/0004_guardian_consent.sql`, and provision a real email
+   provider (SMTP credentials in your own `.env`). Blocks item 2 below.
+   Not blocking engineering elsewhere, but blocking any move toward
+   public reachability — arguably more so than before, since a
+   not-yet-merged worktree (`.claude/worktrees/wf_9b7797a4-e76-1`,
+   confirmed still present via `git worktree list` this session, branch
+   `worktree-wf_9b7797a4-e76-1` — its contents were not read or touched;
+   this session is isolated to its own worktree) is building a browser-
+   facing student sign-up UI on `app/web/student_pages.py`, a file that
+   does not exist on this session's own base branch. **That UI's own
+   `student_sign_up_submit()` will need a `date_of_birth` field (and a
+   `guardian_email` field, shown conditionally once age is known) added
+   to its form and forwarded to `POST /auth/sign-up` exactly as the JSON
+   API now requires — whoever merges that work next should read this
+   entry and `app/api/auth.py`'s `SignUpRequest` before wiring the
+   form**, or that screen will 400 on every under-18 submission (or, if
+   it hand-builds its own request body without the new fields, silently
+   422 with FastAPI's own "field required" error) until it's updated.
+2. **Public domain** — hold until item 1 is resolved (both parts). Once
+   it is, send a domain/subdomain and I'll add an nginx site.
 3. **Pilot scope widened (2026-09-21, resolved)** — admission rules now
    all-India (was one-state/Gujarat), plus foreign/study-abroad pathways
    for Indian students added as new scope. See `docs/DECISIONS.md`

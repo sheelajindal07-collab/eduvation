@@ -85,6 +85,28 @@ _MAKER_CHECKER_SKIP_REASON = (
 )
 
 
+def _guardian_consent_migration_applied() -> bool:
+    """Same marker-function pattern as `_maker_checker_migration_applied`
+    — 0004 adds new tables too (`student_accounts`/`guardian_consents`),
+    but also functions/triggers a bare table-existence check wouldn't
+    cover, so it gets its own marker the same way 0003 does."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("guardian_consent_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_GUARDIAN_CONSENT_SKIP_REASON = (
+    "db/migrations/0004_guardian_consent.sql not yet applied to this "
+    "project. See db/migrations/README.md. Until it is, "
+    "app.api.guardian_consent.guardian_consent_schema_is_live() is False "
+    "and the sign-up/sign-in gate degrades to a no-op — see STATUS.md."
+)
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Skip every test collected under tests/db/ when unconfigured.
 
@@ -120,6 +142,13 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
                 item.fspath
             ):
                 item.add_marker(maker_checker_skip)
+
+    # Same pattern, for 0004_guardian_consent.sql.
+    if not _guardian_consent_migration_applied():
+        guardian_consent_skip = pytest.mark.skip(reason=_GUARDIAN_CONSENT_SKIP_REASON)
+        for item in items:
+            if "test_guardian_consent.py" in str(item.fspath):
+                item.add_marker(guardian_consent_skip)
 
 
 @pytest.fixture(scope="module")

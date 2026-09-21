@@ -1,5 +1,14 @@
 """Integration tests for POST /auth/sign-up and POST /auth/sign-in
 against the real Supabase Auth (same project as everything else).
+
+`date_of_birth` became required on every sign-up this session (the
+guardian-consent gate, tasks tracked in STATUS.md/docs/DECISIONS.md) —
+every sign-up call in this file uses `_ADULT_DOB` unless it is
+specifically testing the under-18 path, so these tests keep proving "no
+regression for adults" rather than silently exercising a code path this
+task's own instructions call out as important to verify explicitly. The
+under-18/guardian-consent-specific tests live in
+`tests/db/test_guardian_consent.py`.
 """
 
 from __future__ import annotations
@@ -15,6 +24,9 @@ from supabase import Client
 from app.main import app
 
 client = TestClient(app)
+
+# Comfortably 18+ as of any date this suite will realistically run.
+_ADULT_DOB = "1990-01-01"
 
 
 @pytest.fixture
@@ -119,7 +131,12 @@ class TestSignUp:
         substring — the status code doesn't have that ambiguity."""
         email = f"bcion-signuptest-{uuid.uuid4().hex[:12]}@example.com"
         response = client.post(
-            "/auth/sign-up", json={"email": email, "password": "correct-horse-battery-staple-2"}
+            "/auth/sign-up",
+            json={
+                "email": email,
+                "password": "correct-horse-battery-staple-2",
+                "date_of_birth": _ADULT_DOB,
+            },
         )
         if response.status_code == 429:
             return
@@ -151,7 +168,11 @@ class TestSignUp:
         leaks the email is taken."""
         response = client.post(
             "/auth/sign-up",
-            json={"email": registered_user["email"], "password": "another-password-123"},
+            json={
+                "email": registered_user["email"],
+                "password": "another-password-123",
+                "date_of_birth": _ADULT_DOB,
+            },
         )
         assert response.status_code != 201
         if response.status_code != 429:
@@ -277,6 +298,7 @@ class TestSignUpWithPendingPlan:
             json={
                 "email": email,
                 "password": "correct-horse-battery-staple-3",
+                "date_of_birth": _ADULT_DOB,
                 "pending_plan": {
                     "pathway_id": seeded_pathway_for_migration["pathway"]["id"],
                     "notes": "From the sign-up flow itself",

@@ -5,6 +5,54 @@ never deleted.
 
 ---
 
+## 2026-09-21 — Guardian-consent gate mechanism decided and built —
+## closes the CRITICAL gap flagged 2026-09-19, not yet fully live
+**Event:** Owner decided the mechanism for the consent gate CLAUDE.md and
+docs/SECURITY.md have called a launch gate since 2026-09-19 (see that
+date's "M3 auth surface security-reviewed" entry below, finding #1): an
+age gate on sign-up, and for anyone under 18, a guardian email that must
+confirm via a separate emailed link before the account activates.
+**Built:** `db/migrations/0004_guardian_consent.sql` (new
+`student_accounts`/`guardian_consents` tables, RLS that denies the token
+to every RLS-scoped client including the owning student, two
+security-definer functions, two enforcement triggers — one of which is
+defense-in-depth against a caller bypassing the application layer
+entirely and calling Supabase's REST API directly with their own valid
+token); `app/api/guardian_consent.py` (age arithmetic, the sign-in-time
+enforcement point); `app/api/auth.py` (`date_of_birth` now required,
+`guardian_email` required under 18); `app/notifications/` (new package,
+a pluggable `EmailSender` mirroring `app/ai/`'s provider split —
+`LoggingEmailSender` is what runs everywhere today, `SmtpEmailSender` is
+real but unconfigured, gated exactly like `GeminiProvider`);
+`app/web/consent_pages.py` (`GET /consent/confirm?token=...`).
+**Named assumption:** 18 (India's legal majority age, Indian Majority
+Act 1875) — no threshold was stated anywhere in the docs;
+`app/api/guardian_consent.py`'s `MINOR_AGE_THRESHOLD_YEARS` is the one
+place to change it. **Named, accepted residual gap:** date_of_birth is
+self-declared with no identity documents (consistent with docs/
+SECURITY.md's existing "no identity documents collected by Lite itself"
+principle, not a new limitation) — a minor who independently discovers
+Supabase's own profile-update API before their first sign-in could evade
+ever getting a `student_accounts` row created; see
+`app/api/guardian_consent.py`'s own docstring.
+**Verified this session** (live, against the real but not-yet-migrated
+project): `ruff`/`mypy` clean; `pytest tests/unit -q` 185 passed;
+`pytest tests/db -q` 110 passed, 14 skipped (the new tests, correctly,
+for the documented reason), 0 failed — no regression to any existing
+live behaviour, adult sign-up/sign-in included.
+**NOT done — explicitly out of this task's scope, both owner actions:**
+(1) `db/migrations/0004_guardian_consent.sql` is NOT applied to the live
+project — this session found no `DATABASE_URL` in its `.env` to apply it
+via `scripts/apply_migrations.py`, and did not use the Supabase MCP tool
+(off-limits for this project, see "Infrastructure accounts" below).
+(2) No real email provider is configured anywhere — this task was
+explicitly scoped not to sign up for or configure one, the same as
+`GEMINI_API_KEY` needed the owner to provision Gemini. Until both are
+done, `POST /auth/sign-up` refuses an under-18 sign-up outright (fails
+closed, 503) rather than letting it through unprotected — see STATUS.md's
+⚠️ section for exactly what each action unblocks.
+**Owner action needed:** both of the above. See STATUS.md.
+
 ## 2026-09-21 — Pilot scope widened: all-India admission rules, foreign
 ## pathways for Indian students added — supersedes the one-state build pack
 **Event:** Owner decided, in response to a direct question, to widen Lite's
