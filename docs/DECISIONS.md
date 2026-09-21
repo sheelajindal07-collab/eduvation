@@ -5,6 +5,44 @@ never deleted.
 
 ---
 
+## 2026-09-22 — Cache-Control middleware for shared/borrowed phones (A11Y-4)
+**Decision.** Every response now sets `Cache-Control` explicitly — nothing is
+left to a browser or intermediate cache's own default. `CachePolicyMiddleware`
+(`app/web/cache_policy.py`) fills the `cache_policy` slot `app/main.py`'s
+registry reserved (DEPLOY-18): **no-store** by default; a short (5-minute)
+`public` max-age ONLY for an anonymous GET (no `Cookie`, no `Authorization`) on
+the exact allow-list `/explore`, `/compare/view`, `/timeline/view` (GET only —
+the POST on `/timeline/view` is not on it); a long (1-year) `public,
+immutable` max-age for `/static/*`. `/requirements/view` stays no-store even
+though its current GET signature carries no personal field (SEC-5 made those
+POST-only) — a future change adding one should not have to remember to touch
+this file too.
+**Ordering.** `cache_policy` sits inward of `security_headers` in the frozen
+slot order, so `SecurityHeadersMiddleware`'s own unconditional no-store for any
+cookie/Bearer request runs later in the response chain and wins — a strict
+superset that also covers `/static/*` for a credentialed request, which
+`cache_policy` itself does not separately check.
+**Reviewer sign-out** also sends `Clear-Site-Data: "cache"` — deliberately not
+`"cookies"`, so it can never sign out an unrelated same-site session (a future
+`bcion_student_session`) on a shared device; the console's own session cookie
+is already cleared server-side regardless.
+**Known, flagged footgun:** `/static/*`'s long max-age assumes cache-busted
+filenames, which don't exist yet (`app.css`/`explore-select.js` are referenced
+by plain names) — a deployed CSS/JS change may not reach an already-visiting
+browser until the cache expires. Accepted per the task card; not this task's
+job to add hashing.
+**Verified live:** `tests/unit` 903 → 966 passed (across this and SCOPE-4);
+`tests/db` 552 passed, 8 xfailed, 0 skipped, 0 failed, run twice.
+**Not landed:** the new `tests/e2e/test_shared_device.py` is correctly
+implemented (verified by hand via standalone Playwright scripts reproducing
+the real sign-in/sign-out/back-button flow in under 2 seconds) but could not
+be run cleanly under `pytest`/`pytest-playwright` in this environment — a
+reproducible hang on a click that triggers server-side navigation, which also
+affects the pre-existing, unmodified reviewer-queue test in
+`tests/e2e/test_smoke.py` (found independently by SEC-2's own verification
+earlier the same day). Not a defect in this task's code; a dedicated
+investigation is queued separately.
+
 ## 2026-09-22 — SCOPE-4: the rupee sign now exists in exactly one place, and "no total" says why
 **Event:** SCOPE-4 closed the display half of RULES-10's Money work. Both
 `compare.html` and `_trust_badge.html` wrote `₹` as a literal in front of

@@ -195,7 +195,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 ## Step 12 Hindi, accessibility, difficult states (M6) - OPEN
 - [x] A11Y-1 - Difficult-states and cache-class contract [W1, contract burst]
 - [ ] I18N-2 - Locale-aware formatting helpers [W2]
-- [ ] A11Y-4 - Cache-Control middleware, shared-device hygiene [W2]
+- [x] A11Y-4 - Cache-Control middleware, shared-device hygiene [W2] -- e2e shared-device test written but not passing in CI/local pytest yet, blocked on a pytest-playwright environment hang tracked separately
 - [ ] A11Y-5 - Guard test: no service worker or client persistence [W2]
 - [x] A11Y-2 - State macros and base.html landmarks [W3a]
 - [ ] A11Y-3 - Global HTML error pages [P2]

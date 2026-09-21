@@ -150,6 +150,16 @@ accepted here, proven live with new GBP/mixed-currency pathway tests.
 0 failed. See `docs/TESTING.md` (new, QA-4) for the local-stack
 contract every parallel lane follows.
 
+**`A11Y-4` merged** — `Cache-Control` on every response now (no-store by
+default; a short public max-age only for an anonymous GET on an exact
+allow-list; a long max-age for `/static/*`); reviewer sign-out also
+sends `Clear-Site-Data: "cache"`. `tests/unit`: 966 passed. `tests/db`:
+552 passed, 8 xfailed. **Not yet green:** the new e2e shared-device test
+hits a reproducible pytest-playwright hang shared with a pre-existing
+reviewer-queue e2e test — both are correctly written and verified by
+hand outside pytest; the hang itself is a queued follow-up, not an app
+bug.
+
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
 - `GET /compare?pathway_id=X&pathway_id=Y` — trust-labelled fields plus
