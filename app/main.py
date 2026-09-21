@@ -20,12 +20,30 @@ Slot order (frozen, do not reorder — docs/CONTRACTS.md / DEPLOY-18):
 cache_policy -> origin_check -> usage_events`. DEPLOY-18 wired real
 behaviour for `trusted_host` (using the `ALLOWED_HOSTS` flag it also adds
 to `app/core/config.py`); SEC-1 now fills `security_headers` and
-`origin_check`; `maintenance`, `request_id_logging` and `cache_policy`
-are reserved for later tasks (e.g. the pause/kill-switch work);
-`usage_events` is explicitly optional and not built yet. A reserved slot
-is a real, installed no-op middleware (`_ReservedSlotMiddleware`) rather
-than a gap in the list, so the order is enforced by Starlette's actual
-middleware stack from day one, not just by a comment.
+`origin_check`; A11Y-4 now fills `cache_policy`; `maintenance` and
+`request_id_logging` are reserved for later tasks (e.g. the pause/
+kill-switch work); `usage_events` is explicitly optional and not built
+yet. A reserved slot is a real, installed no-op middleware
+(`_ReservedSlotMiddleware`) rather than a gap in the list, so the order
+is enforced by Starlette's actual middleware stack from day one, not
+just by a comment.
+
+## A11Y-4 — Cache-Control middleware and shared-device hygiene
+
+`CachePolicyMiddleware` (`app/web/cache_policy.py`) fills the
+`cache_policy` slot: `Cache-Control` on every response, no-store by
+default, with a short-max-age exception for an anonymous GET on an exact
+allow-list (`/explore`, `/compare/view`, `/timeline/view` GET only) and a
+long-max-age exception for `/static/*` — see that module's own docstring
+for the three classes, the exact values, and why `cache_policy`'s inward
+position relative to `security_headers` in the slot order above is
+deliberate rather than incidental (`SecurityHeadersMiddleware`'s own
+unconditional cookie/Bearer no-store, running later in the response
+`send` chain, is a strict superset of anything `CachePolicyMiddleware`
+would otherwise allow through). The reviewer console's sign-out route
+(`app/web/reviewer/auth.py`) also sends `Clear-Site-Data: "cache"` on top
+of this, the shared-device state's other mechanism
+(docs/CONTRACTS.md).
 
 Outside development, `create_app()` refuses to start (raises
 `RuntimeError`) if the middleware or router registry doesn't exactly
@@ -80,6 +98,7 @@ from app.api.plans import router as plans_router
 from app.api.timeline import router as timeline_router
 from app.core.config import Settings, get_settings
 from app.core.logging import RequestIdLoggingMiddleware, configure_observability
+from app.web.cache_policy import CachePolicyMiddleware
 from app.web.consent_pages import router as consent_pages_router
 from app.web.pages import router as pages_router
 from app.web.reviewer import router as reviewer_pages_router
@@ -304,7 +323,7 @@ def build_middleware_slots(settings: Settings) -> list[MiddlewareSlot]:
         MiddlewareSlot("security_headers", SecurityHeadersMiddleware, {"settings": settings}),
         MiddlewareSlot("maintenance", _ReservedSlotMiddleware),  # reserved, not built yet
         MiddlewareSlot("request_id_logging", RequestIdLoggingMiddleware),  # OPS-2
-        MiddlewareSlot("cache_policy", _ReservedSlotMiddleware),  # reserved
+        MiddlewareSlot("cache_policy", CachePolicyMiddleware),  # A11Y-4
         MiddlewareSlot("origin_check", OriginCheckMiddleware, {"settings": settings}),
         MiddlewareSlot("usage_events", _ReservedSlotMiddleware),  # optional, not built yet
     ]

@@ -1,4 +1,5 @@
-"""DEPLOY-18 + SEC-1: the middleware/router registry in app/main.py.
+"""DEPLOY-18 + SEC-1 + A11Y-4: the middleware/router registry in
+app/main.py.
 
 Three things this task card calls "everything after it depends on
 getting ... right": the middleware slot ORDER (frozen,
@@ -30,6 +31,7 @@ from app.main import (
     build_router_slots,
     create_app,
 )
+from app.web.cache_policy import CachePolicyMiddleware
 
 _VALID_PROD_OVERRIDES: dict[str, object] = {
     "app_env": "production",
@@ -68,16 +70,17 @@ class TestMiddlewareOrder:
 
     def test_each_slot_has_the_expected_middleware_class(self) -> None:
         """trusted_host (DEPLOY-18), security_headers and origin_check
-        (SEC-1) and request_id_logging (OPS-2) are real, installed
-        middleware; the remaining three stay reserved placeholders for
-        later tasks."""
+        (SEC-1), request_id_logging (OPS-2) and cache_policy (A11Y-4) are
+        real, installed middleware; the remaining two stay reserved
+        placeholders for later tasks."""
         slots = build_middleware_slots(Settings(_env_file=None))
         by_name = {slot.name: slot for slot in slots}
         assert by_name["trusted_host"].middleware_class is TrustedHostMiddleware
         assert by_name["security_headers"].middleware_class is SecurityHeadersMiddleware
         assert by_name["origin_check"].middleware_class is OriginCheckMiddleware
         assert by_name["request_id_logging"].middleware_class is RequestIdLoggingMiddleware
-        for reserved_name in ("maintenance", "cache_policy", "usage_events"):
+        assert by_name["cache_policy"].middleware_class is CachePolicyMiddleware
+        for reserved_name in ("maintenance", "usage_events"):
             assert by_name[reserved_name].middleware_class is _ReservedSlotMiddleware
 
     def test_the_real_app_installs_middleware_in_the_frozen_order(self) -> None:
@@ -89,7 +92,7 @@ class TestMiddlewareOrder:
             SecurityHeadersMiddleware,
             _ReservedSlotMiddleware,
             RequestIdLoggingMiddleware,
-            _ReservedSlotMiddleware,
+            CachePolicyMiddleware,
             OriginCheckMiddleware,
             _ReservedSlotMiddleware,
         ]
