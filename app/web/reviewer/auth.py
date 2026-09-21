@@ -235,5 +235,25 @@ def reviewer_sign_out() -> Any:
     again, while gating it would strand a reviewer whose client sends
     neither header on a session they can no longer end. Flagged for the
     lead rather than decided silently -- if the console later gains any
-    route whose sign-out has a side effect, this needs the guard."""
-    return _redirect_to_sign_in()
+    route whose sign-out has a side effect, this needs the guard.
+
+    A11Y-4: also sends `Clear-Site-Data: "cache"` -- docs/CONTRACTS.md's
+    shared-device state, "Reviewer sign-out also sends Clear-Site-Data:
+    'cache'". BCION Lite runs on shared/borrowed phones
+    (docs/PRODUCT.md); `CachePolicyMiddleware` (app/web/cache_policy.py)
+    already marks every `/reviewer/*` response no-store, so this is a
+    second, browser-enforced belt-and-suspenders instruction on top of
+    that -- "and actively clear whatever you already cached for this
+    origin", for a browser that ignored (or cached before) that header.
+    Does not add "cookies" to the directive's value: `response.
+    delete_cookie` below already clears this router's own session
+    cookie server-side and is unaffected either way, but a
+    `Clear-Site-Data: "cookies"` here would also sign out every OTHER
+    origin-scoped cookie a shared browser happens to be holding for this
+    same site (a future student session, once `bcion_student_session`
+    exists) -- a bigger blast radius than a reviewer clicking "sign out"
+    on their own console should ever have.
+    """
+    response = _redirect_to_sign_in()
+    response.headers["Clear-Site-Data"] = '"cache"'
+    return response

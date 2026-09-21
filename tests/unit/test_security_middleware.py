@@ -9,7 +9,13 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request as StarletteRequest
 
 from app.core.config import Settings
-from app.main import _GUARDED_SESSION_COOKIE, OriginCheckMiddleware, app, create_app
+from app.main import (
+    _GUARDED_SESSION_COOKIE,
+    OriginCheckMiddleware,
+    SecurityHeadersMiddleware,
+    app,
+    create_app,
+)
 
 client = TestClient(app)
 
@@ -33,9 +39,46 @@ class TestSecurityHeadersOnTheRealApp:
         response = client.get("/healthz")
         assert "Strict-Transport-Security" not in response.headers
 
-    def test_anonymous_request_is_not_forced_no_store(self) -> None:
-        response = client.get("/healthz")
-        assert response.headers.get("Cache-Control") != "no-store"
+    def test_anonymous_request_is_not_forced_no_store_by_security_headers_itself(self) -> None:
+        """A11Y-4 update: `cache_policy` (app/web/cache_policy.py) is now
+        a real, filled slot (see app/main.py's own docstring) whose own
+        default is `Cache-Control: no-store` on almost every path -- so
+        the FULL app's response to an anonymous `/healthz` GET is
+        genuinely `no-store` today (a route not on cache_policy's
+        public-anonymous allow-list), and that is correct, not a
+        regression (see tests/unit/test_cache_policy.py's
+        `TestEverythingElseDefaultsToNoStore`). What this test always
+        actually meant to prove is narrower and is unchanged by that:
+        `SecurityHeadersMiddleware` itself only forces `Cache-Control:
+        no-store` for a request carrying a cookie or Bearer token, and
+        adds no such header at all for a plain anonymous one -- checked
+        here by calling the middleware directly, with cache_policy's slot
+        out of the picture entirely, rather than through the full
+        app/registry it used to be (mis)read through."""
+        import asyncio
+
+        sent: list[dict[str, object]] = []
+
+        async def _inner_app(scope: object, receive: object, send: object) -> None:
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+
+        async def _capture_send(message: dict[str, object]) -> None:
+            sent.append(message)
+
+        async def _noop_receive() -> dict[str, object]:
+            return {"type": "http.request"}
+
+        middleware = SecurityHeadersMiddleware(_inner_app, settings=Settings(_env_file=None))  # type: ignore[arg-type]
+
+        async def _run() -> None:
+            scope = {"type": "http", "method": "GET", "headers": []}
+            await middleware(scope, _noop_receive, _capture_send)  # type: ignore[arg-type]
+
+        asyncio.run(_run())
+
+        raw_headers = sent[0]["headers"]
+        header_names = {name.decode().lower() for name, _ in raw_headers}  # type: ignore[misc]
+        assert "cache-control" not in header_names
 
     def test_a_request_carrying_a_cookie_gets_no_store(self) -> None:
         response = client.get("/healthz", cookies={"some_cookie": "value"})
