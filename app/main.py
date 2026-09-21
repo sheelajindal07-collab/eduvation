@@ -7,8 +7,8 @@ what's live.
 
 ## DEPLOY-18 — the middleware and router registry
 
-Two ordered, named registries (`_build_middleware_slots` /
-`_build_router_slots`) replace what used to be a flat sequence of
+Two ordered, named registries (`build_middleware_slots` /
+`build_router_slots`) replace what used to be a flat sequence of
 `app.add_middleware(...)` / `app.include_router(...)` calls. The point
 isn't cleverness — it's that "every future task depends on getting this
 registry right" (DEPLOY-18's own task card): a registry with names and a
@@ -17,21 +17,43 @@ where a bare list of calls is not.
 
 Slot order (frozen, do not reorder — docs/CONTRACTS.md / DEPLOY-18):
 `trusted_host -> security_headers -> maintenance -> request_id_logging ->
-cache_policy -> origin_check -> usage_events`. DEPLOY-18 itself only wires
-real behaviour for `trusted_host` (using the `ALLOWED_HOSTS` flag it also
-adds to `app/core/config.py`); `security_headers` and `origin_check` are
-reserved slots SEC-1 fills next; `maintenance`, `request_id_logging` and
-`cache_policy` are reserved for later tasks (e.g. the pause/kill-switch
-work); `usage_events` is explicitly optional and not built yet. A
-reserved slot is a real, installed no-op middleware (`_ReservedSlotMiddleware`)
-rather than a gap in the list, so the order is enforced by Starlette's
-actual middleware stack from day one, not just by a comment.
+cache_policy -> origin_check -> usage_events`. DEPLOY-18 wired real
+behaviour for `trusted_host` (using the `ALLOWED_HOSTS` flag it also adds
+to `app/core/config.py`); SEC-1 now fills `security_headers` and
+`origin_check`; `maintenance`, `request_id_logging` and `cache_policy`
+are reserved for later tasks (e.g. the pause/kill-switch work);
+`usage_events` is explicitly optional and not built yet. A reserved slot
+is a real, installed no-op middleware (`_ReservedSlotMiddleware`) rather
+than a gap in the list, so the order is enforced by Starlette's actual
+middleware stack from day one, not just by a comment.
 
 Outside development, `create_app()` refuses to start (raises
 `RuntimeError`) if the middleware or router registry doesn't exactly
 match its expected, named shape — a required slot or router missing,
 renamed, or reordered fails loudly at boot instead of silently shipping
-without it.
+without it. SEC-1 adds one more such check: `_verify_critical_settings`,
+which fails the same way when a critical plain config value (not a
+registry slot) is missing or still at its insecure development default.
+
+## SEC-1 — security headers and the Origin check
+
+`SecurityHeadersMiddleware` fills the `security_headers` slot: CSP,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, a
+restrictive `Permissions-Policy`, HSTS in production, and
+`Cache-Control: no-store` on any response to a request that carried a
+cookie or a `Bearer` token. The CSP's `script-src` currently allows
+`'unsafe-inline'` — `app/web/templates/explore.html` has one inline
+`<script>` (the selection-count progressive enhancement) and neither
+that template nor `app/static/` is in this task's owned files, so
+tightening `script-src` to match the "self only, no inline" goal is
+left as an explicit follow-up for whichever task owns that template.
+
+`OriginCheckMiddleware` fills the `origin_check` slot per
+docs/CONTRACTS.md ("State-changing web posts need an Origin matching
+ALLOWED_HOSTS; absent or mismatched is a 403"), scoped to requests
+carrying the future `bcion_student_session` cookie — see that class's
+own docstring for why it deliberately does not also gate on
+`bcion_reviewer_session` (that is SEC-2's own, more specific job).
 """
 
 from __future__ import annotations
@@ -39,11 +61,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.auth import router as auth_router
 from app.api.claims import router as claims_router
@@ -73,6 +98,144 @@ class _ReservedSlotMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         await self.app(scope, receive, send)
+
+
+# CSP `script-src` note (SEC-1): 'unsafe-inline' stays here until
+# app/web/templates/explore.html's one inline <script> (the selection-
+# count progressive enhancement) moves to a static file — neither that
+# template nor app/static/ is owned by this task. Everything else is
+# 'self'-only, no inline.
+_CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self'; "
+    "frame-ancestors 'none'"
+)
+_PERMISSIONS_POLICY = "geolocation=(), microphone=(), camera=(), payment=()"
+_HSTS_VALUE = "max-age=63072000; includeSubDomains"
+
+
+def _request_is_authenticated(request: Request) -> bool:
+    """True if the request carries a session cookie or a Bearer token --
+    docs/CONTRACTS.md's "Cache-Control no-store on responses to cookie/
+    bearer requests" (SEC-1). Any cookie at all counts, not just a
+    recognised session name: a stray/expired cookie still means an
+    intermediate cache must not treat this response as anonymous,
+    cacheable content."""
+    if request.cookies:
+        return True
+    return request.headers.get("authorization", "").lower().startswith("bearer ")
+
+
+class SecurityHeadersMiddleware:
+    """Fills the `security_headers` slot DEPLOY-18 reserved (SEC-1).
+
+    Adds CSP, `X-Content-Type-Options`, `Referrer-Policy`,
+    `Permissions-Policy`, HSTS (production only) and, for a request that
+    carried a cookie or Bearer token, `Cache-Control: no-store` — see
+    `_request_is_authenticated`. Wraps `send` rather than using
+    Starlette's `BaseHTTPMiddleware` (which buffers the whole response
+    body in memory to let its dispatch function inspect it) since this
+    middleware never needs the body, only the response's start message.
+    """
+
+    def __init__(self, app: ASGIApp, *, settings: Settings) -> None:
+        self.app = app
+        self._settings = settings
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive=receive)
+        no_store = _request_is_authenticated(request)
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers["X-Content-Type-Options"] = "nosniff"
+                headers["Referrer-Policy"] = "no-referrer"
+                headers["Permissions-Policy"] = _PERMISSIONS_POLICY
+                headers["Content-Security-Policy"] = _CONTENT_SECURITY_POLICY
+                if self._settings.app_env == "production":
+                    headers["Strict-Transport-Security"] = _HSTS_VALUE
+                if no_store:
+                    headers["Cache-Control"] = "no-store"
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+# docs/CONTRACTS.md: the only session cookie this check protects today.
+# Deliberately NOT `bcion_reviewer_session` (app/web/reviewer_pages.py) —
+# see OriginCheckMiddleware's own docstring for why that is SEC-2's job,
+# not this slot's.
+_GUARDED_SESSION_COOKIE = "bcion_student_session"
+_STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+class OriginCheckMiddleware:
+    """Fills the `origin_check` slot DEPLOY-18 reserved (SEC-1).
+
+    docs/CONTRACTS.md: "State-changing web posts need an Origin matching
+    ALLOWED_HOSTS; absent or mismatched is a 403." Scoped to requests
+    that carry `_GUARDED_SESSION_COOKIE` — the student web-session
+    cookie CONTRACTS.md states this rule alongside — rather than to
+    every state-changing request in the app: the JSON API is
+    Bearer-only and never reads a cookie (CONTRACTS.md "the JSON API is
+    Bearer-only; cookies belong to the web layer alone"), so it has
+    nothing here to protect.
+
+    Deliberately does NOT also gate on `bcion_reviewer_session`
+    (app/web/reviewer_pages.py): the plan's own SEC-2 task gives
+    /reviewer's CSRF handling its own dependency and, in the same
+    change, updates tests/db/test_reviewer_console.py to send a matching
+    Origin header. That test suite posts with the reviewer cookie today
+    without one; enforcing this check against that cookie now — ahead of
+    SEC-2 — would break it. No route in this codebase sets
+    `bcion_student_session` yet, so this middleware is real, tested
+    logic that is a true no-op against every route that exists today.
+    """
+
+    def __init__(self, app: ASGIApp, *, settings: Settings) -> None:
+        self.app = app
+        self._settings = settings
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive=receive)
+        guarded = (
+            request.method in _STATE_CHANGING_METHODS
+            and _GUARDED_SESSION_COOKIE in request.cookies
+        )
+        if guarded and not self._origin_is_allowed(request):
+            response = JSONResponse(
+                status_code=403,
+                content={
+                    "detail": {
+                        "code": "origin_not_allowed",
+                        "message": "This request's origin could not be verified.",
+                    }
+                },
+            )
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+    def _origin_is_allowed(self, request: Request) -> bool:
+        origin = request.headers.get("origin") or request.headers.get("referer")
+        if not origin:
+            return False
+        host = urlsplit(origin).hostname
+        if not host:
+            return False
+        allowed = self._settings.allowed_hosts_list
+        return "*" in allowed or host in allowed
 
 
 @dataclass(frozen=True)
@@ -137,11 +300,11 @@ def build_middleware_slots(settings: Settings) -> list[MiddlewareSlot]:
             TrustedHostMiddleware,
             {"allowed_hosts": settings.allowed_hosts_list},
         ),
-        MiddlewareSlot("security_headers", _ReservedSlotMiddleware),  # SEC-1 fills this in
+        MiddlewareSlot("security_headers", SecurityHeadersMiddleware, {"settings": settings}),
         MiddlewareSlot("maintenance", _ReservedSlotMiddleware),  # reserved, not built yet
         MiddlewareSlot("request_id_logging", _ReservedSlotMiddleware),  # reserved
         MiddlewareSlot("cache_policy", _ReservedSlotMiddleware),  # reserved
-        MiddlewareSlot("origin_check", _ReservedSlotMiddleware),  # SEC-1 fills this in
+        MiddlewareSlot("origin_check", OriginCheckMiddleware, {"settings": settings}),
         MiddlewareSlot("usage_events", _ReservedSlotMiddleware),  # optional, not built yet
     ]
 
@@ -192,6 +355,37 @@ def _verify_router_registry(slots: list[RouterSlot]) -> None:
         )
 
 
+_VALID_APP_ENVS: tuple[str, ...] = ("development", "staging", "production")
+# Must match Settings.app_secret_key's own default (app/core/config.py).
+_INSECURE_DEV_SECRET_KEY = "dev-insecure-key-change-me"
+
+
+def _verify_critical_settings(settings: Settings) -> None:
+    """SEC-1's env-var guard: outside development, a missing or still-
+    default critical setting fails the boot, the same "refuse to start"
+    contract DEPLOY-18's registry checks use, applied to plain config
+    values that have no registry slot of their own.
+
+    Only called when `settings.app_env != "development"` (see
+    `create_app`), so this never blocks a developer's own machine.
+    """
+    if settings.app_env not in _VALID_APP_ENVS:
+        raise RuntimeError(
+            f"Refusing to start: APP_ENV={settings.app_env!r} is not one of "
+            f"{_VALID_APP_ENVS!r}."
+        )
+    if not settings.db_configured:
+        raise RuntimeError(
+            "Refusing to start: SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY must be "
+            f"set outside development (APP_ENV={settings.app_env!r})."
+        )
+    if settings.app_secret_key == _INSECURE_DEV_SECRET_KEY:
+        raise RuntimeError(
+            "Refusing to start: APP_SECRET_KEY is still the insecure development "
+            f"default outside development (APP_ENV={settings.app_env!r})."
+        )
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -214,6 +408,7 @@ def create_app(
     if settings.app_env != "development":
         _verify_middleware_registry(middleware_slots)
         _verify_router_registry(router_slots)
+        _verify_critical_settings(settings)
 
     app = FastAPI(
         title="BCION Lite",
