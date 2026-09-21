@@ -31,8 +31,8 @@ from app.web.common import (
     _form_str,
     _int_or_none,
     _looks_like_a_uuid,
-    templates,
 )
+from app.web.templating import templates
 
 router = APIRouter(include_in_schema=False)  # HTML pages, not the JSON API surface
 

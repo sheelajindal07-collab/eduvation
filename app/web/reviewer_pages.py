@@ -50,7 +50,6 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
 from supabase import Client
 
 from app.api.auth import authenticate
@@ -59,11 +58,18 @@ from app.api.deps import AuthedSession
 from app.core.config import get_settings
 from app.data.models import Source, SourceType
 from app.db import get_anon_client, get_user_scoped_client
+from app.web.templating import templates
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reviewer", tags=["reviewer-console"], include_in_schema=False)
-templates = Jinja2Templates(directory="app/web/templates")
+# I18N-1: this module used to construct its own `Jinja2Templates`, a
+# second Jinja environment independent of the student screens' one. Any
+# global or filter registered on one was silently absent on the other.
+# There is now exactly one environment, in app/web/templating.py, and
+# this router shares it — this module's deliberate separation from
+# app/web/pages.py (see the docstring above) is about ROUTES and the
+# session mechanism, never about having a private template environment.
 
 # UI-review finding, 2026-09-21 (HIGH, FIX 1): shown when the DB itself is
 # unreachable (Supabase down, a network issue -- a raw httpx/postgrest

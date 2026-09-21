@@ -5,6 +5,75 @@ never deleted.
 
 ---
 
+## 2026-09-22 — i18n key naming, placeholder syntax and the fallback rules
+**Event:** I18N-1 built the i18n mechanism (`app/i18n/`,
+`app/web/templating.py`). Its task card requires these rules to be
+recorded here, because every later string-extraction task (I18N-3,
+I18N-13, I18N-15) and the human Hindi review (I18N-11) are built against
+them. Written by the implementer at the card's explicit instruction;
+normally this file is lead-only.
+
+**Decision — keys.** Catalogue keys are exactly `docs/COPY.md` section
+2's convention, unchanged: flat, dot-separated,
+`screen.component.purpose`, lower snake_case, one key per fixed string.
+No nesting, ever — `app/i18n/__init__.py` raises at import if a
+catalogue file contains a nested object, a non-string value or a
+duplicated key, so the convention is enforced by code rather than by
+review. `docs/COPY.md` remains the source of truth for the English
+wording; `en.json` copies it verbatim and a unit test parses COPY.md's
+own tables to prove no key silently drifts or disappears.
+
+**Decision — the `_meta.*` exception.** Keys beginning `_meta.` carry
+catalogue provenance (locale, review status, reviewer, date), not screen
+text, and are the only keys exempt from the three-segment rule. Nothing
+renders them. `hi.json` ships with `_meta.review_status: "unreviewed"`
+and an empty reviewer: it is a development agent's draft, not a
+translation anyone has checked. `HINDI_UI_ENABLED` stays false in
+production until I18N-11's named human reviewer fills that block in.
+
+**Decision — placeholders.** `{name}` only, matching `docs/COPY.md`
+("plain `{name}` interpolation, no other templating syntax").
+Substitution is a regex pass, deliberately **not** `str.format`:
+`str.format` raises `KeyError` when a caller forgets a variable and
+`ValueError` on a stray brace in a translation, and a missing UI
+variable must never be able to crash a page. An unknown placeholder is
+left standing (visible and greppable); a stray brace stays a brace. A
+unit test asserts the two locales declare the same placeholder names for
+every key, so a translation cannot quietly drop `{date}`.
+
+**Decision — fallbacks, never a blank.** The locale resolver order is
+the `lang` cookie, then `en`; no `Accept-Language` sniffing (a borrowed
+or shared phone's OS language is not evidence of what this student
+reads). A key missing from Hindi falls back to English **per key**, not
+per file, so a half-translated catalogue is half-Hindi rather than
+half-empty. A key missing from English too renders as the key itself —
+ugly on purpose; I18N-3's string-lint is what keeps one off a real
+screen.
+
+**Decision — `lang` is an allow-list, never a path.** Only `en` and `hi`
+are ever accepted; anything else (absent, empty, a typo, another
+language, `../../etc/passwd`) becomes `en`. Catalogue filenames are
+constants loaded once at import — there is no code path where a cookie
+value reaches the filesystem, and a parametrised test asserts exactly
+that for ten traversal-shaped values. The cookie holds one of two fixed
+tokens and no personal data.
+
+**Decision — one Jinja environment.** `app/web/templating.py` owns the
+single `Jinja2Templates` instance; `app/web/common.py` re-exports it and
+`app/web/reviewer_pages.py` imports it. Two environments (the state
+before this task) meant a global or filter registered on one was
+silently absent on the other — a `t()` call working on `/compare/view`
+and raising on `/reviewer/queue`, found only when a reviewer loaded the
+page. A unit test fails if any module under `app/web/` constructs its
+own.
+
+**Known consequence to design around, not a blocker:** `app/main.py`'s
+`_is_cookie_bearing` treats *any* cookie as a reason to send
+`Cache-Control: no-store`. Once a language switcher actually sets the
+`lang` cookie, public pages carrying it stop being cacheable. Whoever
+builds the switcher and the PWA caching task should decide that together
+rather than discover it.
+
 ## 2026-09-21 — Demo mode is a database read policy, never a publish path
 **Event:** DATA-12 (migration `0007_demo_mode.sql`, Wave 2 migration lane)
 added a way to show synthetic sample content to anonymous staging

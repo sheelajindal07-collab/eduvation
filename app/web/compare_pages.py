@@ -23,8 +23,8 @@ from app.web.common import (
     _DB_UNAVAILABLE_MESSAGE,
     _db_client_or_none,
     _looks_like_a_uuid,
-    templates,
 )
+from app.web.templating import templates
 
 router = APIRouter(include_in_schema=False)  # HTML pages, not the JSON API surface
 

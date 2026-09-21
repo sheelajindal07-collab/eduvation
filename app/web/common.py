@@ -14,13 +14,19 @@ from collections.abc import Iterator
 from typing import Any
 
 from fastapi import Header
-from fastapi.templating import Jinja2Templates
 from supabase import Client
 
 from app.api.deps import get_db_client
 from app.db import SupabaseNotConfiguredError
+from app.web.templating import templates  # noqa: F401 (re-exported; see below)
 
-templates = Jinja2Templates(directory="app/web/templates")
+# I18N-1: this module used to construct its own `Jinja2Templates`, which
+# made it one of two independent Jinja environments in the app (the
+# other was app/web/reviewer_pages.py's). There is now exactly one, in
+# app/web/templating.py — every screen module imports it from there
+# directly. The re-export above keeps `from app.web.common import
+# templates` working for any caller that still uses it, pointing at the
+# same single object rather than reintroducing a second environment.
 
 # docs/UI.md "difficult states": a plain-language, visible status --
 # never a generic error -- for the realistic "Weak connection" case.
