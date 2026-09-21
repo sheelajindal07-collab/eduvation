@@ -5,7 +5,11 @@ sign-in + saved plans + guest→account migration DONE** (BCI-004). **M4
 maker-checker enforcement + publishing-console API DONE and verified
 live** (BCI-005) — migration applied, every test that was skipping now
 actually passes. **First real UI shipped** — Explore → Compare, the
-first screens anyone could actually click through (BCI-006).
+first screens anyone could actually click through (BCI-006). **Reviewer
+console shipped** — the publishing-console API now has a browser UI
+(sign-in + review queue), not just curl/Postman. **Pilot scope widened**
+(2026-09-21) — all-India admission rules, foreign/study-abroad pathways
+added; see `docs/DECISIONS.md`.
 **Commit:** see `git log -1` on `main`. **Repo:**
 [github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
@@ -56,6 +60,39 @@ verified healthy, talking to the real database).
   means a new claim, never an in-place edit). `app/api/claims.py`
   (`POST /claims`, `/submit`, `/approve`, `/reject`, `/supersede`,
   `GET /claims`) sits on top of it, all wired to the real, live database.
+- **Reviewer console (2026-09-21) — the publishing-console API now has a
+  human-usable browser UI.** Until now every claims.py route was
+  curl/Postman-only; nothing let a reviewer actually sign in and act on
+  the queue. `GET/POST /reviewer/sign-in`, `POST /reviewer/sign-out`,
+  `GET /reviewer/queue`, `POST /reviewer/claims/{id}/{submit,approve,
+  reject}` — zero-JS plain forms, calling straight into claims.py's own
+  route functions (one code path, not a second reimplementation).
+  **First browser-reachable authenticated session this app has ever
+  had**: every prior route only ever read an `Authorization: Bearer`
+  header, which no plain browser GET/form-POST can attach — a new
+  cookie-based session (`app/web/reviewer_pages.py`) fixes this,
+  deliberately scoped to `/reviewer/*` only; `app/api/deps.py`'s
+  header-only contract backing the JSON API and the student-facing pages
+  is untouched. Cookie: httponly always, `samesite=lax` always (the CSRF
+  defense for the zero-JS forms, since there's no script to carry a
+  separate token), `secure` only in production, sized to Supabase's own
+  token lifetime rather than an invented longer session, scoped to
+  `/reviewer` only, never logged.
+  Built via a workflow (implementer + a `data-security-reviewer` pass +
+  a `ux-qa-reviewer` pass), then one fix round after review found a real
+  HIGH-severity bug: the three write actions had no error handling, so
+  self-approval (the first thing any reviewer would try, on their own
+  draft) — or any other rejected transition — dead-ended in a raw
+  unstyled JSON blob with no way back to the queue. Fixed: all three now
+  redirect to the queue with a visible, styled error. Also fixed:
+  missing aria-labels on identical per-claim buttons, a touch target
+  under 44px, a raw `None` shown for a null claim value, an unhandled
+  500 if the DB client itself failed to construct, and a hardcoded
+  test-fixture password. Independently re-verified before merging — read
+  every diff directly, ran the full suite myself, and live-reproduced
+  the self-approval fix against the real database (303 redirect, styled
+  error, claim status genuinely unchanged). 10 new live tests
+  (`tests/db/test_reviewer_console.py`).
 
 ## The migration landing found 4 real bugs — in the tests, not the trigger
 The moment `0003` was applied, every test that had been correctly
@@ -86,8 +123,9 @@ runs for real" and "this specific foreign key/fixture-scoping rule
 applies," which is exactly why the task card said not to treat M4 as
 verified until this exact moment.
 
-**229 tests passing, zero skipped** — verified live, this session.
-Lint/typecheck clean, CI green on every push this session.
+**239 tests passing, zero skipped** — verified live, this session
+(includes the reviewer console's 10 new live tests). Lint/typecheck
+clean, CI green on every push this session.
 
 **Fixed** (commit `1919c4d`): the flaky `test_sign_up_new_email_
 succeeds_or_requires_confirmation` above — root cause found, not
