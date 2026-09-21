@@ -12,15 +12,18 @@ adapter's safety layer (`app/ai/`), no route wired yet, no live API
 calls made. **E2E Playwright wired up** — 6 real-browser smoke tests,
 zero skips. **Pilot scope widened** (2026-09-21) — all-India admission
 rules, foreign/study-abroad pathways added; see `docs/DECISIONS.md`.
-**Guardian-consent gate merged** (2026-09-21) — age gate at sign-up,
-emailed guardian confirmation for under-18 accounts, hardened through
-two rounds of adversarial review (one CRITICAL self-activation bypass,
-one HIGH self-as-guardian gap, one MEDIUM `+tag` sub-addressing bypass,
-all fixed; see "Guardian-consent gate: adversarial-review fixes"
-below) — **two owner actions still needed before it protects anyone
-for real**, see "⚠️ Read this one" below. **341 tests total** (191
-unit + 144 db + 6 e2e; 28 of the db tests are guardian-consent-specific,
-still correctly skipping pending the owner actions below).
+**Guardian-consent gate merged AND live-verified against production**
+(2026-09-21) — age gate at sign-up, emailed guardian confirmation for
+under-18 accounts, hardened through two rounds of adversarial review
+(one CRITICAL self-activation bypass, one HIGH self-as-guardian gap, one
+MEDIUM `+tag` sub-addressing bypass, all fixed). Migrations `0004`,
+`0005` and `0006` are all applied to the live project; going live for
+the first time surfaced two real production bugs the skipped tests had
+been hiding (both fixed, see "⚠️ Read this one"). **`tests/db/
+test_guardian_consent.py`: 32 passed, 0 failed, 0 skipped, run by the
+owner against production.** **Two things still stand between this gate
+and a real minor account**: a real email provider, and a named person's
+sign-off (`docs/SECURITY.md`). 193 unit tests passing.
 **Commit:** see `git log -1` on `main`. **Repo:**
 [github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
@@ -399,83 +402,85 @@ component set.
 ## Blockers
 **One real blocker remains, below — narrower than before, not gone.**
 
-## ⚠️ Read this one — guardian-consent gate is BUILT, needs two owner actions before it protects anyone
-Per your decision this session (on the mechanism: an age gate at
-sign-up, and for anyone under 18, a guardian email that must confirm via
-a separate emailed link before the account activates), the gate
-described as a hard blocker in this section previously is now built —
-schema, sign-up/sign-in enforcement, the confirmation endpoint, a
-pluggable email sender, and live regression tests. **Two things still
-need you, specifically, before it provides real protection:**
+## ⚠️ Read this one — guardian-consent gate is LIVE and tested; one owner action plus one owner sign-off remain
+`db/migrations/0004_guardian_consent.sql`, `0005_guardian_consent_request_rpc.sql`
+and `0006_guardian_consent_token_pgcrypto_schema.sql` are all applied to
+the live Supabase project (you applied 0004 yourself via the SQL Editor;
+0005 and 0006 through `scripts/apply_migrations.py`, now that
+`DATABASE_URL` is in your own environment). `guardian_consent_schema_is_live()`
+returns `True` against production. `tests/db/test_guardian_consent.py`
+— the full sign-up/sign-in/confirm/RLS/RPC suite, 32 tests — has now
+actually **run** against production, not skipped: **32 passed, 0
+failed.**
 
-1. **Apply `db/migrations/0004_guardian_consent.sql`** to the live
-   Supabase project — same manual step as 0001/0002/0003 (SQL Editor, or
-   `python scripts/apply_migrations.py` once `DATABASE_URL` is in your
-   own `.env`; see `db/migrations/README.md`). **I could not do this
-   myself this session** — this worktree's `.env` has real
-   `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` values (copied from the
-   repo root, same as prior sessions) but no `DATABASE_URL`, so
-   `scripts/apply_migrations.py` has nothing to connect with, and I did
-   not use the Supabase MCP tool (off-limits for this project per
-   `docs/DECISIONS.md` "Infrastructure accounts"). Confirmed live,
-   this session: `app.api.guardian_consent.guardian_consent_schema_is_live()`
-   returns `False` against your real project right now.
-   **Until this is applied, the app fails CLOSED, not open**: an
-   under-18 sign-up is refused outright (503, "not yet available") rather
-   than silently let through active — verified live this session (see
-   below). Nothing about existing (adult) sign-up/sign-in changes either
-   way.
-2. **Provision a real email provider** (any SMTP relay — SendGrid, SES,
-   Mailgun, Resend, a plain mailbox — all expose one) and put the
-   credentials in your own `.env` (`SMTP_HOST`/`SMTP_USERNAME`/
+**Applying 0004 for real surfaced two genuine production bugs no test
+had ever exercised before** (every guardian-consent test had only ever
+skipped, in every environment, until today):
+
+1. **`create_guardian_consent_request()`'s `guardian_consents` insert
+   failed outright** — `new row violates row-level security policy`.
+   `guardian_consents` deliberately has zero SELECT policies (the token
+   must never be readable, not even by the owning student), but
+   supabase-py's default `Prefer: return=representation` asks Postgres
+   to return the inserted row via `RETURNING`, and Postgres applies
+   SELECT policies to that too. **Fixed**: `0005` adds a `SECURITY
+   DEFINER` RPC that does the insert and reads the token back
+   server-side, in the same statement, as the function owner — no
+   REST-level `RETURNING`, so no SELECT policy is ever needed. Also
+   derives the student from `auth.uid()` internally rather than a
+   client-supplied id — a real security improvement, not just a
+   workaround. See `app/api/guardian_consent.py`'s
+   `create_guardian_consent_request` docstring.
+2. **The token-generation trigger 500'd on every insert**: `function
+   gen_random_bytes(integer) does not exist`. `0001_init.sql` enables
+   `pgcrypto`, but Supabase installs its functions into an `extensions`
+   schema, not `public` — confirmed live via `pg_proc`/`pg_namespace`.
+   PostgREST sessions don't have `extensions` on their search_path, so
+   the unqualified `gen_random_bytes(32)` call in `0004`'s trigger
+   failed for every caller, through both the raw insert path and 0005's
+   new RPC (the trigger fires on both). **Fixed**: `0006`
+   schema-qualifies the call (`extensions.gen_random_bytes`). This one
+   would have hit regardless of #1 — it's a separate, independent bug.
+
+Both fixes also updated `guardian_consent_schema_is_live()` and
+`tests/db/conftest.py`'s matching skip-check to require *every* one of
+`0004`/`0005`/`0006`'s marker functions, not just `0004`'s — so any
+future gap between applying one migration and the next degrades safely
+to the existing clean 503 ("not yet available"), never a 500.
+
+**What's still outstanding, only one of it a code/deployment gap:**
+
+1. **Provision a real email provider** (any SMTP relay — SendGrid, SES,
+   Mailgun, Resend, a plain mailbox all expose one) and put the
+   credentials in your own environment (`SMTP_HOST`/`SMTP_USERNAME`/
    `SMTP_PASSWORD`/`SMTP_FROM_ADDRESS`, see `.env.example`). Until then,
    `app/notifications/logging_sender.py`'s `LoggingEmailSender` is what
    actually runs — it logs what would be sent (including the real
-   confirmation link/token) and reaches no real inbox. **This was
-   deliberately not done for you this session** — the task was explicitly
-   scoped not to sign up for or configure a real provider account, the
-   same way `GEMINI_API_KEY` needed you to provision Gemini yourself.
+   confirmation link/token) and reaches no real inbox.
    `app/notifications/smtp_sender.py`'s `SmtpEmailSender` is a complete,
-   working implementation (stdlib `smtplib`, no new dependency) gated
-   exactly like `app/ai/gemini_provider.py` — flip `Settings.
-   email_configured` true by setting those four values and it's live,
-   nothing else to build. **Note (adversarial review, 2026-09-21,
-   documentation only):** while `LoggingEmailSender` is what's running,
-   its `INFO`-level log line includes the raw confirmation token — see
-   `docs/SECURITY.md` "Consent & safeguarding" for the full note. Drop
-   that line to `DEBUG` or redact it before any real log
-   aggregation/shipping is wired up, not after.
-
-**Why this split matters, concretely**: right now, the database half of
-this gate is real and tested (once #1 is applied) — a pending account
-genuinely cannot sign in, genuinely cannot self-activate, and the
-under-18 sign-up path is closed rather than silently bypassed while #1
-is outstanding. But without #2, a real guardian's confirmation email
-never reaches them — the mechanism would look complete and quietly
-provide no actual protection if #2 were mistaken for optional. Full
-design writeup and the residual, named risks (self-declared age with no
-identity verification, same limitation `docs/SECURITY.md`'s consent
-section already accepts pilot-wide) are in `db/migrations/
-0004_guardian_consent.sql`'s own docstring and `app/api/guardian_consent.py`'s.
-
-**What I verified live this session** (real Supabase project, this
-worktree's copied `.env`): `db_configured` is `True` (a real project is
-reachable); `guardian_consent_schema_is_live()` is `False` (0004 not
-applied yet); a minor sign-up attempt against the real project correctly
-returns `503` rather than creating an unusable-but-unprotected account
-(confirmed via `python -m app` locally, not a unit-test mock). **What I
-could NOT verify live**: the actual gate behaviour that needs the new
-tables/functions to exist (`tests/db/test_guardian_consent.py` — the
-full sign-up/sign-in/confirm/RLS suite) — it correctly SKIPS with a
-clear reason (`tests/db/conftest.py`'s `_guardian_consent_migration_
-applied` check, mirroring 0003's own established pattern) rather than
-silently passing or erroring. Re-run `pytest tests/db -q` after applying
-0004 to get a real pass/fail on all of it — see the task summary for the
-full list of scenarios it covers.
+   working implementation (stdlib `smtplib`) gated exactly like
+   `app/ai/gemini_provider.py` — set those four values and it's live,
+   nothing else to build. **Note**: while `LoggingEmailSender` runs, its
+   `INFO`-level log line includes the raw confirmation token — drop that
+   to `DEBUG` or redact it before any real log aggregation/shipping is
+   wired up, not after.
+2. **A named human's review/sign-off** (`docs/SECURITY.md`) before any
+   real minor account is enabled — this is a CLAUDE.md non-negotiable
+   and not something any amount of AI review or live testing in this
+   thread can substitute for, no matter how thoroughly it's been
+   verified technically.
 
 Previously, this section described `POST /auth/sign-up` as fully open
 with no code path disabling a minor's account at all — that gap is
-closed at the code level now; what remains is deployment, not design.
+closed and verified live now.
+
+**Also new this session**: `.env` was moved out of the repo entirely
+(now `%USERPROFILE%\.secrets\bcion-lite.env`, loaded into a terminal
+session only when needed — see `docs/DECISIONS.md`) so no agent session
+ever has contact with real credentials, and `scripts/
+bootstrap_schema_migrations.py` (new) records `0001`-`0004`'s
+hand-applied history in `_schema_migrations` so `scripts/
+apply_migrations.py` doesn't try to re-run them.
 
 ### What was built this session, file by file
 - `db/migrations/0004_guardian_consent.sql` — `student_accounts`
@@ -725,16 +730,18 @@ content/design pass.
 ## Infrastructure
 | Thing | Status |
 | --- | --- |
-| Supabase | **Live.** Mumbai (`ap-south-1`). Schema `0001`/`0002`/`0003` applied and verified. **`0004_guardian_consent.sql` written this session, NOT yet applied** — see the ⚠️ section above; `tests/db/test_guardian_consent.py` correctly skips until it is. |
+| Supabase | **Live.** Mumbai (`ap-south-1`). Schema `0001`-`0006` all applied and verified, including the guardian-consent gate — see the ⚠️ section above. `tests/db/test_guardian_consent.py`: 32 passed, 0 failed, live against production. |
 | GitHub | **Live.** `sheelajindal07-collab/eduvation`, CI green. |
 | Oracle hosting | **Live.** `eduvation.service` on `moulding-app-a1`, port 8010 (localhost only — no public domain/nginx site yet). |
 | AI provider | Gemini, owner-confirmed. Not used before M5. |
 
 ## Needs your input
 1. **Consent/safeguarding gate — see the ⚠️ section above.** The
-   mechanism is built; **two concrete actions remain**: apply
-   `db/migrations/0004_guardian_consent.sql`, and provision a real email
-   provider (SMTP credentials in your own `.env`). Blocks item 2 below.
+   mechanism is built, migrated, and live-tested against production (32
+   passed, 0 failed); **one concrete action remains**: provision a real
+   email provider (SMTP credentials in your own environment, no longer
+   `.env` — see `docs/DECISIONS.md`). Plus a named human's sign-off
+   before any real minor account is enabled. Blocks item 2 below.
    Not blocking engineering elsewhere, but blocking any move toward
    public reachability — arguably more so than before, since a
    not-yet-merged worktree (`.claude/worktrees/wf_9b7797a4-e76-1`,
