@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+from typing import Any
 from urllib.parse import urlsplit
 
 from app.data.models import Claim, ClaimStatus, Source, SourceType, TrustLabel
@@ -90,7 +91,16 @@ class FieldValue:
     line by identical link text. Additive field, existing callers
     unaffected."""
 
-    value: str | int | float | bool | None
+    value: str | int | float | bool | list[Any] | dict[str, Any] | None
+    """Widened alongside `app.data.models.Claim.value` (RULES-3) so a
+    structured claim (e.g. an any-of subject group, a per-category
+    thresholds map) still type-checks all the way through
+    `field_value_for` below. Every numeric consumer of `.value` already
+    gates on `isinstance(value, int | float) and not isinstance(value, bool)`
+    before doing arithmetic (see `_estimated_additional_expenses_hint` and
+    `assemble_cost_summary` below), so a list/dict value degrades to "not
+    a usable number" rather than raising -- this is a type-only widening,
+    no behaviour change."""
     label: TrustLabel
     source_url: str | None = None
     verification_date: date | None = None

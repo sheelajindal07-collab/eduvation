@@ -50,6 +50,26 @@ class EligibilityInput:
     today-minus-birth-year subtraction for exams like NEET-UG, where the
     rule is "completed N years as on 31 December of the exam year", not
     "is N years old today"."""
+    year_of_passing: int | None = None
+    """Added for RULES-3's `passed_or_appearing_in_years` criterion
+    (`app/rules/criteria_extra.py`). POST-only personal input, per
+    docs/CONTRACTS.md's list (`date_of_birth`, `category`,
+    `year_of_passing`, `qualification_level`, `appearing`). The
+    inventory's RULES-3 card scoped this field's task to a new file plus
+    `app/data/models.py` on the assumption RULES-2/RULES-3 would be two
+    concurrent lanes both needing this dataclass; one lane (this one)
+    implemented both in sequence, so the two genuinely new personal-input
+    fields RULES-3's criteria need are added here instead of forking a
+    second, incompatible input type that `app/rules/ruleset.py` (RULES-4)
+    would then have to reconcile."""
+    qualification_level: str | None = None
+    """Added for RULES-3's `minimum_qualification_level` criterion.
+    POST-only personal input; see the field above for why it lives here."""
+    appearing: bool | None = None
+    """Whether the student is *appearing* in (as opposed to already having
+    passed) the qualifying examination this cycle -- RULES-3's
+    `passed_or_appearing_in_years` criterion. POST-only personal input;
+    see `year_of_passing` above for why it lives here."""
 
 
 @dataclass(frozen=True)
