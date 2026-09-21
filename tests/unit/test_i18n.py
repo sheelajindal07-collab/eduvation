@@ -25,10 +25,10 @@ from app.web import (
     consent_pages,
     explore_pages,
     requirements_pages,
-    reviewer_pages,
     templating,
     timeline_pages,
 )
+from app.web.reviewer import auth as reviewer_pages
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 I18N_DIR = REPO_ROOT / "app" / "i18n"
