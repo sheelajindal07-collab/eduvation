@@ -131,6 +131,10 @@ def guardian_consent_schema_is_live() -> bool:
         client = get_anon_client()
         client.rpc("guardian_consent_schema_version", {}).execute()
         client.rpc("guardian_consent_request_rpc_schema_version", {}).execute()
+        # 0006: without it, 0004's token trigger cannot find pgcrypto's
+        # gen_random_bytes (Supabase keeps it in `extensions`) and every
+        # guardian_consents insert 500s — see that migration's docstring.
+        client.rpc("guardian_consent_token_fix_schema_version", {}).execute()
         return True
     except Exception:  # noqa: BLE001 — any error here means "not ready yet"
         return False

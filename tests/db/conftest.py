@@ -104,6 +104,7 @@ def _guardian_consent_migration_applied() -> bool:
         client = get_anon_client()
         client.rpc("guardian_consent_schema_version", {}).execute()
         client.rpc("guardian_consent_request_rpc_schema_version", {}).execute()
+        client.rpc("guardian_consent_token_fix_schema_version", {}).execute()
         return True
     except Exception:  # noqa: BLE001 — any error here means "not ready yet"
         return False
