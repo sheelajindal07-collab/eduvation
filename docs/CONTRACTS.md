@@ -155,7 +155,29 @@ sign-out also sends `Clear-Site-Data: "cache"`, the shared-device state's
 mechanism.
 
 ## Keys and components
-<DESIGN-2, DESIGN-1 (docs/UI.md); I18N-1, UI-1 (code)>
+
+**Catalogue keys (I18N-1, frozen).** Flat, dot-separated,
+`screen.component.purpose`, lower snake_case, one key per fixed string —
+no nesting, enforced at import by `app/i18n/__init__.py`. `_meta.*` is
+the one exempt prefix (catalogue provenance, never rendered). One
+string, one key: a formatter's "not available" output reuses
+`global.trust_badge.not_available` rather than a second key for the same
+words. Placeholders are `{name}` only, substituted by regex (never
+`str.format`), so a missing variable or stray brace degrades visibly
+instead of crashing a page. Locale resolution is the `lang` cookie then
+`en`, with per-key fallback to English — `lang` is a strict allow-list
+(`en`/`hi`) and is never used to build a file path. Full rationale:
+`docs/DECISIONS.md`'s I18N-1 entry; wording source of truth:
+`docs/COPY.md`.
+
+**Component and shell contracts (DESIGN-1, DESIGN-2, UI-1, frozen).**
+The component/state contract lives in `docs/UI.md`'s "Component and
+state contract v1" section; the app shell (`base.html` blocks,
+`_nav.html` macros, the four stub partials, `_components.html` macros)
+lives in that same file's "Shell and stub macro contract (frozen v1)"
+section. Both are additive-only from here: a new optional keyword
+argument at the end is fine, a rename, reorder or removal is a breaking
+change across every screen that already calls them.
 
 ## Rule approval lives in git JSON
 

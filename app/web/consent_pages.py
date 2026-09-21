@@ -18,12 +18,11 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
-from fastapi.templating import Jinja2Templates
 
 from app.db import get_anon_client
+from app.web.templating import templates
 
 router = APIRouter(prefix="/consent", tags=["guardian-consent"], include_in_schema=False)
-templates = Jinja2Templates(directory="app/web/templates")
 
 
 @router.get("/confirm")

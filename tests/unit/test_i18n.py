@@ -22,6 +22,7 @@ from app.i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, resolve_locale, translat
 from app.web import (
     common,
     compare_pages,
+    consent_pages,
     explore_pages,
     requirements_pages,
     reviewer_pages,
@@ -291,17 +292,21 @@ class TestOneSharedJinjaEnvironment:
     def test_there_is_exactly_one_jinja_environment(self) -> None:
         environments = {
             id(module.templates.env)
-            for module in (common, explore_pages, reviewer_pages, timeline_pages)
+            for module in (common, explore_pages, reviewer_pages, timeline_pages, consent_pages)
         }
         assert len(environments) == 1
 
     def test_no_web_module_constructs_its_own_jinja2templates(self) -> None:
         """A grep-style guard: the next screen module that copy-pastes
-        `Jinja2Templates(...)` re-creates the split this task closed."""
+        `Jinja2Templates(...)` re-creates the split this task closed.
+
+        `consent_pages.py` used to be a real, disclosed exception (it
+        built its own instance) -- fixed to import the shared one like
+        every other module; no exemption needed any more."""
         offenders = [
             path.name
             for path in (REPO_ROOT / "app" / "web").glob("*.py")
-            if path.name not in {"templating.py", "consent_pages.py"}
+            if path.name != "templating.py"
             and "Jinja2Templates(" in path.read_text(encoding="utf-8")
         ]
         assert not offenders, f"these build a second Jinja environment: {offenders}"
