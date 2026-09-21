@@ -554,6 +554,29 @@ _GUARDIAN_CONSENT_SKIP_REASON = (
 )
 
 
+def _demo_mode_migration_applied() -> bool:
+    """Same marker-function pattern as 0003/0004/0005/0006 — 0007 adds a
+    new table (`app_settings`), but that table is deliberately
+    unreadable through PostgREST by every role the tests can use
+    (`revoke all ... from anon, authenticated`, plus RLS with no
+    policies), so `_saved_plans_table_exists`'s "select from it" check
+    could never work here and would report "not applied" forever."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("demo_mode_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_DEMO_MODE_SKIP_REASON = (
+    "db/migrations/0007_demo_mode.sql not yet applied to this stack. Run "
+    "`make test-db-up`; see db/migrations/README.md. A stale PostgREST "
+    "schema cache looks identical — `make test-db-migrate` reloads it."
+)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Enforce the target guard before anything is collected or run.
 
@@ -635,6 +658,10 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     # three markers are checked, not just 0004's).
     if not _guardian_consent_migration_applied():
         _mark_unavailable(_in(("test_guardian_consent.py",)), _GUARDIAN_CONSENT_SKIP_REASON)
+
+    # Same pattern, for 0007_demo_mode.sql.
+    if not _demo_mode_migration_applied():
+        _mark_unavailable(_in(("test_demo_mode.py",)), _DEMO_MODE_SKIP_REASON)
 
 
 @pytest.fixture(scope="module")

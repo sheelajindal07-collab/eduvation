@@ -72,15 +72,34 @@ class FieldValueOut(BaseModel):
     source_authority: str | None = None
     """Additive field (ux-qa-reviewer finding, 2026-09-19) — existing
     JSON consumers unaffected, a new optional key."""
+    is_sample: bool = False
+    """DATA-12 / docs/CONTRACTS.md "Settled — `is_sample`": this value came
+    from a clearly-labelled SAMPLE claim, not a verified one, and must
+    carry a visible label wherever it appears.
+
+    True only when the backing claim is still `in_review` AND its Source
+    is `synthetic` — i.e. exactly the rows
+    `claims_select_demo_synthetic` (db/migrations/0007_demo_mode.sql)
+    makes visible while demo mode is on. It is computed from the claim
+    and source rows the caller already fetched, NOT from the application's
+    own `DEMO_MODE` setting: the database decides what is visible, so the
+    label has to be derived from what actually came back, or a
+    misconfigured app process could render sample data with no label at
+    all. A published claim is never a sample (the 0001 trigger makes a
+    published synthetic claim impossible in the first place), so this
+    stays False for every real verified fact.
+
+    Additive with a False default — existing JSON consumers unaffected."""
 
     @classmethod
-    def from_field_value(cls, fv: FieldValue) -> FieldValueOut:
+    def from_field_value(cls, fv: FieldValue, *, is_sample: bool = False) -> FieldValueOut:
         return cls(
             value=fv.value,
             label=fv.label.value,
             source_url=fv.source_url,
             verification_date=fv.verification_date,
             source_authority=fv.source_authority,
+            is_sample=is_sample,
         )
 
 
@@ -138,6 +157,31 @@ def _row_to_source(row: dict[str, Any]) -> Source:
     )
 
 
+def _claim_is_sample(claim: Claim, sources_by_id: dict[str, Source]) -> bool:
+    """Is this claim one of demo mode's clearly-labelled sample rows?
+
+    The mirror image, in ordinary code, of what
+    `claims_select_demo_synthetic` (db/migrations/0007_demo_mode.sql)
+    lets through: `in_review` AND a `synthetic` Source. Both halves are
+    required — an `in_review` claim from a real authority is an ordinary
+    draft (and RLS never shows one to a guest at all), and a synthetic
+    Source can never back a `published` claim because
+    `forbid_publishing_synthetic_claims()` (0001_init.sql) refuses it.
+
+    Unknown source id -> False is the right default rather than a
+    fail-closed True: `sources_by_id` is built from the very ids these
+    claims carry, so a miss means the source row was not visible to this
+    caller, and labelling a fact "sample" on the strength of a row we
+    could not read would put a false label on real content. The claim
+    itself is the authority on its own status, and only an `in_review`
+    claim can reach this branch.
+    """
+    if claim.status is not ClaimStatus.in_review:
+        return False
+    source = sources_by_id.get(claim.source_id)
+    return source is not None and source.source_type is SourceType.synthetic
+
+
 @dataclass(frozen=True)
 class PathwayComparisonData:
     """The fully-assembled comparison for one pathway, before any
@@ -154,6 +198,19 @@ class PathwayComparisonData:
     fields: dict[str, FieldValue]
     cost_breakdown: ProgrammeCostBreakdown
     cost_summary: CostSummary
+    sample_fields: frozenset[str] = frozenset()
+    """DATA-12: the claim-field names on this pathway whose backing claim
+    is a demo-mode sample row (see `_claim_is_sample`). Carried on the
+    shared dataclass rather than computed in the JSON route so the HTML
+    layer (app/web/compare_pages.py) gets the identical answer from the
+    identical code path — the same reason this dataclass exists at all.
+
+    Defaulted, so every existing caller and construction site keeps
+    working untouched; the field names are the CLAIM's field names
+    (`verified_charges`, `entry_requirements`, ...), so
+    `estimated_additional_expenses` — always an estimate, never backed by
+    a single claim (app/planning/comparison.py) — is correctly never in
+    this set."""
 
 
 def assemble_comparisons(
@@ -209,6 +266,11 @@ def assemble_comparisons(
                 fields=fields,
                 cost_breakdown=cost_breakdown,
                 cost_summary=cost_summary,
+                sample_fields=frozenset(
+                    field
+                    for field, claim in claims_by_field.items()
+                    if _claim_is_sample(claim, sources_by_id)
+                ),
             )
         )
     return results
@@ -260,17 +322,25 @@ def compare_pathways(
             PathwayComparisonOut(
                 pathway_id=c.pathway_id,
                 fields={
-                    field: FieldValueOut.from_field_value(fv) for field, fv in c.fields.items()
+                    field: FieldValueOut.from_field_value(
+                        fv, is_sample=field in c.sample_fields
+                    )
+                    for field, fv in c.fields.items()
                 },
                 cost=CostBreakdownOut(
                     verified_charges=FieldValueOut.from_field_value(
-                        c.cost_breakdown.verified_charges
+                        c.cost_breakdown.verified_charges,
+                        is_sample="verified_charges" in c.sample_fields,
                     ),
+                    # Never a sample: always computed from stated
+                    # assumptions, never backed by a single claim
+                    # (app/planning/comparison.py's assemble_cost_breakdown).
                     estimated_additional_expenses=FieldValueOut.from_field_value(
                         c.cost_breakdown.estimated_additional_expenses
                     ),
                     potential_assistance_not_yet_awarded=FieldValueOut.from_field_value(
-                        c.cost_breakdown.potential_assistance_not_yet_awarded
+                        c.cost_breakdown.potential_assistance_not_yet_awarded,
+                        is_sample="potential_assistance_not_yet_awarded" in c.sample_fields,
                     ),
                     net_to_arrange=c.cost_summary.net_to_arrange,
                 ),

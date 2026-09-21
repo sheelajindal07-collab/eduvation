@@ -83,3 +83,18 @@ beyond eligibility, never shared with institutions.
 Every fixture used before real content lands is prefixed/tagged so it can
 never be confused with a published claim (e.g. `source.type = 'synthetic'`,
 which the publishing console refuses to ever set to `published`).
+
+Enforced in the database, not by the console alone:
+`forbid_publishing_synthetic_claims()` (`db/migrations/0001_init.sql`)
+rejects the write outright, for every caller including the owner's own
+service-role connection.
+
+**Demo mode** (`db/migrations/0007_demo_mode.sql`) is the one way a
+synthetic row reaches a visitor, and it never publishes anything: while
+the owner-writable `app_settings.demo_mode` flag is on, an extra
+permissive policy shows claims that are **both** `in_review` **and**
+synthetic-sourced. A real (non-synthetic) draft stays invisible in every
+state. `DEMO_MODE=true` with `APP_ENV=production` refuses to boot
+(`app/core/config.py`). See that migration's header for the full
+reasoning and `tests/db/test_demo_mode.py` for the revert-to-prove
+coverage.
