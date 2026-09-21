@@ -23,7 +23,7 @@ test-unit:
 	pytest tests/unit -v
 
 test-e2e:
-	@echo "UI exists now (app/web/, tasks/BCI-006.md) but Playwright itself isn't wired yet -- tests/db/test_web_pages.py covers the explore/compare journey via FastAPI's TestClient in the meantime. See STATUS.md."
+	pytest tests/e2e -v
 
 test-db:
 	pytest tests/db -v
