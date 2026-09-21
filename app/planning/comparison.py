@@ -22,6 +22,7 @@ from app.rules.cost import (
     AssistanceItem,
     CostSummary,
     FeeComponent,
+    Money,
     compute_cost_summary,
     to_whole_rupees,
 )
@@ -111,6 +112,15 @@ class FieldValue:
     source_url: str | None = None
     verification_date: date | None = None
     source_authority: str | None = None
+    currency: str | None = None
+    """RULES-10 / docs/CONTRACTS.md "Money and currency": the backing
+    claim's ISO 4217 currency, for a money-valued field. `None` both
+    when there is no available claim (same gating as `value` etc. below)
+    AND when the claim itself has a null currency — `app/rules/cost.py`
+    treats the second case as "not available" too (a money claim with no
+    stated currency must never be silently assumed to be INR). Additive
+    field, existing non-money callers unaffected (they simply never read
+    it)."""
 
 
 def _safe_source_url(raw_url: str | None) -> str | None:
@@ -163,6 +173,7 @@ def field_value_for(
         source_url=_safe_source_url(source.official_url) if (source and available) else None,
         verification_date=claim.verification_date if (claim and available) else None,
         source_authority=source.authority_name if (source and available) else None,
+        currency=claim.currency if (claim and available) else None,
     )
 
 
@@ -198,6 +209,15 @@ def _estimated_additional_expenses_hint(
     `to_whole_rupees`) — a claim occasionally quotes a paise-level
     fraction, and every amount downstream of this function is typed as
     a whole-rupee `int`.
+
+    Deliberately NOT currency-gated like `_money_from_field_value`
+    below: this helper only ever feeds `assemble_cost_breakdown`'s plain
+    numeric `FieldValue` display line, which `app/api/compare.py` and
+    `compare.html` still consume as a bare number (SCOPE-4's job to make
+    currency-aware, not this task's — see docs/CONTRACTS.md "Money and
+    currency"). `assemble_cost_summary`'s own `Money`-typed estimate is
+    built separately, straight from the claim, via
+    `_money_from_field_value`.
     """
     hint = field_value_for(
         "estimated_additional_expenses_hint", claims_by_field, sources_by_id, as_of=as_of
@@ -298,6 +318,31 @@ def _fee_components(
     ]
 
 
+def _money_from_field_value(fv: FieldValue) -> Money | None:
+    """Build a `Money` from one claim-backed `FieldValue`, applying
+    docs/CONTRACTS.md's "Money and currency" rule that a money claim
+    with a null currency renders not_available -- never silently
+    assumed to be INR, which would invent a fact about a real fee
+    (`app/data/models.py`'s `Claim.currency` docstring). A claim already
+    `not_available` (unpublished, stale-and-sourceless, synthetic, ...)
+    has `fv.value is None` by the time it reaches here, so that case
+    falls out of the numeric check below without a separate label test.
+
+    `None` when there is no usable numeric value or no currency -- each
+    caller below decides what "no known amount" means for its own
+    output: `Money(amount=0)` for an estimate with no hint at all,
+    an omitted `AssistanceItem` for potential assistance that should
+    simply not exist.
+    """
+    if (
+        isinstance(fv.value, int | float)
+        and not isinstance(fv.value, bool)
+        and fv.currency is not None
+    ):
+        return Money(amount=to_whole_rupees(fv.value), currency=fv.currency)
+    return None
+
+
 def assemble_cost_summary(
     claims_by_field: dict[str, Claim],
     sources_by_id: dict[str, Source],
@@ -315,43 +360,51 @@ def assemble_cost_summary(
     call, so the "one missing component -> total is None, never a
     partial sum" guarantee `cost.py` already proves applies to the live
     figure too, now for as many components as a pathway actually
-    publishes.
+    publishes, in whatever currency each component's claim states
+    (docs/CONTRACTS.md "Money and currency" — mixed currencies among
+    components also null out the total, distinguishably; see
+    `VerifiedChargesResult.mixed_currencies`).
 
     `estimated_additional_expenses_override` is the "assumption editing"
     Build Pack §6/docs/UI.md call for: a caller-supplied value for this
-    one request only — never persisted, never a Claim. Unlike the
-    original wiring, it no longer replaces the computed estimate outright:
-    `CostSummary.estimated_additional_expenses` always stays the figure
-    this function actually computed (the published hint, or 0 when there
-    is none), and the override is carried separately as
-    `CostSummary.additional_expenses_override`, so a caller/template can
-    show BOTH "our estimate" and "your assumption" rather than one
-    silently clobbering the other. `net_to_arrange`'s arithmetic still
-    uses the override when one is supplied (`CostSummary.
-    effective_additional_expenses` — see `app/rules/cost.py`), so the
-    total a student sees continues to reflect their own edit exactly as
-    before; only the two *displayed* lines are now distinct.
+    one request only — never persisted, never a Claim, and always `INR`
+    (there is no currency-selection UI for a student's own typed-in
+    assumption). Unlike the original wiring, it no longer replaces the
+    computed estimate outright: `CostSummary.estimated_additional_expenses`
+    always stays the figure this function actually computed (the
+    published hint, or `Money(0)` when there is none), and the override
+    is carried separately as `CostSummary.additional_expenses_override`,
+    so a caller/template can show BOTH "our estimate" and "your
+    assumption" rather than one silently clobbering the other.
+    `net_to_arrange`'s arithmetic still uses the override when one is
+    supplied (`CostSummary.effective_additional_expenses` — see
+    `app/rules/cost.py`), so the total a student sees continues to
+    reflect their own edit exactly as before; only the two *displayed*
+    lines are now distinct.
 
     `potential_assistance_not_yet_awarded` becomes at most one
     `AssistanceItem` — omitted entirely (not zero) when the claim is
-    `not_available`, since "no known potential assistance" and "assumed
-    zero potential assistance" are different facts. There is no
-    `confirmed_assistance` source yet (that is student-specific award
-    data, which does not exist before the M3 sign-in/consent work), so
-    it is always empty here — `net_to_arrange` correctly reduces to
-    verified + effective additional expenses with nothing confirmed
-    subtracted. Even once a source exists, it must only ever be a
-    per-request input to this function, never read from or written to
-    storage here — this module does no I/O at all (see module
-    docstring).
+    `not_available` OR has no usable currency, since "no known potential
+    assistance" and "assumed zero potential assistance" are different
+    facts. There is no `confirmed_assistance` source yet (that is
+    student-specific award data, which does not exist before the M3
+    sign-in/consent work), so it is always empty here — `net_to_arrange`
+    correctly reduces to verified + effective additional expenses with
+    nothing confirmed subtracted. Even once a source exists, it must
+    only ever be a per-request input to this function, never read from
+    or written to storage here — this module does no I/O at all (see
+    module docstring).
     """
     fee_components = _fee_components(claims_by_field, sources_by_id, as_of=as_of)
 
-    hint_value = _estimated_additional_expenses_hint(claims_by_field, sources_by_id, as_of=as_of)
-    estimated_additional_expenses = hint_value if hint_value is not None else 0
+    hint = field_value_for(
+        "estimated_additional_expenses_hint", claims_by_field, sources_by_id, as_of=as_of
+    )
+    hint_money = _money_from_field_value(hint)
+    estimated_additional_expenses = hint_money if hint_money is not None else Money(amount=0)
 
     additional_expenses_override = (
-        to_whole_rupees(estimated_additional_expenses_override)
+        Money(amount=to_whole_rupees(estimated_additional_expenses_override))
         if estimated_additional_expenses_override is not None
         else None
     )
@@ -359,9 +412,10 @@ def assemble_cost_summary(
     potential = field_value_for(
         "potential_assistance_not_yet_awarded", claims_by_field, sources_by_id, as_of=as_of
     )
+    potential_money = _money_from_field_value(potential)
     potential_assistance = (
-        [AssistanceItem(name="Potential assistance", amount=to_whole_rupees(potential.value))]
-        if isinstance(potential.value, int | float) and not isinstance(potential.value, bool)
+        [AssistanceItem(name="Potential assistance", amount=potential_money)]
+        if potential_money is not None
         else []
     )
 

@@ -24,6 +24,7 @@ from app.i18n.formatting import (
     format_date,
     format_duration_weeks,
     format_inr,
+    format_money,
     format_number,
     group_indian,
 )
@@ -94,6 +95,44 @@ class TestFormatInr:
             rendered = format_inr(100000, locale)
             assert rendered == f"{RUPEE}1,00,000", locale
             assert not (DEVANAGARI_DIGITS & set(rendered))
+
+
+class TestFormatMoney:
+    """RULES-10 / docs/CONTRACTS.md "Money and currency": the one
+    formatter, `format_money(amount, currency)` -- `format_inr` is now a
+    thin wrapper over its `INR` branch."""
+
+    def test_inr_matches_format_inr_exactly(self) -> None:
+        for value in (0, 7, 99999, 100000, 10000000, -5000):
+            assert format_money(value, "INR") == format_inr(value)
+
+    def test_inr_is_the_default_currency(self) -> None:
+        assert format_money(100000) == format_inr(100000)
+
+    def test_a_non_inr_currency_uses_the_code_and_western_grouping(self) -> None:
+        assert format_money(1000, "USD") == "USD 1,000"
+        assert format_money(1000000, "USD") == "USD 1,000,000"
+
+    def test_a_negative_non_inr_amount_leads_with_the_sign(self) -> None:
+        assert format_money(-5000, "USD") == "-USD 5,000"
+
+    def test_zero_non_inr_amount(self) -> None:
+        assert format_money(0, "GBP") == "GBP 0"
+
+    def test_none_is_not_available_regardless_of_currency(self) -> None:
+        assert format_money(None, "USD") == translate(NOT_AVAILABLE_KEY, "en")
+        assert format_money(None) == translate(NOT_AVAILABLE_KEY, "en")
+
+    def test_no_currency_symbol_literal_outside_format_money(self) -> None:
+        """docs/CONTRACTS.md: "no currency symbol literal may exist
+        outside it" -- the rupee sign appears in this module exactly
+        once, inside `format_money` itself."""
+        source = (
+            __import__("pathlib")
+            .Path(__import__("app.i18n.formatting", fromlist=["x"]).__file__)
+            .read_text(encoding="utf-8")
+        )
+        assert source.count('"₹"') == 1
 
 
 class TestFormatNumber:

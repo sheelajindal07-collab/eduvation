@@ -14,6 +14,7 @@ from app.planning.comparison import (
     field_value_for,
     trust_label_for_claim,
 )
+from app.rules.cost import Money
 
 TODAY = date(2026, 9, 19)
 
@@ -308,7 +309,13 @@ def _field_claim(
     status: ClaimStatus = ClaimStatus.published,
     source_id: str = OFFICIAL_SOURCE.id,
     verification_date: date = TODAY,
+    currency: str | None = "INR",
 ) -> Claim:
+    """`currency` defaults to `"INR"` -- an ordinary Indian fee claim, the
+    overwhelmingly common real case and what most tests below actually
+    want. Pass `currency=None` explicitly to exercise docs/CONTRACTS.md's
+    "a money claim with a null currency renders not_available" rule, or
+    a different ISO code to exercise the mixed-currency guard."""
     return Claim(
         id=f"claim-{field}",
         entity_type="Programme",
@@ -320,6 +327,7 @@ def _field_claim(
         verifier="test-reviewer",
         status=status,
         review_due_date=date(2099, 1, 1),
+        currency=currency,
     )
 
 
@@ -336,8 +344,8 @@ class TestAssembleCostSummary:
     def test_verified_charges_with_no_hint_or_override_nets_to_verified_alone(self) -> None:
         claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
-        assert summary.verified_charges.total == 100000
-        assert summary.net_to_arrange == 100000
+        assert summary.verified_charges.total == Money(amount=100000)
+        assert summary.net_to_arrange == Money(amount=100000)
 
     def test_missing_verified_charges_gives_none_net_not_a_guess(self) -> None:
         """The core safety property, now proven at the wiring layer too:
@@ -360,8 +368,8 @@ class TestAssembleCostSummary:
             ),
         }
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
-        assert summary.estimated_additional_expenses == 15000
-        assert summary.net_to_arrange == 115000
+        assert summary.estimated_additional_expenses == Money(amount=15000)
+        assert summary.net_to_arrange == Money(amount=115000)
 
     def test_override_wins_the_arithmetic_but_the_estimate_stays_visible_too(self) -> None:
         """RULES-10: the "assumption editing" mechanic (Lite Build Pack
@@ -382,10 +390,10 @@ class TestAssembleCostSummary:
             as_of=TODAY,
             estimated_additional_expenses_override=30000,
         )
-        assert summary.estimated_additional_expenses == 15000
-        assert summary.additional_expenses_override == 30000
-        assert summary.effective_additional_expenses == 30000
-        assert summary.net_to_arrange == 130000
+        assert summary.estimated_additional_expenses == Money(amount=15000)
+        assert summary.additional_expenses_override == Money(amount=30000)
+        assert summary.effective_additional_expenses == Money(amount=30000)
+        assert summary.net_to_arrange == Money(amount=130000)
 
     def test_no_override_given_leaves_the_override_field_none(self) -> None:
         claims_by_field = {
@@ -396,8 +404,8 @@ class TestAssembleCostSummary:
         }
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
         assert summary.additional_expenses_override is None
-        assert summary.estimated_additional_expenses == 15000
-        assert summary.effective_additional_expenses == 15000
+        assert summary.estimated_additional_expenses == Money(amount=15000)
+        assert summary.effective_additional_expenses == Money(amount=15000)
 
     def test_a_paise_level_override_is_rounded_to_whole_rupees(self) -> None:
         claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
@@ -407,14 +415,33 @@ class TestAssembleCostSummary:
             as_of=TODAY,
             estimated_additional_expenses_override=1999.995,
         )
-        assert summary.additional_expenses_override == 2000
-        assert summary.net_to_arrange == 102000
+        assert summary.additional_expenses_override == Money(amount=2000)
+        assert summary.net_to_arrange == Money(amount=102000)
+
+    def test_an_override_is_always_inr_regardless_of_the_verified_charges_currency(
+        self,
+    ) -> None:
+        """A student's own typed-in assumption has no currency-selection
+        UI -- it is always INR (docs/CONTRACTS.md's `Money` default),
+        even when the pathway's own verified charges are in another
+        currency (in which case net_to_arrange correctly can't combine
+        them -- see TestNetToArrangeCurrencyMismatch in test_cost.py)."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000, currency="USD")
+        }
+        summary = assemble_cost_summary(
+            claims_by_field,
+            SOURCES_BY_ID,
+            as_of=TODAY,
+            estimated_additional_expenses_override=5000,
+        )
+        assert summary.additional_expenses_override == Money(amount=5000, currency="INR")
 
     def test_no_hint_and_no_override_assumes_zero_extra_not_unknown(self) -> None:
         claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
-        assert summary.estimated_additional_expenses == 0.0
-        assert summary.net_to_arrange == 100000
+        assert summary.estimated_additional_expenses == Money(amount=0)
+        assert summary.net_to_arrange == Money(amount=100000)
 
     def test_potential_assistance_is_visible_but_never_reduces_net_to_arrange(self) -> None:
         """The single most important property here, carried over from
@@ -427,8 +454,8 @@ class TestAssembleCostSummary:
             ),
         }
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
-        assert summary.potential_assistance_total == 50000
-        assert summary.net_to_arrange == 100000  # unchanged by the potential amount
+        assert summary.potential_assistance_total == Money(amount=50000)
+        assert summary.net_to_arrange == Money(amount=100000)  # unchanged by the potential amount
 
     def test_no_potential_assistance_claim_gives_an_empty_list_not_a_zero_item(self) -> None:
         claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
@@ -455,8 +482,8 @@ class TestAssembleCostSummary:
             ),
         }
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
-        assert summary.estimated_additional_expenses == 0.0
-        assert summary.net_to_arrange == 100000
+        assert summary.estimated_additional_expenses == Money(amount=0)
+        assert summary.net_to_arrange == Money(amount=100000)
 
     def test_a_synthetic_sourced_hint_is_ignored_not_leaked_into_net_to_arrange(self) -> None:
         synthetic_sources = {**SOURCES_BY_ID, SYNTHETIC_SOURCE.id: SYNTHETIC_SOURCE}
@@ -467,8 +494,41 @@ class TestAssembleCostSummary:
             ),
         }
         summary = assemble_cost_summary(claims_by_field, synthetic_sources, as_of=TODAY)
-        assert summary.estimated_additional_expenses == 0.0
-        assert summary.net_to_arrange == 100000
+        assert summary.estimated_additional_expenses == Money(amount=0)
+        assert summary.net_to_arrange == Money(amount=100000)
+
+    def test_a_null_currency_hint_is_ignored_not_leaked_into_net_to_arrange(self) -> None:
+        """docs/CONTRACTS.md "Money and currency": a money claim with a
+        null currency renders not_available -- a published hint with no
+        stated currency must be treated exactly like no hint at all."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "estimated_additional_expenses_hint": _field_claim(
+                "estimated_additional_expenses_hint", 15000, currency=None
+            ),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.estimated_additional_expenses == Money(amount=0)
+        assert summary.net_to_arrange == Money(amount=100000)
+
+    def test_a_null_currency_verified_charges_claim_renders_not_available(self) -> None:
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000, currency=None)
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.verified_charges.total is None
+        assert summary.verified_charges.complete is False
+        assert summary.net_to_arrange is None
+
+    def test_a_null_currency_potential_assistance_claim_is_omitted_not_zeroed(self) -> None:
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "potential_assistance_not_yet_awarded": _field_claim(
+                "potential_assistance_not_yet_awarded", 50000, currency=None
+            ),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.potential_assistance == ()
 
 
 class TestAssembleCostSummaryItemisedFeeComponents:
@@ -482,7 +542,7 @@ class TestAssembleCostSummaryItemisedFeeComponents:
         requirement)."""
         claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
-        assert summary.verified_charges.total == 100000
+        assert summary.verified_charges.total == Money(amount=100000)
         assert len(summary.verified_charges.components) == 1
         assert summary.verified_charges.components[0].name == "Verified charges"
 
@@ -493,10 +553,31 @@ class TestAssembleCostSummaryItemisedFeeComponents:
             "fee_component:exam_fee": _field_claim("fee_component:exam_fee", 2000),
         }
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
-        assert summary.verified_charges.total == 82000
-        assert summary.net_to_arrange == 82000
+        assert summary.verified_charges.total == Money(amount=82000)
+        assert summary.net_to_arrange == Money(amount=82000)
         names = {c.name for c in summary.verified_charges.components}
         assert names == {"Tuition", "Hostel", "Exam fee"}
+
+    def test_fee_components_in_different_currencies_give_none_total_flagged_mixed(
+        self,
+    ) -> None:
+        """docs/CONTRACTS.md "Money and currency": components sum only
+        within one currency -- a foreign-tuition component alongside an
+        Indian one must null out the total, distinguishably from a
+        missing component."""
+        claims_by_field = {
+            "fee_component:application_fee": _field_claim(
+                "fee_component:application_fee", 5000, currency="INR"
+            ),
+            "fee_component:tuition": _field_claim(
+                "fee_component:tuition", 20000, currency="USD"
+            ),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.verified_charges.total is None
+        assert summary.verified_charges.mixed_currencies is True
+        assert summary.verified_charges.complete is True
+        assert summary.net_to_arrange is None
 
     def test_fee_component_claims_take_priority_over_a_legacy_verified_charges_claim(
         self,
@@ -511,7 +592,7 @@ class TestAssembleCostSummaryItemisedFeeComponents:
             "fee_component:hostel": _field_claim("fee_component:hostel", 30000),
         }
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
-        assert summary.verified_charges.total == 80000
+        assert summary.verified_charges.total == Money(amount=80000)
 
     def test_one_missing_fee_component_among_several_gives_none_total_not_a_partial_sum(
         self,
@@ -539,7 +620,7 @@ class TestAssembleCostSummaryItemisedFeeComponents:
             ),
         }
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
-        assert summary.verified_charges.total == 80000
+        assert summary.verified_charges.total == Money(amount=80000)
         assert summary.verified_charges.stale is True
 
     def test_a_paise_level_fee_component_is_rounded_to_whole_rupees(self) -> None:
@@ -548,8 +629,7 @@ class TestAssembleCostSummaryItemisedFeeComponents:
             "fee_component:hostel": _field_claim("fee_component:hostel", 29999.90),
         }
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
-        assert summary.verified_charges.total == 80000
-        assert isinstance(summary.verified_charges.total, int)
+        assert summary.verified_charges.total == Money(amount=80000)
 
     def test_unpublished_fee_component_claims_are_treated_as_no_components_at_all(self) -> None:
         """A pathway with only draft fee_component:* claims (nothing
@@ -625,6 +705,10 @@ class TestAssembleCostBreakdownEstimateHintProvenance:
         breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
         assert breakdown.estimated_additional_expenses.value == 0.0
+        # breakdown's line item is a plain number (SCOPE-4's display layer,
+        # untouched by RULES-10's Money type); summary's is a Money -- the
+        # two must still agree on the underlying rupee amount.
         assert (
-            breakdown.estimated_additional_expenses.value == summary.estimated_additional_expenses
+            breakdown.estimated_additional_expenses.value
+            == summary.estimated_additional_expenses.amount
         )
