@@ -74,6 +74,17 @@ tested"; the paragraphs above it (verifiable guardian identity,
 per-purpose revocable consent, staff review, distress rule) remain the
 fuller workflow this interim mechanism does not replace.
 
+**Before any real log aggregation/shipping exists** (adversarial review,
+2026-09-21, documentation-only — no code change): `app/notifications/
+logging_sender.py`'s `LoggingEmailSender.send()` logs the full email body
+— including the raw, unexpired guardian-consent confirmation token — at
+`INFO` level. This is deliberate for now (the token has nowhere else to
+go while no real provider is configured, and process logs are the only
+place a developer running this locally can see the link to click it) but
+it is a live secret in a log line. **Before this app's logs are shipped
+to any aggregator, dashboard or third party, that line must be dropped to
+`DEBUG` or the token redacted** — do not carry it forward unexamined.
+
 ## Publishing security
 - Author ≠ approver, enforced server-side (DB constraint / RLS policy),
   never just a disabled UI button.

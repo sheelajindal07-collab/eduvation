@@ -9,7 +9,11 @@ first screens anyone could actually click through (BCI-006). **Reviewer
 console shipped** — the publishing-console API now has a browser UI
 (sign-in + review queue), not just curl/Postman. **Pilot scope widened**
 (2026-09-21) — all-India admission rules, foreign/study-abroad pathways
-added; see `docs/DECISIONS.md`.
+added; see `docs/DECISIONS.md`. **Guardian-consent gate hardened**
+(2026-09-21, this worktree/branch, NOT yet merged to `main`) — two
+independent adversarial reviews of `0004_guardian_consent.sql` found a
+CRITICAL complete bypass and two HIGH gaps; all fixed, see "Guardian-
+consent gate: adversarial-review fixes" below.
 **Commit:** see `git log -1` on `main`. **Repo:**
 [github.com/sheelajindal07-collab/eduvation](https://github.com/sheelajindal07-collab/eduvation),
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
@@ -284,7 +288,12 @@ need you, specifically, before it provides real protection:**
    working implementation (stdlib `smtplib`, no new dependency) gated
    exactly like `app/ai/gemini_provider.py` — flip `Settings.
    email_configured` true by setting those four values and it's live,
-   nothing else to build.
+   nothing else to build. **Note (adversarial review, 2026-09-21,
+   documentation only):** while `LoggingEmailSender` is what's running,
+   its `INFO`-level log line includes the raw confirmation token — see
+   `docs/SECURITY.md` "Consent & safeguarding" for the full note. Drop
+   that line to `DEBUG` or redact it before any real log
+   aggregation/shipping is wired up, not after.
 
 **Why this split matters, concretely**: right now, the database half of
 this gate is real and tested (once #1 is applied) — a pending account
@@ -371,6 +380,107 @@ closed at the code level now; what remains is deployment, not design.
   i.e. every pre-existing live test still passes unchanged, including the
   adult sign-up/sign-in paths this task's own instructions called out as
   important not to regress.
+
+## Guardian-consent gate: adversarial-review fixes (2026-09-21, this
+## worktree/branch — NOT yet merged to `main`)
+Two independent adversarial reviews of the migration above (`1a714d5` in
+this worktree) found a **CRITICAL complete bypass** and **two HIGH
+gaps**, all closed this session, plus one MEDIUM and two LOW/doc-only
+items. All fixes live in `db/migrations/0004_guardian_consent.sql` itself
+(still unapplied anywhere, so editing it in place is correct — see the
+file's own "append-only" note), `app/api/guardian_consent.py`,
+`app/api/auth.py`, `docs/SECURITY.md`, and `tests/db/test_guardian_consent.py`.
+
+1. **CRITICAL — complete bypass, `guardian_consents.token`.** The INSERT
+   RLS policy constrained only `student_id`; nothing forced `token` to be
+   server-generated. A caller could INSERT their own pending-consent row
+   with a SELF-CHOSEN `token`/`guardian_email`, then call the
+   anon-grantable `confirm_guardian_consent(p_token)` RPC with that same
+   token to activate their own account with zero real guardian
+   involvement. The migration's own comments *claimed* a trigger already
+   prevented this — no such trigger existed. **Fixed**: a new BEFORE
+   INSERT trigger (`enforce_guardian_consent_server_token`, mirroring
+   `enforce_account_status_matches_age`'s existing pattern) unconditionally
+   overwrites `token` (via `pgcrypto`'s `gen_random_bytes`, hex-encoded)
+   and `expires_at` on every insert — a client-supplied value is silently
+   replaced, never merely rejected, so the row is still usefully created.
+   `app/api/guardian_consent.py`'s `create_guardian_consent_request` no
+   longer generates the token client-side (dead code removed,
+   `secrets.token_urlsafe` import gone) — it reads the real token back
+   from the INSERT's own response instead, the same "trust what the
+   database actually wrote" pattern `_migrate_pending_plan` already uses
+   for a saved plan's id. **New tests**:
+   `TestTokenAndExpiryAreServerGenerated` (2 tests) — proves a
+   client-supplied token is overwritten and the attacker's chosen value
+   can never confirm anything; same for `expires_at`.
+2. **MEDIUM — no DB-level rate limit on `guardian_consents` inserts.**
+   Idempotency was only ever enforced in Python (catching a unique-
+   violation on the *`student_accounts`* insert). A direct API caller
+   could otherwise INSERT unlimited `guardian_consents` rows with
+   arbitrary `guardian_email` values — a spam vector once a real email
+   provider exists. **Fixed**: a partial unique index
+   (`guardian_consents_one_pending_per_student`, on `student_id` where
+   `status = 'pending'`) enforces "at most one outstanding pending
+   request per student" at the database layer regardless of caller;
+   `create_guardian_consent_request` also now catches this
+   unique-violation gracefully (same idempotent-return shape as the
+   existing `student_accounts` case). **New test**:
+   `TestOnlyOnePendingConsentPerStudent`.
+3. **HIGH — a minor could name themselves as their own guardian.**
+   Nothing stopped `guardian_email` from case-insensitively equalling the
+   student's own sign-up `email`. Not exploitable today (no real email
+   provider configured) but a complete, trivial defeat the moment one is.
+   **Fixed**: `POST /auth/sign-up` now rejects this with a 400, same
+   posture as the adjacent "guardian_email is required" check. **New
+   test**: `test_under_18_sign_up_with_guardian_email_same_as_own_email_is_rejected`.
+4. **HIGH — the gate wasn't backed by RLS on the tables that actually
+   hold student data.** `enforce_guardian_consent_gate` is the ONLY place
+   that ever blocked a pending account — real for every session this
+   app's own `authenticate()` issues, but not a database guarantee: any
+   future auth path that mints/accepts a session without going through
+   `authenticate()` (password reset, magic link, OAuth, a future browser
+   client talking to Supabase directly) would silently bypass this gate
+   completely for `saved_plans`/`student_profiles`, which had zero
+   reference to `account_status` in their own RLS. **Fixed**: a new
+   `account_active(uid)` security-definer function (mirrors `is_reviewer()`
+   exactly; default-open when a uid has no `student_accounts` row at all,
+   since not every account is gated) is now ANDed into both
+   `student_profiles_own_row` and `saved_plans_own_row`'s USING/WITH
+   CHECK clauses. **New tests**: `TestAccountActiveGatesOtherOwnRowTables`
+   (2 tests) — a pending account's own, validly-obtained-outside-the-app
+   token can no longer read its own `saved_plans`/`student_profiles` row.
+5. **LOW — no cross-user access-matrix coverage on this migration's own
+   tables.** `tests/db/test_guardian_consent.py` never exercised
+   `student_b`/`guest_client`/`reviewer` at all — CLAUDE.md requires this
+   "every time auth, RLS or publication changes." **Fixed**: new
+   `TestCrossUserAccessMatrix` (6 tests), mirroring
+   `tests/db/test_api_plans.py`'s own pattern exactly.
+6. **LOW, documentation only — no code change.** `app/notifications/
+   logging_sender.py` logs the full email body, including the raw
+   confirmation token, at `INFO` level — deliberate today (nowhere else
+   for the token to go), but must be dropped to `DEBUG` or redacted
+   before any real log aggregation/shipping exists. Noted in
+   `docs/SECURITY.md` and above.
+
+**Verified this session** (`ruff check app tests` clean; `mypy app
+--follow-imports=skip` clean, 41 files — the same pre-existing,
+unrelated numpy/3.12 stub issue on a plain `mypy app` noted above
+recurred and was worked around the same way; `pytest tests/unit -q` —
+185 passed): `pytest tests/db -q` — **110 passed, 26 skipped, 0 failed**
+(26 = the prior 14 plus 12 new tests for the fixes above — every one of
+them correctly SKIPS, for the same documented reason as before: migration
+`0004` is still not applied to the live project). **What I could NOT
+verify live**: the actual trigger/index/RLS behaviour these fixes add —
+same limitation as the original build, unchanged by this session. I did
+not attempt to apply the migration myself (no `DATABASE_URL` in this
+worktree's `.env`; the Supabase MCP tool remains off-limits per
+`docs/DECISIONS.md` "Infrastructure accounts"). Committed to this
+worktree's own branch (`worktree-wf_7ee1927f-553-1`); not pushed, not
+merged — that decision is left to the orchestrating session, per its own
+instructions. **Owner action needed before any of this is real**: apply
+the (now-fixed) `0004_guardian_consent.sql` to the live project, then
+re-run `pytest tests/db -q` for a genuine pass/fail on all 26
+guardian-consent tests plus the pre-existing 110.
 
 ## Other bugs found and fixed this session (not assumed away)
 1. **Security**: the database client was a shared singleton — under real

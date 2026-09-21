@@ -201,6 +201,33 @@ def sign_up(request: SignUpRequest) -> AuthResponse:
                 "'Consent & safeguarding')."
             ),
         )
+    # Adversarial review, 2026-09-21 (HIGH): nothing previously stopped a
+    # self-declared minor from entering their OWN sign-up email as
+    # guardian_email. Not exploitable TODAY — no real email provider is
+    # configured (app/notifications/logging_sender.py) — but the moment
+    # one is, a minor could receive their own "guardian confirmation"
+    # email and self-confirm instantly, a complete, trivial defeat of the
+    # whole mechanism triggered by nothing more than an owner action this
+    # app cannot see coming. Case-insensitive (email addresses are
+    # case-insensitive in practice; Supabase Auth itself normalizes
+    # `email` case-insensitively, so comparing case-sensitively here would
+    # miss the exact "SelfEmail@x.com" vs "selfemail@x.com" trick this
+    # check exists to catch). Same posture/status code as the check just
+    # above: reject outright, before any account is ever created.
+    if (
+        minor
+        and request.guardian_email is not None
+        and request.guardian_email.strip().casefold() == request.email.strip().casefold()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "guardian_email cannot be the same as the student's own "
+                "sign-up email — a minor's guardian must be a different "
+                "person who can actually confirm this account (see "
+                "docs/SECURITY.md 'Consent & safeguarding')."
+            ),
+        )
     if minor and not guardian_consent_schema_is_live():
         # Fail CLOSED, before Supabase's own auth.users row is even
         # created: db/migrations/0004_guardian_consent.sql (own-row RLS

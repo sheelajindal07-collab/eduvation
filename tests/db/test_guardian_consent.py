@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from postgrest.exceptions import APIError
 from supabase import Client
 
 from app.api.guardian_consent import create_guardian_consent_request
@@ -169,6 +171,28 @@ class TestUnder18SignUpValidation:
                 "password": "correct-horse-battery-staple-8",
                 "date_of_birth": _MINOR_DOB,
                 # guardian_email deliberately omitted
+            },
+        )
+        assert response.status_code == 400
+        assert "guardian_email" in response.json()["detail"]
+
+    def test_under_18_sign_up_with_guardian_email_same_as_own_email_is_rejected(self) -> None:
+        """Adversarial review, 2026-09-21 (HIGH): nothing previously
+        stopped a self-declared minor from entering their OWN email as
+        guardian_email -- once a real email provider is configured
+        (none is today, app/notifications/logging_sender.py), that minor
+        could receive their own 'guardian confirmation' email and
+        self-confirm instantly. Checked case-insensitively (mixed-case
+        variant) since Supabase Auth itself treats email case-
+        insensitively."""
+        email = f"bcion-consent-selfguardian-{uuid.uuid4().hex[:12]}@example.com"
+        response = client.post(
+            "/auth/sign-up",
+            json={
+                "email": email,
+                "password": "correct-horse-battery-staple-6",
+                "date_of_birth": _MINOR_DOB,
+                "guardian_email": email.upper(),
             },
         )
         assert response.status_code == 400
@@ -545,3 +569,421 @@ class TestUnder18RawInsertCannotClaimActive:
             assert raised, "the database trigger must reject an under-18 row inserted as active"
         finally:
             scoped.postgrest.aclose()
+
+
+@pytest.fixture
+def seeded_pathway_for_guardian_tests(admin_client: Client) -> Iterator[dict[str, Any]]:
+    """Same seed-a-pathway pattern as tests/db/test_api_plans.py's own
+    `seeded_pathway_for_plans` — kept local to this file rather than
+    imported/shared, since a fixture defined inside one test_*.py file is
+    invisible to every other one (see tests/db/conftest.py's
+    `second_reviewer` docstring for the exact prior incident that
+    established this pattern)."""
+    career = (
+        admin_client.table("careers")
+        .insert({"name": "Guardian-consent test career (SYNTHETIC)"})
+        .execute()
+        .data[0]
+    )
+    pathway = (
+        admin_client.table("pathways")
+        .insert(
+            {
+                "career_id": career["id"],
+                "name": "Guardian-consent test pathway (SYNTHETIC)",
+                "description": "Seeded by tests/db/test_guardian_consent.py",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    yield {"career": career, "pathway": pathway}
+    admin_client.table("pathways").delete().eq("id", pathway["id"]).execute()
+    admin_client.table("careers").delete().eq("id", career["id"]).execute()
+
+
+class TestTokenAndExpiryAreServerGenerated:
+    """CRITICAL finding, adversarial review 2026-09-21: the INSERT RLS
+    policy on `guardian_consents` constrains only `student_id` — nothing
+    stopped a caller from choosing their own `token` (and `expires_at`),
+    then calling the anon-grantable `confirm_guardian_consent(p_token)`
+    RPC with that self-chosen token to activate their own account with
+    zero real guardian involvement. Proves the fix
+    (`enforce_guardian_consent_server_token`, db/migrations/
+    0004_guardian_consent.sql): a client-supplied `token`/`expires_at` is
+    silently OVERWRITTEN, not rejected — the row is still created (that's
+    fine, useful even), just never with the attacker's chosen values."""
+
+    def test_client_supplied_token_is_overwritten_and_never_confirms(
+        self, admin_client: Client, confirmed_adult: dict[str, str]
+    ) -> None:
+        sign_in = client.post(
+            "/auth/sign-in",
+            json={"email": confirmed_adult["email"], "password": confirmed_adult["password"]},
+        )
+        assert sign_in.status_code == 200
+        access_token = sign_in.json()["access_token"]
+        user_id = confirmed_adult["user_id"]
+        attacker_chosen_token = "attacker-chosen-not-random-" + uuid.uuid4().hex
+
+        scoped = get_user_scoped_client(access_token)
+        try:
+            result = (
+                scoped.table("guardian_consents")
+                .insert(
+                    {
+                        "student_id": user_id,
+                        "guardian_email": "not-a-real-guardian@example.com",
+                        "token": attacker_chosen_token,
+                    }
+                )
+                .execute()
+            )
+        finally:
+            scoped.postgrest.aclose()
+
+        # The row IS created (a client-supplied token is overwritten,
+        # not rejected outright) but never with the attacker's value.
+        assert len(result.data) == 1
+        assert result.data[0]["token"] != attacker_chosen_token
+
+        real_token = (
+            admin_client.table("guardian_consents")
+            .select("token")
+            .eq("student_id", user_id)
+            .execute()
+            .data[0]["token"]
+        )
+        assert real_token != attacker_chosen_token
+        assert real_token == result.data[0]["token"]
+
+        # The core proof: the attacker's own chosen value can never
+        # activate anything via the public confirmation endpoint.
+        attacker_confirm = client.get(f"/consent/confirm?token={attacker_chosen_token}")
+        assert attacker_confirm.status_code == 200
+        assert "no longer valid" in attacker_confirm.text.lower()
+
+        admin_client.table("guardian_consents").delete().eq("student_id", user_id).execute()
+
+    def test_client_supplied_expires_at_is_also_overwritten(
+        self, admin_client: Client, confirmed_adult: dict[str, str]
+    ) -> None:
+        """Same trigger, same reasoning, for `expires_at` — an attacker
+        setting a far-future expiry would otherwise (if not for this fix)
+        make their own request never age out."""
+        sign_in = client.post(
+            "/auth/sign-in",
+            json={"email": confirmed_adult["email"], "password": confirmed_adult["password"]},
+        )
+        assert sign_in.status_code == 200
+        access_token = sign_in.json()["access_token"]
+        user_id = confirmed_adult["user_id"]
+
+        scoped = get_user_scoped_client(access_token)
+        try:
+            result = (
+                scoped.table("guardian_consents")
+                .insert(
+                    {
+                        "student_id": user_id,
+                        "guardian_email": "not-a-real-guardian-2@example.com",
+                        "expires_at": "2099-01-01T00:00:00+00:00",
+                    }
+                )
+                .execute()
+            )
+        finally:
+            scoped.postgrest.aclose()
+
+        expires_at = datetime.fromisoformat(result.data[0]["expires_at"])
+        assert expires_at.year < 2099
+        # Roughly 72 hours out (the named assumption) — generous
+        # tolerance for however long the test itself takes to run.
+        assert expires_at < datetime.now(UTC) + timedelta(hours=73)
+
+        admin_client.table("guardian_consents").delete().eq("student_id", user_id).execute()
+
+
+class TestOnlyOnePendingConsentPerStudent:
+    """MEDIUM finding, adversarial review 2026-09-21: idempotency was
+    previously enforced only in Python (create_guardian_consent_request
+    catching a unique-violation on the *student_accounts* insert, before
+    ever reaching this table) — a direct API caller could otherwise
+    insert unlimited guardian_consents rows with arbitrary guardian_email
+    values (a spam vector once a real provider is configured). Proves the
+    DB-level partial unique index (`guardian_consents_one_pending_per_
+    student`) stops a second pending row for the same student regardless
+    of caller."""
+
+    def test_second_pending_insert_for_same_student_is_rejected(
+        self, admin_client: Client, confirmed_adult: dict[str, str]
+    ) -> None:
+        sign_in = client.post(
+            "/auth/sign-in",
+            json={"email": confirmed_adult["email"], "password": confirmed_adult["password"]},
+        )
+        assert sign_in.status_code == 200
+        access_token = sign_in.json()["access_token"]
+        user_id = confirmed_adult["user_id"]
+
+        scoped = get_user_scoped_client(access_token)
+        try:
+            first = (
+                scoped.table("guardian_consents")
+                .insert({"student_id": user_id, "guardian_email": "guardian-one@example.com"})
+                .execute()
+            )
+            assert len(first.data) == 1
+
+            with pytest.raises(APIError) as exc_info:
+                scoped.table("guardian_consents").insert(
+                    {"student_id": user_id, "guardian_email": "guardian-two@example.com"}
+                ).execute()
+            assert exc_info.value.code == "23505"
+        finally:
+            scoped.postgrest.aclose()
+
+        admin_client.table("guardian_consents").delete().eq("student_id", user_id).execute()
+
+
+class TestAccountActiveGatesOtherOwnRowTables:
+    """HIGH finding, adversarial review 2026-09-21: the guardian-consent
+    gate was previously enforced ONLY inside app.api.auth.authenticate()
+    — never backed by RLS on saved_plans/student_profiles, the tables
+    that actually hold a student's data. Proves `account_active(auth.
+    uid())` (ANDed into both own-row policies, db/migrations/
+    0004_guardian_consent.sql) denies a pending account's own-row access
+    at the database layer even with a real, valid access token obtained
+    by bypassing this app's own gate entirely — the same raw
+    `sign_in_with_password` technique `TestTokenNeverReadableThroughNormalRls`
+    above uses to prove the same thing for the token itself."""
+
+    def _raw_session_bypassing_the_app_gate(self, email: str, password: str) -> str:
+        raw = get_anon_client()
+        try:
+            session = raw.auth.sign_in_with_password({"email": email, "password": password})
+        finally:
+            raw.postgrest.aclose()
+        assert session.session is not None
+        return session.session.access_token
+
+    def test_pending_students_own_token_cannot_read_their_saved_plans_row(
+        self,
+        admin_client: Client,
+        confirmed_minor: dict[str, str],
+        stub_email_sender: LoggingEmailSender,
+        seeded_pathway_for_guardian_tests: dict[str, Any],
+    ) -> None:
+        blocked = client.post(
+            "/auth/sign-in",
+            json={"email": confirmed_minor["email"], "password": confirmed_minor["password"]},
+        )
+        assert blocked.status_code == 403  # lazy-creates the pending student_accounts row
+
+        # Service role writes a saved_plans row directly for this
+        # student — simulates data that exists regardless of how it got
+        # there; the point is what a PENDING account's own token can
+        # read now, not how the row came to exist.
+        admin_client.table("saved_plans").insert(
+            {
+                "student_id": confirmed_minor["user_id"],
+                "pathway_id": seeded_pathway_for_guardian_tests["pathway"]["id"],
+            }
+        ).execute()
+
+        access_token = self._raw_session_bypassing_the_app_gate(
+            confirmed_minor["email"], confirmed_minor["password"]
+        )
+        scoped = get_user_scoped_client(access_token)
+        try:
+            seen = (
+                scoped.table("saved_plans")
+                .select("*")
+                .eq("student_id", confirmed_minor["user_id"])
+                .execute()
+            )
+            assert seen.data == [], (
+                "account_active(auth.uid()) must deny a pending account's own "
+                "saved_plans row, even with a real, valid access token obtained "
+                "outside app.api.auth.authenticate()"
+            )
+        finally:
+            scoped.postgrest.aclose()
+
+        admin_client.table("saved_plans").delete().eq(
+            "student_id", confirmed_minor["user_id"]
+        ).execute()
+
+    def test_pending_students_own_token_cannot_read_their_student_profile_row(
+        self,
+        admin_client: Client,
+        confirmed_minor: dict[str, str],
+        stub_email_sender: LoggingEmailSender,
+    ) -> None:
+        blocked = client.post(
+            "/auth/sign-in",
+            json={"email": confirmed_minor["email"], "password": confirmed_minor["password"]},
+        )
+        assert blocked.status_code == 403
+
+        admin_client.table("student_profiles").insert(
+            {"id": confirmed_minor["user_id"], "current_class": "10"}
+        ).execute()
+
+        access_token = self._raw_session_bypassing_the_app_gate(
+            confirmed_minor["email"], confirmed_minor["password"]
+        )
+        scoped = get_user_scoped_client(access_token)
+        try:
+            seen = (
+                scoped.table("student_profiles")
+                .select("*")
+                .eq("id", confirmed_minor["user_id"])
+                .execute()
+            )
+            assert seen.data == [], (
+                "account_active(auth.uid()) must deny a pending account's own "
+                "student_profiles row too"
+            )
+        finally:
+            scoped.postgrest.aclose()
+
+        admin_client.table("student_profiles").delete().eq(
+            "id", confirmed_minor["user_id"]
+        ).execute()
+
+
+class TestCrossUserAccessMatrix:
+    """LOW finding, adversarial review 2026-09-21: CLAUDE.md requires
+    "Cross-user access (guest, student A, student B, reviewer) is tested
+    every time auth, RLS or publication changes" — this file didn't yet
+    exercise the student_b/guest_client/reviewer fixtures at all before
+    this. Mirrors tests/db/test_api_plans.py's own cross-user tests."""
+
+    def test_student_b_cannot_read_student_as_student_accounts_row(
+        self,
+        admin_client: Client,
+        confirmed_minor: dict[str, str],
+        student_b: tuple[str, Client],
+        stub_email_sender: LoggingEmailSender,
+    ) -> None:
+        blocked = client.post(
+            "/auth/sign-in",
+            json={"email": confirmed_minor["email"], "password": confirmed_minor["password"]},
+        )
+        assert blocked.status_code == 403  # lazy-creates the row this test needs to exist
+
+        _user_b_id, client_b = student_b
+        seen = (
+            client_b.table("student_accounts")
+            .select("*")
+            .eq("id", confirmed_minor["user_id"])
+            .execute()
+        )
+        assert seen.data == [], "student B must never see student A's student_accounts row"
+
+    def test_student_b_cannot_insert_a_guardian_consents_row_for_student_a(
+        self,
+        confirmed_minor: dict[str, str],
+        student_b: tuple[str, Client],
+    ) -> None:
+        _user_b_id, client_b = student_b
+        raised = False
+        try:
+            client_b.table("guardian_consents").insert(
+                {
+                    "student_id": confirmed_minor["user_id"],
+                    "guardian_email": "student-b-attacker@example.com",
+                }
+            ).execute()
+        except Exception:  # noqa: BLE001 — any rejection is the point
+            raised = True
+        assert raised, "student B must not be able to insert a row for student A's student_id"
+
+    def test_guest_cannot_read_student_accounts(
+        self,
+        admin_client: Client,
+        confirmed_minor: dict[str, str],
+        guest_client: Client,
+        stub_email_sender: LoggingEmailSender,
+    ) -> None:
+        blocked = client.post(
+            "/auth/sign-in",
+            json={"email": confirmed_minor["email"], "password": confirmed_minor["password"]},
+        )
+        assert blocked.status_code == 403
+
+        seen = (
+            guest_client.table("student_accounts")
+            .select("*")
+            .eq("id", confirmed_minor["user_id"])
+            .execute()
+        )
+        assert seen.data == [], "a guest (anon) client must never read student_accounts"
+
+    def test_guest_cannot_read_guardian_consents(
+        self,
+        admin_client: Client,
+        confirmed_minor: dict[str, str],
+        guest_client: Client,
+        stub_email_sender: LoggingEmailSender,
+    ) -> None:
+        blocked = client.post(
+            "/auth/sign-in",
+            json={"email": confirmed_minor["email"], "password": confirmed_minor["password"]},
+        )
+        assert blocked.status_code == 403
+
+        seen = (
+            guest_client.table("guardian_consents")
+            .select("*")
+            .eq("student_id", confirmed_minor["user_id"])
+            .execute()
+        )
+        assert seen.data == [], "a guest (anon) client must never read guardian_consents"
+
+    def test_guest_cannot_insert_guardian_consents(self, guest_client: Client) -> None:
+        raised = False
+        try:
+            guest_client.table("guardian_consents").insert(
+                {
+                    "student_id": str(uuid.uuid4()),
+                    "guardian_email": "guest-attacker@example.com",
+                }
+            ).execute()
+        except Exception:  # noqa: BLE001
+            raised = True
+        assert raised, "an anon (guest) client must not be able to insert a guardian_consents row"
+
+    def test_reviewer_has_no_special_access_to_student_accounts_or_guardian_consents(
+        self,
+        admin_client: Client,
+        confirmed_minor: dict[str, str],
+        reviewer: tuple[str, Client],
+        stub_email_sender: LoggingEmailSender,
+    ) -> None:
+        """The reviewer role governs the public knowledge base (db/
+        migrations/0001_init.sql), not the student vault — mirrors
+        tests/db/test_api_plans.py's identical check on saved_plans."""
+        blocked = client.post(
+            "/auth/sign-in",
+            json={"email": confirmed_minor["email"], "password": confirmed_minor["password"]},
+        )
+        assert blocked.status_code == 403
+
+        _reviewer_id, reviewer_client = reviewer
+        accounts_seen = (
+            reviewer_client.table("student_accounts")
+            .select("*")
+            .eq("id", confirmed_minor["user_id"])
+            .execute()
+        )
+        assert accounts_seen.data == []
+
+        consents_seen = (
+            reviewer_client.table("guardian_consents")
+            .select("*")
+            .eq("student_id", confirmed_minor["user_id"])
+            .execute()
+        )
+        assert consents_seen.data == []

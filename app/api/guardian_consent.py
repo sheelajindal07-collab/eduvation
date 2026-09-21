@@ -38,7 +38,6 @@ introduced here.
 from __future__ import annotations
 
 import logging
-import secrets
 from datetime import date
 from functools import lru_cache
 from typing import Any, cast
@@ -139,7 +138,27 @@ def create_guardian_consent_request(
     racing the same lazy-create path): a unique-violation on the
     `student_accounts` insert is treated as "already created by another
     request", not an error — the caller (the gate below) still ends up
-    correctly blocked either way, just without a second email sent.
+    correctly blocked either way, just without a second email sent. A
+    unique-violation on the `guardian_consents` insert itself (the
+    `guardian_consents_one_pending_per_student` partial unique index,
+    db/migrations/0004_guardian_consent.sql — adversarial review,
+    2026-09-21) is handled the same way for the same reason: this
+    function's own two inserts are not atomic with each other, so a
+    caller racing a direct-API duplicate could in principle hit this
+    second unique constraint instead of the first one.
+
+    **The `token` itself is never chosen here** (adversarial review,
+    2026-09-21, closing a complete bypass — see the migration's own
+    docstring): a BEFORE INSERT trigger on `guardian_consents`
+    unconditionally server-generates `token` and `expires_at`, silently
+    overwriting anything this call sends (nothing is sent for either
+    field, on purpose, so there is nothing here that could look like it
+    matters and not actually be used). The confirmation email is built
+    from the token this INSERT's own response reports was actually
+    written — never from a value generated in this process — the same
+    "read back what the database actually did" pattern
+    `app.api.auth._migrate_pending_plan` already uses for a saved plan's
+    generated id.
     """
     try:
         client.table("student_accounts").insert(
@@ -159,14 +178,30 @@ def create_guardian_consent_request(
             return
         raise
 
-    token = secrets.token_urlsafe(32)
-    client.table("guardian_consents").insert(
-        {
-            "student_id": student_id,
-            "guardian_email": guardian_email,
-            "token": token,
-        }
-    ).execute()
+    try:
+        result = (
+            client.table("guardian_consents")
+            .insert(
+                {
+                    "student_id": student_id,
+                    "guardian_email": guardian_email,
+                }
+            )
+            .execute()
+        )
+    except APIError as exc:
+        if exc.code == _UNIQUE_VIOLATION:
+            logger.info(
+                "guardian_consents row for student_id=%s already existed "
+                "(concurrent creation, or a still-pending request from "
+                "earlier) — not an error, no second email sent.",
+                student_id,
+            )
+            return
+        raise
+
+    rows = cast("list[dict[str, Any]]", result.data)
+    token = rows[0]["token"]
 
     subject, body = build_guardian_consent_email(
         confirm_url=_confirm_url(token), expiry_hours=GUARDIAN_CONSENT_EXPIRY_HOURS

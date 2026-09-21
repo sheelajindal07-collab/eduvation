@@ -64,6 +64,31 @@
 -- lookup the task asked for, expressed as a Postgres function so it
 -- works the same way whether called from app/web/consent_pages.py or
 -- (defensively) directly.
+--
+-- **Design note — `account_active()`, applied to `saved_plans`/
+-- `student_profiles` too (adversarial review, 2026-09-21):** everything
+-- above enforces the gate on THIS migration's own two tables, but until
+-- now nothing stopped a pending account's own, otherwise-valid access
+-- token from reading/writing `saved_plans`/`student_profiles` directly —
+-- those tables' own-row RLS policies (0001_init.sql/0002_saved_plans.sql)
+-- only ever checked `auth.uid() = id`/`student_id`, with zero reference
+-- to `account_status`. The ONLY thing standing between a pending minor
+-- and their own data was `app.api.auth.authenticate()` never handing out
+-- a `Session` in the first place — real today (every token this app's
+-- own routes ever issue goes through it), but not a database-enforced
+-- guarantee: any future auth path that mints or accepts a session
+-- without funnelling through `authenticate()` (password reset, magic
+-- link, OAuth, a future browser client talking to Supabase directly)
+-- would silently bypass this entire gate for the tables that actually
+-- hold a student's data, with nothing at the database layer to catch it
+-- — exactly the "a caller holding a valid access token could bypass
+-- application code entirely by calling Supabase's REST API directly"
+-- risk `enforce_account_status_matches_age` already names below, just
+-- never closed for these two tables. `account_active(uid)` (defined
+-- alongside the RLS section at the bottom of this file, once
+-- `student_accounts` already exists) mirrors `is_reviewer()`'s own
+-- pattern (0001_init.sql) exactly, and is ANDed into both
+-- `student_profiles_own_row` and `saved_plans_own_row`.
 
 create type account_status as enum ('active', 'pending_guardian_consent');
 create type guardian_consent_status as enum ('pending', 'confirmed', 'expired');
@@ -125,11 +150,16 @@ create table guardian_consents (
     id              uuid primary key default gen_random_uuid(),
     student_id      uuid not null references auth.users(id) on delete cascade,
     guardian_email  text not null,
-    -- Opaque, single-use, server-generated (secrets.token_urlsafe(32) in
-    -- app/api/guardian_consent.py) — NEVER the student's own access
-    -- token, and NEVER accepted from a client as input (a trigger below
-    -- additionally refuses to let a client's own value bypass the
-    -- generated one for anything other than the pending state itself).
+    -- Opaque, single-use, server-generated — NEVER the student's own
+    -- access token. A BEFORE INSERT trigger below
+    -- (enforce_guardian_consent_server_token) unconditionally overwrites
+    -- this column on every insert, so it is NEVER, in fact, accepted
+    -- from a client as input — whatever value (or none at all) a caller
+    -- sends is silently replaced before the row is ever written. No
+    -- DEFAULT is declared here on purpose: the trigger is the only thing
+    -- that ever sets this column, so a default would be redundant at
+    -- best and a false sense of safety at worst if the trigger were ever
+    -- dropped without anyone noticing this comment.
     token           text not null unique,
     status          guardian_consent_status not null default 'pending',
     created_at      timestamptz not null default now(),
@@ -137,14 +167,68 @@ create table guardian_consents (
     -- Named assumption: 72 hours (the task's own suggested window; no
     -- other figure is specified anywhere in the docs). Mirrored in
     -- app/api/guardian_consent.py's GUARDIAN_CONSENT_EXPIRY_HOURS, which
-    -- is what the guardian-facing email text actually quotes — kept as a
-    -- DEFAULT here too so the database's own enforcement doesn't depend
-    -- on the application always remembering to pass it.
+    -- is what the guardian-facing email text actually quotes. Also
+    -- server-set by the same BEFORE INSERT trigger as `token` (not just
+    -- a DEFAULT) so the database's own enforcement doesn't depend on the
+    -- application always remembering to pass it, or on a client not
+    -- passing a longer-lived value of its own.
     expires_at      timestamptz not null default (now() + interval '72 hours')
 );
 
 create index guardian_consents_student_idx on guardian_consents (student_id);
 create index guardian_consents_token_idx on guardian_consents (token);
+
+-- Security finding (adversarial review, 2026-09-21): the INSERT RLS
+-- policy below constrains only `student_id` (`with check (auth.uid() =
+-- student_id)`) — nothing stopped a caller from INSERTing a row for
+-- their OWN student_id with a SELF-CHOSEN `token` and `guardian_email`,
+-- then calling the anon-grantable confirm_guardian_consent(p_token) RPC
+-- with that same self-chosen token, flipping their own account to
+-- 'active' with zero real guardian involvement. This closes it the same
+-- way enforce_account_status_matches_age() (above) closes the analogous
+-- gap on student_accounts: a BEFORE INSERT trigger that server-generates
+-- the bearer credential unconditionally, ignoring/overwriting whatever
+-- the client sent. `pgcrypto` (enabled in 0001_init.sql) supplies
+-- gen_random_bytes(); hex-encoded so the value is already URL-safe with
+-- no percent-encoding surprises in the emailed confirm link
+-- (app/notifications/guardian_consent_email.py). 32 random bytes (256
+-- bits) matches the entropy app/api/guardian_consent.py used to generate
+-- client-side before this fix (secrets.token_urlsafe(32)) — that
+-- application-side generation is now dead code and has been removed;
+-- app/api/guardian_consent.py's create_guardian_consent_request instead
+-- reads the token back from this INSERT's own returned row, the same
+-- way it already reads back a plan's generated id elsewhere in this
+-- codebase (app/api/auth.py's _migrate_pending_plan).
+create or replace function enforce_guardian_consent_server_token()
+returns trigger as $$
+begin
+  new.token := encode(gen_random_bytes(32), 'hex');
+  new.expires_at := now() + interval '72 hours';
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger guardian_consents_enforce_server_token
+before insert on guardian_consents
+for each row execute function enforce_guardian_consent_server_token();
+
+-- Security finding (adversarial review, 2026-09-21), MEDIUM: idempotency
+-- against a duplicate guardian_consents insert was previously enforced
+-- only in Python (create_guardian_consent_request catches a unique-
+-- violation on the *student_accounts* insert, then returns before ever
+-- reaching this table) — a direct API caller with a valid own-row access
+-- token could bypass that entirely and INSERT unlimited guardian_consents
+-- rows with arbitrary guardian_email values (a spam vector once a real
+-- email provider is configured, app/notifications/logging_sender.py).
+-- A partial unique index enforces "at most one *pending* request per
+-- student" at the database layer regardless of caller, the same
+-- "regardless of how it's reached" reasoning as the trigger above. Scoped
+-- to status = 'pending' (not the whole student_id column) so a student
+-- can still get a NEW pending request after an old one is confirmed or
+-- expires — those terminal states are not "still outstanding".
+create unique index guardian_consents_one_pending_per_student
+  on guardian_consents (student_id)
+  where status = 'pending';
 
 -- A row must always be INSERTed exactly as 'pending', never-yet-confirmed
 -- — mirrors 0003_maker_checker.sql's "must be inserted as draft" rule.
@@ -282,6 +366,60 @@ create policy student_accounts_insert_own on student_accounts for insert
 -- 0001_init.sql already uses for `reviewers`.
 create policy guardian_consents_insert_own on guardian_consents for insert
   with check (auth.uid() = student_id);
+
+-- ============================================================
+-- account_active() — defense in depth on the OTHER own-row tables
+-- (adversarial review, 2026-09-21; see the module-level design note
+-- above for the full reasoning)
+-- ============================================================
+
+-- Mirrors is_reviewer()'s exact pattern (0001_init.sql): security
+-- definer, `language sql stable`, no explicit grant (relies on the same
+-- default PUBLIC execute privilege is_reviewer() itself relies on — this
+-- migration has no evidence that's ever been revoked, since is_reviewer()
+-- already works for the anon-readable sources/careers/pathways/claims
+-- policies with no grant statement of its own).
+--
+-- Default-open (returns true) when the given uid has NO student_accounts
+-- row at all: not every student has one — only an account created as a
+-- self-declared minor ever gets one (create_guardian_consent_request, or
+-- the no-guardian-email fail-closed branch in
+-- app/api/guardian_consent.py's enforce_guardian_consent_gate). An 18+
+-- student, a reviewer, or any legacy account predating this feature must
+-- not be gated by a table that was never populated for them — confirmed
+-- by reading exactly how/when a student_accounts row gets created
+-- (app/api/guardian_consent.py, both call sites) before writing this.
+create or replace function account_active(uid uuid)
+returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select account_status = 'active' from student_accounts where id = uid),
+    true
+  );
+$$;
+
+-- Re-scope the two pre-existing own-row policies this gate must also
+-- cover. DROP + CREATE, not ALTER POLICY (which cannot add a brand-new
+-- WITH CHECK clause to a FOR ALL policy that already has one, only
+-- replace an existing USING/WITH CHECK wholesale one at a time) — same
+-- own-row shape each already had, with `account_active(auth.uid())`
+-- ANDed into both the USING and WITH CHECK clauses so a pending
+-- account's own-row access is denied at the database layer regardless of
+-- how its token was obtained — true defense-in-depth, not just the one
+-- funnel through app.api.auth.authenticate(). student_profiles_own_row
+-- originates in 0001_init.sql, saved_plans_own_row in
+-- 0002_saved_plans.sql — both already applied to any project this
+-- migration runs against (append-only, in order), so both policies are
+-- guaranteed to already exist by the time these statements run.
+drop policy student_profiles_own_row on student_profiles;
+create policy student_profiles_own_row on student_profiles for all
+  using (auth.uid() = id and account_active(auth.uid()))
+  with check (auth.uid() = id and account_active(auth.uid()));
+
+drop policy saved_plans_own_row on saved_plans;
+create policy saved_plans_own_row on saved_plans for all
+  using (auth.uid() = student_id and account_active(auth.uid()))
+  with check (auth.uid() = student_id and account_active(auth.uid()));
 
 -- A tiny marker so tests/db/conftest.py can detect "is this migration
 -- applied yet" the same way 0003_maker_checker.sql's
