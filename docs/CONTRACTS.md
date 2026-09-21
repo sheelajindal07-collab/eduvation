@@ -130,7 +130,29 @@ one-way, idempotent definer function. No birth year is stored for a guest.
 stale name and must not exist anywhere.
 
 ## Difficult states and cache class
-<A11Y-1>
+
+Copy for every difficult state lives only in `docs/COPY.md`'s
+`global.difficult_state.*` keys (`ai_unavailable`, `eligibility_uncertain`,
+`information_changed`, `no_matching_result`, `save_failed`,
+`weak_connection`, `shared_device`, `permission_denied`); a lane names the
+key and renders it, never restates or forwards the English inline.
+`docs/UI.md`'s difficult-states and state-pattern tables carry the
+shipped/drafted status per key — check there, it is not duplicated here.
+Offline deadline stays out of scope while OD-1 (no service worker) holds;
+it gets a ninth key only if that decision reverses.
+**Settled — cache class:** no route sets `Cache-Control` today (checked
+`app/web/pages.py`, `app/web/reviewer_pages.py`), so this is a fresh
+default, not a change. Three classes: **no-store** — the default for
+every response, and the only class for any cookie-bearing request, every
+POST, `/reviewer/*`, `/auth/*`, `/plans`, and any view carrying personal
+params (a saved plan, filled-in requirements); **public-anonymous** —
+short max-age, allow-listed anonymous GETs only (`/explore`,
+`/compare/view`, `/timeline/view` GET) with no `Cookie` or `Authorization`
+header — either header present falls back to no-store even on an
+allow-listed path; **static** — long max-age, `/static/*` and compiled
+CSS/JS only, cache-busted by filename hash, never by content. Reviewer
+sign-out also sends `Clear-Site-Data: "cache"`, the shared-device state's
+mechanism.
 
 ## Keys and components
 <DESIGN-2, DESIGN-1 (docs/UI.md); I18N-1, UI-1 (code)>
