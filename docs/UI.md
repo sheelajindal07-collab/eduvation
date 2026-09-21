@@ -99,9 +99,13 @@ state contract v1" below is what actually freezes, and what actually
 exists today, per component — see that section for status.
 
 ## Usability rounds
-- **Round 1** (after Step 7 / week 5, on a clickable prototype, before the
-  comparison/cost engines are built): 5–8 participants incl. a
-  shared-phone user, a Hindi-preferring user, a parent, a teacher.
+- **Round 1** (per `docs/DEVELOPMENT-PLAN.md` Wave 4, on the real app —
+  the comparison and cost engines are already built and live, not a
+  clickable prototype; this sentence was stale by the time round 1 was
+  actually scheduled): 5–8 participants incl. a shared-phone user, a
+  Hindi-preferring user, a parent, a teacher. **Phase 1's round 1 is
+  adults-only (18+)** — no minor participant before CONSENT-11/CONSENT-14
+  (Phase 2/3).
 - **Round 2** (alongside the 10-user trial): same task criteria.
 - **Task criteria (pass mark, both rounds):** find two plausible routes;
   explain verified-cost vs estimate; locate an official source; save a next

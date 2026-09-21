@@ -5,6 +5,34 @@ never deleted.
 
 ---
 
+## 2026-09-21 — Component and state contract v1 frozen in docs/UI.md
+**Event:** DESIGN-1 (Wave 1 design-docs lane) added "Component and state
+contract v1" to `docs/UI.md`: a component inventory checked directly
+against the real templates and `app/web/styles/input.css` (not the plan),
+and a state-vocabulary table every screen follows from here on.
+**Decision:** frozen as v1. Two findings adopted as decisions, not just
+observations:
+1. `.field-input` is the canonical input class going forward.
+   `app/web/styles/input.css` had a second, older `.input` class (used
+   only by `reviewer_sign_in.html`) whose padding computes to roughly
+   42px — under the 44–48px touch-target minimum. Every new screen uses
+   `.field-input`; migrating `reviewer_sign_in.html` off `.input` is a
+   separate, small implementation follow-up, not done by this freeze.
+2. Foreign-currency and visa display fields are explicitly **not in v1**.
+   The 2026-09-21 scope-widening entry below added foreign pathways to
+   pilot scope without schema support for their currency/visa fields;
+   `docs/CONTRACTS.md`'s money section is still an empty skeleton. Until
+   SCOPE-2/RULES-1 land a currency-aware component, a foreign pathway's
+   out-of-scope fields are omitted or shown `not_available` — never
+   rendered with a bare ₹ symbol as if domestic.
+**Amendments:** v1.1 and later are additive only over this table, never a
+silent rewrite of an existing row — reviewed the same way this freeze was.
+**Also corrected in the same pass:** `docs/UI.md`'s "Component set" and
+"Usability rounds" headings had gone stale (one claimed a freeze at "Step
+7/M2" that never happened; the other still described round 1 as running
+"before the comparison/cost engines are built," which stopped being true
+once those engines shipped in BCI-006). Both fixed in place.
+
 ## 2026-09-21 — Rule approval lives in git JSON, not a database table —
 ## a stated deviation from build pack section 6
 **Event:** the Wave 1 contract burst (`docs/CONTRACTS.md` "Rule approval
