@@ -105,7 +105,27 @@ class TestAuthenticateRateLimitPropagation:
 
 
 class TestAuthenticateSuccess:
-    def test_successful_sign_in_returns_the_session_unchanged(self) -> None:
+    def test_successful_sign_in_returns_the_session_unchanged(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Guardian-consent gate, 2026-09-21: authenticate() now also
+        calls enforce_guardian_consent_gate(), which -- but only once
+        db/migrations/0004_guardian_consent.sql is actually live against
+        whatever real project this test suite happens to run against --
+        goes on to touch client.postgrest/.table(), neither of which this
+        module's deliberately minimal _fake_client provides (see its own
+        docstring: "authenticate() only ever touches
+        .auth.sign_in_with_password", true before this gate existed).
+        This test's own concern is narrowly "does authenticate() pass the
+        session through unchanged", not the gate's internal DB behaviour
+        (that has its own dedicated, thorough live suite in
+        tests/db/test_guardian_consent.py) -- so the schema-live check is
+        forced False here rather than building out a heavier fake client,
+        keeping this test's pass/fail independent of whatever a real
+        Supabase project's migration state happens to be at run time."""
+        monkeypatch.setattr(
+            "app.api.guardian_consent.guardian_consent_schema_is_live", lambda: False
+        )
         fake_session = SimpleNamespace(access_token="a-real-looking-token")
         fake_user = SimpleNamespace(id="user-123")
         client = _fake_client(result=SimpleNamespace(session=fake_session, user=fake_user))

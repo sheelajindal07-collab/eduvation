@@ -2,11 +2,22 @@
 Auth, which already underlies every RLS policy in this schema
 (`auth.users`, `auth.uid()`).
 
-Real minor accounts stay out of scope here (docs/SECURITY.md: disabled
-until the consent and safeguarding workflow is built and reviewed by a
-person — tasks/BCI-004.md). This route does not enforce an age check
-itself; that gate belongs to a later, deliberately separate task, not a
-side effect of shipping sign-up.
+**Guardian-consent gate (this task, closing the gap the paragraph below
+used to describe):** `SignUpRequest.date_of_birth` is required; an
+under-18 sign-up requires `guardian_email` too (400 without it), creates
+the account as `pending_guardian_consent` rather than immediately usable,
+and emails the guardian a confirmation link via the pluggable
+`EmailSender` (`app/notifications/`) — see `app/api/guardian_consent.py`
+for the actual age/token/enforcement logic, and
+`db/migrations/0004_guardian_consent.sql` for the schema/RLS it relies
+on. `authenticate()` below (shared by this route and the reviewer
+console's sign-in, `app/web/reviewer_pages.py`) is where a pending
+account is actually blocked from getting a usable session — see that
+function's own docstring, and `app.api.guardian_consent.
+enforce_guardian_consent_gate`'s, for exactly where and why.
+**Real email delivery is not wired to a real provider** — see
+`app/notifications/logging_sender.py`; the gate's database state is
+real, but nobody's inbox is reached yet.
 
 Each call gets a fresh client (app/db/client.py) — never shared, never
 cached, per the concurrency fix in docs/DECISIONS.md.
@@ -31,15 +42,24 @@ the client ends up doing to hold that plan in the meantime.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, date, datetime
 from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from supabase import Client
 from supabase_auth.errors import AuthApiError
 from supabase_auth.types import Session
 
+from app.api.guardian_consent import (
+    MINOR_AGE_THRESHOLD_YEARS,
+    create_guardian_consent_request,
+    enforce_guardian_consent_gate,
+    guardian_consent_schema_is_live,
+    is_minor,
+)
 from app.db import get_anon_client
+from app.notifications.factory import get_email_sender
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +81,21 @@ class PendingPlan(BaseModel):
 class SignUpRequest(BaseModel):
     email: EmailStr
     password: str
+    date_of_birth: date
+    # Required whenever date_of_birth implies under-18 — checked in
+    # sign_up() itself (a Pydantic model can't see MINOR_AGE_THRESHOLD_
+    # YEARS from here without importing app.api.guardian_consent into a
+    # request model, which would be an odd layering), not by making this
+    # field itself conditionally-typed.
+    guardian_email: EmailStr | None = None
     pending_plan: PendingPlan | None = None
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def _not_in_the_future(cls, value: date) -> date:
+        if value > date.today():
+            raise ValueError("date_of_birth cannot be in the future.")
+        return value
 
 
 class SignInRequest(BaseModel):
@@ -70,13 +104,31 @@ class SignInRequest(BaseModel):
 
 
 class AuthResponse(BaseModel):
-    access_token: str
+    # Optional (was required before this task): a sign-up response for a
+    # pending-guardian-consent account carries NO access token at all —
+    # see sign_up() below. A sign-in response always has one; the gate
+    # (authenticate()) raises rather than returning a Session for a
+    # pending account, so sign_in() itself never constructs an
+    # AuthResponse with access_token=None.
+    access_token: str | None = None
     user_id: str
+    # "active" | "pending_guardian_consent" — a plain str, not the
+    # account_status enum type db/migrations/0004_guardian_consent.sql
+    # defines, so this response model has no dependency on that schema
+    # module beyond the two string values themselves.
+    account_status: str = "active"
     migrated_plan_id: str | None = None
     """Set when `pending_plan` was supplied and successfully saved.
     `None` with no error raised means either no pending_plan was sent,
     or saving it failed non-fatally — sign-up itself never fails because
     of a plan-save problem (see the handler)."""
+    message: str | None = None
+    """Set on a pending-guardian-consent sign-up response, to make the
+    "not immediately usable" state visible to a caller that only reads
+    the 2xx body rather than distinguishing status codes (task
+    requirement: "the response should clearly indicate the account is
+    pending guardian confirmation, not immediately usable -- do not
+    silently let the student in")."""
 
 
 def _migrate_pending_plan(
@@ -135,8 +187,93 @@ def _migrate_pending_plan(
     return rows[0]["id"] if rows else None
 
 
+def _normalize_email_for_self_check(email: str) -> str:
+    """Normalize an email for the guardian_email-vs-own-email self-check
+    below — NOT a general-purpose email canonicalizer, and deliberately
+    narrower than one: lowercase, strip surrounding whitespace, and drop
+    a `local+tag@domain` sub-address tag, because that's the one bypass
+    an adversarial live check actually demonstrated (see the comment on
+    that check). No dot-stripping — see the same comment for why that
+    would trade a real bypass for a false-positive rejection of a
+    genuinely different guardian on non-Gmail providers."""
+    local, _, domain = email.strip().casefold().partition("@")
+    local = local.partition("+")[0]
+    return f"{local}@{domain}"
+
+
 @router.post("/sign-up", response_model=AuthResponse, status_code=201)
 def sign_up(request: SignUpRequest) -> AuthResponse:
+    today = datetime.now(tz=UTC).date()
+    minor = is_minor(request.date_of_birth, as_of=today)
+    if minor and request.guardian_email is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"guardian_email is required for a student under "
+                f"{MINOR_AGE_THRESHOLD_YEARS} (named assumption — India's legal "
+                "majority age, Indian Majority Act 1875; see docs/SECURITY.md "
+                "'Consent & safeguarding')."
+            ),
+        )
+    # Adversarial review, 2026-09-21 (HIGH, then a second-pass MEDIUM):
+    # nothing previously stopped a self-declared minor from entering
+    # their OWN sign-up email as guardian_email. Not exploitable TODAY —
+    # no real email provider is configured
+    # (app/notifications/logging_sender.py) — but the moment one is, a
+    # minor could receive their own "guardian confirmation" email and
+    # self-confirm instantly, a complete, trivial defeat of the whole
+    # mechanism triggered by nothing more than an owner action this app
+    # cannot see coming.
+    #
+    # A first version compared case-insensitively but exact-match, which
+    # a live adversarial re-check defeated trivially: most providers
+    # (Gmail, Outlook/M365, ProtonMail, FastMail — RFC 5233 "Sieve
+    # Subaddress") deliver `local+anything@domain` to the same inbox as
+    # `local@domain`, so `name+guardian@gmail.com` sailed straight past
+    # an exact-match check while still reaching the student's own inbox.
+    # `_normalize_email_for_self_check` strips a `+...` suffix from the
+    # local part before comparing. Deliberately NOT stripping dots too
+    # (Gmail treats `r.kumar@gmail.com`/`rkumar@gmail.com` as identical,
+    # but most OTHER providers, including Outlook, do not — two genuinely
+    # different people can differ only by a dot on those providers, and
+    # blanket dot-stripping would wrongly reject a real, different
+    # guardian's address as "the same email", the opposite failure mode
+    # from the one this check exists to catch).
+    if (
+        minor
+        and request.guardian_email is not None
+        and _normalize_email_for_self_check(request.guardian_email)
+        == _normalize_email_for_self_check(request.email)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "guardian_email cannot be the same as the student's own "
+                "sign-up email — a minor's guardian must be a different "
+                "person who can actually confirm this account (see "
+                "docs/SECURITY.md 'Consent & safeguarding')."
+            ),
+        )
+    if minor and not guardian_consent_schema_is_live():
+        # Fail CLOSED, before Supabase's own auth.users row is even
+        # created: db/migrations/0004_guardian_consent.sql (own-row RLS
+        # tables this whole gate depends on) is not applied to this
+        # project yet (see db/migrations/README.md / STATUS.md for the
+        # owner action needed). Letting a self-declared minor's sign-up
+        # through as immediately-usable here — the only alternative,
+        # since there is nowhere yet to record "pending" — would be
+        # exactly the CLAUDE.md non-negotiable this whole task exists to
+        # close. Refusing outright (no account created at all) is the
+        # safe failure mode; an 18+ sign-up is completely unaffected by
+        # this check (never reaches it).
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Guardian consent is required for this account and is not yet "
+                "available. Please try again later."
+            ),
+        )
+
     try:
         client = get_anon_client()
     except Exception as exc:
@@ -155,7 +292,26 @@ def sign_up(request: SignUpRequest) -> AuthResponse:
         ) from exc
     try:
         try:
-            result = client.auth.sign_up({"email": request.email, "password": request.password})
+            # date_of_birth/guardian_email travel in Supabase's own
+            # `options.data` (-> auth.users.raw_user_meta_data), so they
+            # are durably recorded by Supabase itself regardless of
+            # whether a session comes back below (see the `result.session
+            # is None` branch) — app.api.guardian_consent.
+            # enforce_guardian_consent_gate reads them back from there to
+            # bootstrap the pending-consent request on this student's
+            # first successful sign-in, if it wasn't already created here.
+            result = client.auth.sign_up(
+                {
+                    "email": request.email,
+                    "password": request.password,
+                    "options": {
+                        "data": {
+                            "date_of_birth": request.date_of_birth.isoformat(),
+                            "guardian_email": request.guardian_email,
+                        }
+                    },
+                }
+            )
         except AuthApiError as exc:
             # Propagate Supabase Auth's own HTTP status instead of
             # flattening every failure to 400. Matters concretely for
@@ -176,26 +332,72 @@ def sign_up(request: SignUpRequest) -> AuthResponse:
             # to propagate, so surface it as a plain 400 same as before.
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        if result.session is None or result.user is None:
+        if result.user is None:
+            raise HTTPException(status_code=400, detail="Sign-up failed.")
+        user_id = result.user.id
+
+        if result.session is None:
             # Email confirmation is required by the project's Auth
-            # settings — not an error, just no session yet. A
-            # pending_plan can't be migrated without a session; the
-            # client keeps holding it and retries via POST /plans once
-            # the user has confirmed and signed in.
+            # settings — not an error, just no session yet. Unchanged
+            # from before this task for an 18+ signup (still a plain
+            # 202); a pending_plan can't be migrated without a session
+            # either way (pre-existing gap, see _migrate_pending_plan's
+            # own docstring). For a self-declared minor, the guardian-
+            # consent request itself ALSO can't be created without a
+            # session (own-row RLS — see app.api.guardian_consent's
+            # module docstring) — nothing is lost, though: the metadata
+            # above durably holds date_of_birth/guardian_email, and
+            # authenticate() creates the request on this student's first
+            # successful sign-in instead.
+            if minor:
+                return AuthResponse(
+                    access_token=None,
+                    user_id=user_id,
+                    account_status="pending_guardian_consent",
+                    message=(
+                        "Account created. Check your email to confirm it first. "
+                        "Because this account is for a student under "
+                        f"{MINOR_AGE_THRESHOLD_YEARS}, your guardian will also need "
+                        "to confirm a separate email before this account can sign in."
+                    ),
+                )
             raise HTTPException(
                 status_code=202,
                 detail="Account created. Check your email to confirm before signing in.",
             )
 
+        client.postgrest.auth(result.session.access_token)
+
+        if minor:
+            assert request.guardian_email is not None  # enforced above
+            create_guardian_consent_request(
+                client,
+                student_id=user_id,
+                date_of_birth=request.date_of_birth,
+                guardian_email=request.guardian_email,
+                sender=get_email_sender(),
+            )
+            return AuthResponse(
+                access_token=None,
+                user_id=user_id,
+                account_status="pending_guardian_consent",
+                message=(
+                    f"Account created. A confirmation link has been emailed to "
+                    f"{request.guardian_email}. This account cannot sign in until "
+                    "your guardian confirms."
+                ),
+            )
+
         migrated_plan_id = None
         if request.pending_plan is not None:
             migrated_plan_id = _migrate_pending_plan(
-                client, result.session.access_token, result.user.id, request.pending_plan
+                client, result.session.access_token, user_id, request.pending_plan
             )
 
         return AuthResponse(
             access_token=result.session.access_token,
-            user_id=result.user.id,
+            user_id=user_id,
+            account_status="active",
             migrated_plan_id=migrated_plan_id,
         )
     finally:
@@ -241,6 +443,18 @@ def authenticate(client: Client, email: str, password: str) -> Session:
     ISN'T a login failure at all, e.g. a rate limit -- propagating THAT
     doesn't weaken anti-enumeration, since it says nothing about whether
     this particular email exists.
+
+    **Guardian-consent gate lives here** (docs/SECURITY.md "enforced
+    server-side, not by a button"): once the password itself is verified
+    correct, `app.api.guardian_consent.enforce_guardian_consent_gate`
+    decides whether this caller may actually receive the `Session` —
+    revealing "your account is pending guardian confirmation" at this
+    point is not an enumeration leak the way it would be before password
+    verification, since the caller has already proven they own the
+    account. A pending account raises `HTTPException(403, ...)` here and
+    a `Session` is never returned — every caller of `authenticate()`
+    (this route and the reviewer console) gets that protection for free,
+    with nothing downstream needing its own copy of the check.
     """
     try:
         result = client.auth.sign_in_with_password({"email": email, "password": password})
@@ -252,6 +466,9 @@ def authenticate(client: Client, email: str, password: str) -> Session:
         raise HTTPException(status_code=401, detail="Invalid email or password.") from exc
     if result.session is None or result.user is None:
         raise HTTPException(status_code=401, detail="Invalid email or password.")
+    enforce_guardian_consent_gate(
+        client, result.session, result.user, sender=get_email_sender()
+    )
     return result.session
 
 
@@ -267,6 +484,12 @@ def sign_in(request: SignInRequest) -> AuthResponse:
         ) from exc
     try:
         session = authenticate(client, request.email, request.password)
-        return AuthResponse(access_token=session.access_token, user_id=session.user.id)
+        # authenticate() raises rather than returning for a pending
+        # account (see its own docstring) — reaching this line means
+        # account_status is genuinely "active" (an explicit row, or none
+        # at all: a legacy/adult account, see app.api.guardian_consent).
+        return AuthResponse(
+            access_token=session.access_token, user_id=session.user.id, account_status="active"
+        )
     finally:
         client.postgrest.aclose()
