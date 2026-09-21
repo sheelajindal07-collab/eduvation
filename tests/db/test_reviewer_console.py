@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 from supabase import Client
 
 from app.main import app
-from app.web.reviewer_pages import COOKIE_NAME
+from app.web.reviewer import COOKIE_NAME
 from tests.db.conftest import run_email, run_name
 
 client = TestClient(app)

@@ -82,7 +82,7 @@ from app.core.config import Settings, get_settings
 from app.core.logging import RequestIdLoggingMiddleware, configure_observability
 from app.web.consent_pages import router as consent_pages_router
 from app.web.pages import router as pages_router
-from app.web.reviewer_pages import router as reviewer_pages_router
+from app.web.reviewer import router as reviewer_pages_router
 
 
 class _ReservedSlotMiddleware:
