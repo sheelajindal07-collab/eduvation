@@ -1,0 +1,216 @@
+{
+  "exam_key": "gujcet",
+  "exam_name": "GUJCET (Gujarat Common Entrance Test)",
+  "cycle": "2027",
+  "cycle_end": "2027-12-31",
+  "jurisdiction": "GJ",
+  "rule_version": "v1",
+  "reviewed_by": null,
+  "reviewed_on": null,
+  "source_note": "docs/content-drafts/gujcet-eligibility.md -- DRAFT RESEARCH, not verified, not published, and by far the least-confirmed of the three drafts this rules lane used: age, minimum marks and domicile are each explicitly 'not found, needs manual verification' (facts 2-4), and even the one loosely-attested item (fact 1, the PCM/PCB merit-group grouping) is labelled 'unclear-needs-verification' because the clause text sits inside a scanned, non-text-extractable PDF. Per this task's own instruction, this module reads the draft for SHAPE only, never values: every number below (the age, the marks thresholds) is INVENTED for engine-test purposes only and does not appear anywhere in the draft. Only the *shape* is drawn from it -- an any-of Physics/Chemistry/(Mathematics or Biology) subject-group split mirroring the draft's own PCM ('Merit Group: PCM') vs PCB ('Merit Group: PCB') framing, and this rule set's jurisdiction is Gujarat (GJ), matching GUJCET/ACPC being a Gujarat state-specific exam -- distinct from NEET-UG's IN-wide jurisdiction, demonstrating app.rules.ruleset's jurisdiction guard for a real state-scoped case.",
+  "facts": {
+    "minimum_age": 16,
+    "minimum_age_cutoff": "2027-12-31",
+    "minimum_age_source_claim_id": "synthetic:gujcet-eligibility.md#fact-2-shape-only",
+    "required_subject_groups": [["Physics"], ["Chemistry"], ["Mathematics", "Biology"]],
+    "required_subject_groups_source_claim_id": "synthetic:gujcet-eligibility.md#fact-1-shape-only",
+    "minimum_marks_by_category": {"General": 45.0, "SC": 40.0, "ST": 40.0, "SEBC": 40.0},
+    "minimum_marks_by_category_source_claim_id": "synthetic:gujcet-eligibility.md#fact-3-shape-only"
+  },
+  "not_checked": [
+    {
+      "name": "Gujarat domicile / residency requirement for ACPC admission categories",
+      "note": "The draft found structural evidence (a separate J&K admission category) but no explicit quoted domicile clause -- not checked here; confirm with ACPC's official notification."
+    },
+    {
+      "name": "Exact subject-combination and minimum-marks clauses in ACPC's official BE/B.Tech and Pharmacy notifications",
+      "note": "Only available as a scanned, non-text-extractable PDF at research time -- not checked here."
+    },
+    {
+      "name": "Pharmacy-specific (B.Pharm/D.Pharm) subject and marks requirements",
+      "note": "Distinct from the engineering (BE/B.Tech) track modelled here and not researched -- not checked here."
+    }
+  ],
+  "cases": [
+    {
+      "name": "meets_all_criteria_general_category_with_pcm",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Mathematics"],
+        "marks_percentage": 50.0,
+        "category": "General"
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "meets",
+      "reason": "Age, PCM subjects and marks all clear the synthetic thresholds.",
+      "source_pointer": "docs/content-drafts/gujcet-eligibility.md fact 1 (shape only, values invented)"
+    },
+    {
+      "name": "meets_with_pcb_biology_instead_of_mathematics",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Biology"],
+        "marks_percentage": 50.0,
+        "category": "General"
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "meets",
+      "reason": "The any-of group accepts Biology as an alternative to Mathematics (the PCB merit group).",
+      "source_pointer": "docs/content-drafts/gujcet-eligibility.md fact 1 (shape only, values invented)"
+    },
+    {
+      "name": "does_not_meet_missing_third_subject",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Chemistry"],
+        "marks_percentage": 50.0,
+        "category": "General"
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "does_not_meet",
+      "reason": "Neither Mathematics nor Biology was studied.",
+      "source_pointer": "docs/content-drafts/gujcet-eligibility.md fact 1 (shape only, values invented)"
+    },
+    {
+      "name": "does_not_meet_missing_physics",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Chemistry", "Mathematics"],
+        "marks_percentage": 50.0,
+        "category": "General"
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "does_not_meet",
+      "reason": "Physics, its own required group, is missing.",
+      "source_pointer": "docs/content-drafts/gujcet-eligibility.md fact 1 (shape only, values invented)"
+    },
+    {
+      "name": "does_not_meet_too_young",
+      "input": {
+        "date_of_birth": "2015-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Mathematics"],
+        "marks_percentage": 50.0,
+        "category": "General"
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "does_not_meet",
+      "reason": "Will not have completed the synthetic minimum age by the cutoff.",
+      "source_pointer": "docs/content-drafts/gujcet-eligibility.md fact 2 (shape only, values invented)"
+    },
+    {
+      "name": "meets_exact_age_boundary",
+      "input": {
+        "date_of_birth": "2011-12-31",
+        "subjects_studied": ["Physics", "Chemistry", "Mathematics"],
+        "marks_percentage": 50.0,
+        "category": "General"
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "meets",
+      "reason": "Turns the minimum age exactly on the cutoff day, which meets, not fails.",
+      "source_pointer": "docs/content-drafts/gujcet-eligibility.md fact 2 (shape only, values invented)"
+    },
+    {
+      "name": "insufficient_information_unknown_date_of_birth",
+      "input": {
+        "subjects_studied": ["Physics", "Chemistry", "Mathematics"],
+        "marks_percentage": 50.0,
+        "category": "General"
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "insufficient_information",
+      "reason": "Date of birth is not given, so the age cutoff can't be checked.",
+      "source_pointer": "docs/content-drafts/gujcet-eligibility.md fact 2 (shape only, values invented)"
+    },
+    {
+      "name": "insufficient_information_unknown_subjects",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "marks_percentage": 50.0,
+        "category": "General"
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "insufficient_information",
+      "reason": "Subjects studied are not given, so the any-of group can't be checked.",
+      "source_pointer": "docs/content-drafts/gujcet-eligibility.md fact 1 (shape only, values invented)"
+    },
+    {
+      "name": "meets_reserved_category_lower_threshold",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Biology"],
+        "marks_percentage": 42.0,
+        "category": "SEBC"
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "meets",
+      "reason": "42% clears the lower synthetic SEBC threshold (40%) even though it would fail the General threshold (45%).",
+      "source_pointer": "docs/content-drafts/gujcet-eligibility.md fact 3 (shape only, values invented)"
+    },
+    {
+      "name": "does_not_meet_marks_below_general_threshold",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Mathematics"],
+        "marks_percentage": 42.0,
+        "category": "General"
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "does_not_meet",
+      "reason": "42% is below the synthetic General threshold of 45%.",
+      "source_pointer": "docs/content-drafts/gujcet-eligibility.md fact 3 (shape only, values invented)"
+    },
+    {
+      "name": "insufficient_information_unknown_category_marks_below_ceiling",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Mathematics"],
+        "marks_percentage": 42.0,
+        "category": null
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "insufficient_information",
+      "reason": "42% clears no listed category's threshold ceiling and the category is unknown, so it can't be resolved -- never a guessed rejection.",
+      "source_pointer": "docs/content-drafts/gujcet-eligibility.md fact 3 (shape only, values invented)"
+    },
+    {
+      "name": "meets_unknown_category_marks_above_every_threshold",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Mathematics"],
+        "marks_percentage": 46.0,
+        "category": null
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "meets",
+      "reason": "46% clears even the strictest (General, 45%) synthetic threshold, so no category could have made this student fail.",
+      "source_pointer": "docs/content-drafts/gujcet-eligibility.md fact 3 (shape only, values invented)"
+    },
+    {
+      "name": "insufficient_information_stale_cycle_masks_a_would_be_meets",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Mathematics"],
+        "marks_percentage": 50.0,
+        "category": "General"
+      },
+      "as_of": "2028-06-01",
+      "expected_outcome": "insufficient_information",
+      "reason": "as_of is past the 2027 cycle's cycle_end -- a would-be meets is downgraded so a lapsed cycle is never a confident pass.",
+      "source_pointer": "app/rules/ruleset.py cycle_stale guard"
+    },
+    {
+      "name": "does_not_meet_survives_a_stale_cycle",
+      "input": {
+        "date_of_birth": "2015-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Mathematics"],
+        "marks_percentage": 50.0,
+        "category": "General"
+      },
+      "as_of": "2028-06-01",
+      "expected_outcome": "does_not_meet",
+      "reason": "A real failure (too young) found under a lapsed cycle's rules is still true information.",
+      "source_pointer": "app/rules/ruleset.py cycle_stale guard"
+    }
+  ]
+}

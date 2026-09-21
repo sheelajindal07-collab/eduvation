@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import date
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -67,7 +68,19 @@ class Claim(BaseModel):
     entity_type: str
     entity_id: str
     field: str
-    value: str | int | float | bool | None
+    value: str | int | float | bool | list[Any] | dict[str, Any] | None
+    """Widened for RULES-3: a structured fact (e.g. an any-of subject
+    group like `[["Physics"], ["Chemistry"], ["Biology", "Biotechnology"]]`,
+    or a per-category thresholds map like `{"General": 50, "SC": 40}`)
+    round-trips as ordinary JSON list/dict, same as any scalar claim
+    value. `app.planning.comparison.field_value_for` already degrades a
+    non-scalar value safely: its only numeric consumers
+    (`_estimated_additional_expenses_hint`,
+    `assemble_cost_summary`'s potential-assistance branch) both gate on
+    `isinstance(value, int | float) and not isinstance(value, bool)`
+    before doing arithmetic, so a list/dict value is treated as "not a
+    usable number" rather than raising or silently coercing
+    (tests/unit/test_models.py exercises this round-trip directly)."""
     source_id: str
     verification_date: date
     verifier: str  # a person's identifier — never "AI" (CLAUDE.md non-negotiable)
