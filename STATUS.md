@@ -21,7 +21,11 @@ MEDIUM `+tag` sub-addressing bypass, all fixed). Migrations `0004`,
 the first time surfaced two real production bugs the skipped tests had
 been hiding (both fixed, see "⚠️ Read this one"). **`tests/db/
 test_guardian_consent.py`: 32 passed, 0 failed, 0 skipped, run by the
-owner against production.** **Two things still stand between this gate
+owner against production. Full `tests/db` suite (148 tests, every
+cross-user access check in the app, not just guardian-consent):
+148 passed, 0 failed — CLAUDE.md's "cross-user access is tested every
+time auth, RLS or publication changes" requirement, satisfied live, not
+by inspection.** **Two things still stand between this gate
 and a real minor account**: a real email provider, and a named person's
 sign-off (`docs/SECURITY.md`). 193 unit tests passing.
 **Commit:** see `git log -1` on `main`. **Repo:**
