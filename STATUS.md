@@ -107,15 +107,22 @@ model/token/daily-cap names) and `PUB-5` (split `reviewer_pages.py` into
 `app/web/reviewer/{auth,queue}.py` plus stubs for future console lanes,
 zero behaviour change, unblocks the `SEC-2 → DEPLOY-15 → A11Y-4` chain
 that all three serialise on) are also merged. 790 unit tests passing.
-**In flight now** (4 parallel worktree lanes, launched together, none
-touching each other's files): `RULES-10` (cost engine: multi-component
-fee sums wired through to `assemble_cost_summary`, split estimate vs.
-user-override), `A11Y-2` (state macros, `base.html` landmarks, moves
+**`DEPLOY-3` merged** — real Dockerfile (non-root, hash-checked install
+from `requirements.lock`, no Node stage), `make build` wired for real,
+a `build-image` CI job (verified green on GitHub's own runner, not just
+locally). **In flight now** (2 of the original parallel lanes still
+running): `A11Y-2` (state macros, `base.html` landmarks, moves
 `explore.html`'s inline script to a static file — exclusive use of
 `base.html`/`_components.html` while it runs), `QA-6` (declarative
-cross-user access matrix + an RLS-coverage guard), `DEPLOY-3` (real
-Dockerfile, `make build`, a CI image-build step, fixes `ci.yml`'s stale
-header comment). **Next after these land:** `SEC-2` (CSRF contract,
+cross-user access matrix + an RLS-coverage guard). `RULES-10`'s first
+pass (multi-component fee sums, estimate-vs-override split) is done but
+being extended before merge: `docs/CONTRACTS.md`'s frozen "Money and
+currency" section settles that RULES-10, not a later task, introduces a
+real `Money(amount, currency)` type — missed in the original task card
+(written from a stale planning-inventory line that only said "integer
+rupees"), caught from the agent's own report, now being fixed on the
+same branch rather than merged as a known-incomplete contract.
+**Next after these land:** `SEC-2` (CSRF contract,
 now unblocked by PUB-5), then `DEPLOY-15`, then `A11Y-4`, in that order
 (all three touch `app/web/reviewer/auth.py`); `DEPLOY-4`/`DEPLOY-6`
 once `DEPLOY-2`+`DEPLOY-3` are both in; `DEPLOY-2` itself is blocked on
