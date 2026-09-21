@@ -26,6 +26,8 @@ dev = [
     "pytest-playwright>=0.9,<1.0",
     "ruff>=0.5,<1.0",
     "mypy>=1.10,<2.0",
+    # SEC-7 — dependency audit, run in CI against requirements-dev.lock.
+    "pip-audit>=2.7,<3.0",
 ]
 
 [tool.ruff]
