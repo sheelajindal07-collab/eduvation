@@ -1,11 +1,20 @@
 """Shared fixtures for RLS/policy tests (`make test-db`).
 
-These tests run against a REAL Supabase/Postgres project with
-db/migrations/0001_init.sql applied — never against the owner/service
-role for the assertions themselves (that would bypass RLS and hide a real
-bug; docs/SECURITY.md). The whole module skips, with a clear reason, when
-that project isn't configured — never silently "passes" a check that
-didn't run.
+These tests run against a real Postgres with db/migrations/*.sql applied
+— never against the owner/service role for the assertions themselves
+(that would bypass RLS and hide a real bug; docs/SECURITY.md).
+
+Since QA-2 that Postgres is a LOCAL, THROWAWAY `supabase start` stack
+(supabase/config.toml, `make test-db-up`), never the owner's real
+project. The target guard below makes that non-negotiable rather than
+conventional: if `SUPABASE_URL` is anything but a loopback address, the
+whole run aborts before a single row is written. Real student data is
+never a test fixture (CLAUDE.md).
+
+The whole directory still skips, with a clear reason, when no stack is
+configured — never silently "passes" a check that didn't run. Set
+`BCION_REQUIRE_LIVE=1` (CI, and before any merge) to turn each of those
+skips into a hard failure instead, so "green" cannot mean "skipped".
 
 The service-role key is used ONLY here, to create and tear down throwaway
 test users for the guest / student A / student B / reviewer access
@@ -15,8 +24,11 @@ running application must never read it (docs/SECURITY.md).
 
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,12 +36,199 @@ from supabase import Client, create_client
 
 from app.core.config import get_settings
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Loaded in order, later file wins, and BOTH override whatever is already
+# exported in the shell. That direction is deliberate and is a safety
+# property, not a convenience: a live SUPABASE_URL left over in someone's
+# terminal must not be able to out-rank the file whose entire purpose is
+# to pin the suite to localhost.
+#
+# `.env.test` is what `make test-db-env` generates. `.env.test.local` is
+# for a personal override and is already covered by .gitignore's
+# `.env.*.local` pattern.
+#
+# The real `.env` (the owner's live project) is deliberately NOT in this
+# list and must never be added to it.
+_TEST_ENV_FILES = (".env.test", ".env.test.local")
+
+
+def _load_test_env() -> list[str]:
+    """Minimal dotenv reader, run at import time.
+
+    Deliberately not python-dotenv: that is not a dependency of this
+    repo, and the format in play here is a handful of `NAME=value` lines
+    this can parse in twenty lines without adding one.
+
+    Runs at import so it lands before any test module is imported —
+    tests/db/test_api_auth.py builds a `TestClient(app)` at ITS import
+    time, and `app.main` reads settings while doing so. `cache_clear()`
+    afterwards covers the one ordering this cannot get ahead of: a
+    combined `pytest tests/unit tests/db` run, where a unit test may
+    already have populated the `get_settings` lru_cache from a bare
+    environment before this directory was collected at all.
+    """
+    loaded: list[str] = []
+    for name in _TEST_ENV_FILES:
+        path = REPO_ROOT / name
+        if not path.is_file():
+            continue
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            line = line.removeprefix("export ").strip()
+            key, separator, value = line.partition("=")
+            if not separator:
+                continue
+            key = key.strip()
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            os.environ[key] = value
+        loaded.append(name)
+    if loaded:
+        get_settings.cache_clear()
+    return loaded
+
+
+LOADED_TEST_ENV_FILES = _load_test_env()
+
+
+# --------------------------------------------------------------------
+# Target guard (QA-2)
+# --------------------------------------------------------------------
+# Hostnames that mean "a stack running on this machine". Note the
+# absence of 0.0.0.0: it is a bind-any address, not a destination, and
+# accepting it would let a URL that actually resolves off-box through.
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _target_host(url: str) -> str:
+    return (urlsplit(url).hostname or "").strip().lower()
+
+
+def _allowlisted_targets() -> set[str]:
+    """`BCION_TEST_TARGET`: comma-separated exact origins.
+
+    The single documented escape hatch, for a future disposable staging
+    database the owner has explicitly approved. It is exact-origin
+    matching, never a substring or suffix test — "endswith" style
+    allowlists are how `evil-supabase.co` gets accepted as
+    `supabase.co`.
+    """
+    raw = os.environ.get("BCION_TEST_TARGET", "")
+    return {entry.strip().rstrip("/") for entry in raw.split(",") if entry.strip()}
+
+
+def target_is_localhost() -> bool:
+    """True when the configured target is a loopback stack.
+
+    Used by tests that behave differently against a cloud project — see
+    tests/db/test_api_auth.py, where a 429 from a shared cloud rate
+    limiter is tolerable and a 429 from a local stack is a bug.
+    """
+    url = os.environ.get("SUPABASE_URL") or (get_settings().supabase_url or "")
+    return _target_host(url) in _LOOPBACK_HOSTS
+
+
+def _target_guard_problem() -> str | None:
+    """The reason this run must not proceed, or None if it may."""
+    url = (os.environ.get("SUPABASE_URL") or (get_settings().supabase_url or "")).strip()
+    if not url:
+        # Nothing configured at all. Not a guard violation — the
+        # skip/require-live path below reports that far more usefully.
+        return None
+    if _target_host(url) in _LOOPBACK_HOSTS:
+        return None
+    if url.rstrip("/") in _allowlisted_targets():
+        return None
+    return (
+        f"REFUSING TO RUN: SUPABASE_URL is {url!r}, which is not a local "
+        "stack.\n"
+        "These suites create, mutate and DELETE users and rows. They are "
+        "only ever safe against the throwaway `supabase start` stack "
+        "described in supabase/config.toml — never against the real "
+        "project, which holds real student data (CLAUDE.md).\n"
+        "Run `make test-db-up` and re-run, or unset SUPABASE_URL. If a "
+        "non-loopback target really is disposable and the owner has "
+        "approved it, add its exact origin to BCION_TEST_TARGET."
+    )
+
+
+def _require_live() -> bool:
+    """`BCION_REQUIRE_LIVE=1` — skips become hard failures.
+
+    For CI and for any pre-merge run, where "110 passed, 118 skipped" is
+    indistinguishable from "nothing ran" unless something refuses to let
+    it be green.
+    """
+    return os.environ.get("BCION_REQUIRE_LIVE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _register_bcion_markers(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "bcion_unavailable(reason): under BCION_REQUIRE_LIVE=1, a test that "
+        "would otherwise have been skipped for a missing stack or migration. "
+        "Fails in pytest_runtest_setup instead of skipping.",
+    )
+
+
+def _mark_unavailable(items: list[pytest.Item], reason: str) -> None:
+    """Skip these items, or fail them when BCION_REQUIRE_LIVE=1.
+
+    Failing per-item rather than aborting the session keeps this working
+    under pytest-xdist (a hook that raises inside a worker is reported
+    as a worker crash, which hides the actual reason) and names every
+    test that did not really run.
+    """
+    marker = (
+        pytest.mark.bcion_unavailable(reason)
+        if _require_live()
+        else pytest.mark.skip(reason=reason)
+    )
+    for item in items:
+        item.add_marker(marker)
+
+
+def fail_if_unavailable(item: pytest.Item) -> None:
+    """Shared body of `pytest_runtest_setup`; also called from
+    tests/e2e/conftest.py's own copy of that hook."""
+    marker = item.get_closest_marker("bcion_unavailable")
+    if marker is not None:
+        pytest.fail(f"BCION_REQUIRE_LIVE=1, so this may not skip: {marker.args[0]}", pytrace=False)
+
+
+def _items_under(items: list[pytest.Item], directory: Path) -> list[pytest.Item]:
+    """Only this directory's items.
+
+    `pytest_collection_modifyitems` is handed the WHOLE session's item
+    list, not just the items under the conftest that defines it. Without
+    this filter a combined `pytest tests/unit tests/db` run would skip
+    the unit tests too, for a Supabase reason that has nothing to do
+    with them.
+    """
+    return [item for item in items if directory in Path(str(item.fspath)).parents]
+
 
 class _TestOnlySettings(BaseSettings):
     """Test-only: reads the service-role key that the app itself never
-    touches. Kept separate from app.core.config.Settings on purpose."""
+    touches. Kept separate from app.core.config.Settings on purpose.
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    `env_file` is deliberately None, unlike app.core.config.Settings:
+    this class must read nothing but the process environment, which
+    `_load_test_env` above has already populated from `.env.test`. It
+    must never be the thing that opens the owner's real `.env` looking
+    for a service-role key.
+    """
+
+    model_config = SettingsConfigDict(env_file=None, extra="ignore")
 
     supabase_service_role_key: str | None = None
 
@@ -40,11 +239,11 @@ def _service_role_configured() -> bool:
 
 _SKIP_REASON = (
     "SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY / SUPABASE_SERVICE_ROLE_KEY "
-    "not fully set. RLS tests need a real project with "
-    "db/migrations/0001_init.sql applied, plus a service-role key to "
-    "create throwaway test users — see db/migrations/README.md and "
-    ".env.example. Expected until the owner provisions their own "
-    "Supabase project (docs/DECISIONS.md)."
+    "not fully set. RLS tests need a local Supabase stack with "
+    "db/migrations/*.sql applied, plus a service-role key to create "
+    "throwaway test users. Run `make test-db-up` (it starts the stack, "
+    "applies the migrations and writes .env.test) — see "
+    "supabase/config.toml, .env.test.example and db/migrations/README.md."
 )
 
 
@@ -60,7 +259,10 @@ def _saved_plans_table_exists() -> bool:
 
 _PLANS_SKIP_REASON = (
     "saved_plans table not found — db/migrations/0002_saved_plans.sql "
-    "not yet applied to this project. See db/migrations/README.md."
+    "not yet applied to this stack. Run `make test-db-up` (or "
+    "`make test-db-reset`); see db/migrations/README.md. If the file has "
+    "been applied, PostgREST is probably still serving a stale schema "
+    "cache — `make test-db-migrate` reloads it."
 )
 
 
@@ -81,7 +283,9 @@ def _maker_checker_migration_applied() -> bool:
 
 _MAKER_CHECKER_SKIP_REASON = (
     "db/migrations/0003_maker_checker.sql not yet applied to this "
-    "project. See db/migrations/README.md."
+    "stack. Run `make test-db-up`; see db/migrations/README.md. A stale "
+    "PostgREST schema cache looks identical — `make test-db-migrate` "
+    "reloads it."
 )
 
 
@@ -111,15 +315,37 @@ def _guardian_consent_migration_applied() -> bool:
 
 
 _GUARDIAN_CONSENT_SKIP_REASON = (
-    "db/migrations/0004_guardian_consent.sql not yet applied to this "
-    "project. See db/migrations/README.md. Until it is, "
+    "db/migrations/0004_guardian_consent.sql (or 0005/0006) not yet "
+    "applied to this stack. Run `make test-db-up`; see "
+    "db/migrations/README.md. A stale PostgREST schema cache looks "
+    "identical — `make test-db-migrate` reloads it. Until it is applied, "
     "app.api.guardian_consent.guardian_consent_schema_is_live() is False "
     "and the sign-up/sign-in gate degrades to a no-op — see STATUS.md."
 )
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Enforce the target guard before anything is collected or run.
+
+    This is the earliest hook available to a directory conftest: pytest
+    calls it historically, the moment this module is registered as a
+    plugin, which is before any test module in this directory is even
+    imported. Nothing has opened a connection yet, so aborting here is
+    genuinely "before the first write".
+    """
+    _register_bcion_markers(config)
+    problem = _target_guard_problem()
+    if problem is not None:
+        raise pytest.UsageError(problem)
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    fail_if_unavailable(item)
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Skip every test collected under tests/db/ when unconfigured.
+    """Skip every test collected under tests/db/ when unconfigured —
+    or, under BCION_REQUIRE_LIVE=1, fail it instead.
 
     A bare module-level `pytestmark` in a test file does NOT apply to
     sibling test modules, and a hook function defined INSIDE a test_*.py
@@ -130,36 +356,34 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     the suite before and after moving it here). So this conftest.py is
     the only place either skip can actually live.
     """
-    if not (get_settings().db_configured and _service_role_configured()):
-        skip_marker = pytest.mark.skip(reason=_SKIP_REASON)
-        for item in items:
-            item.add_marker(skip_marker)
+    own_items = _items_under(items, Path(__file__).resolve().parent)
+    if not own_items:
         return
+
+    if not (get_settings().db_configured and _service_role_configured()):
+        _mark_unavailable(own_items, _SKIP_REASON)
+        return
+
+    def _in(names: tuple[str, ...]) -> list[pytest.Item]:
+        return [item for item in own_items if any(n in str(item.fspath) for n in names)]
 
     # A narrower, additional skip: test_api_plans.py needs a second
     # migration (0002) beyond what the check above already confirms.
     if not _saved_plans_table_exists():
-        plans_skip = pytest.mark.skip(reason=_PLANS_SKIP_REASON)
-        for item in items:
-            if "test_api_plans.py" in str(item.fspath):
-                item.add_marker(plans_skip)
+        _mark_unavailable(_in(("test_api_plans.py",)), _PLANS_SKIP_REASON)
 
     # Same pattern, for 0003_maker_checker.sql -- both the trigger-level
     # tests and the HTTP-layer tests over app/api/claims.py depend on it.
     if not _maker_checker_migration_applied():
-        maker_checker_skip = pytest.mark.skip(reason=_MAKER_CHECKER_SKIP_REASON)
-        for item in items:
-            if "test_maker_checker.py" in str(item.fspath) or "test_api_claims.py" in str(
-                item.fspath
-            ):
-                item.add_marker(maker_checker_skip)
+        _mark_unavailable(
+            _in(("test_maker_checker.py", "test_api_claims.py")), _MAKER_CHECKER_SKIP_REASON
+        )
 
-    # Same pattern, for 0004_guardian_consent.sql.
+    # Same pattern, for 0004_guardian_consent.sql (and 0005/0006 -- see
+    # `_guardian_consent_migration_applied`'s own docstring for why all
+    # three markers are checked, not just 0004's).
     if not _guardian_consent_migration_applied():
-        guardian_consent_skip = pytest.mark.skip(reason=_GUARDIAN_CONSENT_SKIP_REASON)
-        for item in items:
-            if "test_guardian_consent.py" in str(item.fspath):
-                item.add_marker(guardian_consent_skip)
+        _mark_unavailable(_in(("test_guardian_consent.py",)), _GUARDIAN_CONSENT_SKIP_REASON)
 
 
 @pytest.fixture(scope="module")

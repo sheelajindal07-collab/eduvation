@@ -1,0 +1,258 @@
+# BCION Lite — LOCAL, THROWAWAY Supabase stack for the test suites (QA-2).
+#
+# This file configures `supabase start` ONLY. It never points at, reads
+# from, or authenticates against the owner's real Supabase project — the
+# CLI brings up its own Postgres/GoTrue/PostgREST containers on
+# 127.0.0.1 and nothing else. There are no secrets here: the local
+# anon/service-role keys are the CLI's fixed, publicly documented demo
+# keys, identical on every machine, and they are worthless anywhere but
+# this loopback stack.
+#
+# Every test run in this repo is expected to target this stack. The
+# target guard in tests/db/conftest.py refuses to run against anything
+# that isn't a localhost URL, so a stray live URL in the environment
+# aborts the suite before the first write rather than touching real
+# student data (CLAUDE.md non-negotiables).
+#
+# Bring it up with `make test-db-up` (mk/testdb.mk), which also applies
+# db/migrations/*.sql and writes a localhost-only .env.test. Full
+# reference: https://supabase.com/docs/guides/local-development/cli/config
+#
+# ---------------------------------------------------------------------
+# SECOND STACK FOR THE MIGRATION LANE (docs/DEVELOPMENT-PLAN.md wave 2)
+# ---------------------------------------------------------------------
+# The migration owner needs a stack of their own so a half-applied or
+# rolled-back prototype migration can never disturb the shared test
+# stack every other lane is running against. Two stacks can coexist on
+# one machine as long as they differ in BOTH `project_id` (the CLI's
+# container-name prefix — same id means "same stack", and a second
+# `supabase start` would just attach to the running one) and EVERY port
+# below (a duplicate port is a hard bind failure at start).
+#
+# The port numbers for the second stack are reserved here so the two can
+# never collide, and so whoever wires it up does not have to re-derive
+# them:
+#
+#     service      | test stack (this file) | migration stack (reserved)
+#     -------------|------------------------|---------------------------
+#     project_id   | bcion-lite-test        | bcion-lite-migration
+#     api          | 54321                  | 54421
+#     db           | 54322                  | 54422
+#     db shadow    | 54320                  | 54420
+#     db pooler    | 54329 (disabled)       | 54429 (disabled)
+#     local_smtp   | 54324                  | 54424
+#     analytics    | 54327 (disabled)       | 54427 (disabled)
+#
+# How to actually start it, when that lane gets there: do NOT edit this
+# file (it is shared and tracked — editing it would retarget every other
+# agent's tests at the migration stack, and conflict on merge). Instead
+# give the second stack its own working directory, which the CLI selects
+# with `--workdir`:
+#
+#     mkdir -p .supabase-migration/supabase
+#     cp supabase/config.toml .supabase-migration/supabase/config.toml
+#     # then, in THAT copy only, change project_id to
+#     # "bcion-lite-migration" and each port to its reserved value above
+#     supabase start --workdir .supabase-migration
+#     supabase status --workdir .supabase-migration -o env
+#
+# `.supabase-migration/` is deliberately not created or tracked here —
+# it is scratch, belongs in .gitignore when that lane opens, and the
+# reserved ports above are all this task owes it.
+
+# A string used to distinguish different Supabase projects on the same host.
+# Deliberately NOT the default (the working-directory name): every agent
+# works in its own git worktree, so the default would give each worktree
+# a *separate* multi-gigabyte stack. A fixed id means every worktree on
+# this machine attaches to the one shared test stack instead.
+project_id = "bcion-lite-test"
+
+[api]
+enabled = true
+# PostgREST. SUPABASE_URL for the tests is http://127.0.0.1:<this port>.
+port = 54321
+# `public` and `graphql_public` are the cloud defaults. The app only ever
+# reads/writes `public` (app/db/client.py).
+schemas = ["public", "graphql_public"]
+# `extensions` matters here: pgcrypto's functions live in that schema on
+# a Supabase database, not in `public` — see
+# db/migrations/0006_guardian_consent_token_pgcrypto_schema.sql for the
+# live bug that taught us so.
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[api.tls]
+# Plain HTTP on loopback. The target guard in tests/db/conftest.py
+# accepts http:// only for localhost/127.0.0.1 — never for a remote host.
+enabled = false
+
+[db]
+port = 54322
+shadow_port = 54320
+# First `supabase start` on a machine pulls several GB of images; the
+# database container itself is then quick, but leave headroom on a cold,
+# busy Windows/Docker Desktop machine rather than failing a CI-shaped run.
+health_timeout = "2m"
+major_version = 17
+
+[db.pooler]
+# Off: the tests talk to PostgREST over HTTP, and the only direct
+# Postgres connection is scripts/apply_migrations.py, which wants a
+# plain session connection for DDL anyway. One less container.
+enabled = false
+port = 54329
+
+[db.migrations]
+# This repo does NOT use `supabase db push` / `supabase/migrations/`.
+# The single source of truth is db/migrations/*.sql, applied by
+# scripts/apply_migrations.py over a direct psycopg connection
+# (docs/DECISIONS.md: no Supabase management API for this project).
+# Left enabled with no schema paths so `supabase db reset` stays a
+# pure "empty the database" operation and never silently diverges from
+# what apply_migrations.py did.
+enabled = true
+schema_paths = []
+
+[db.seed]
+# No seed file: every test seeds and tears down its own rows through the
+# fixtures in tests/db/conftest.py, and a shared pre-seeded dataset is
+# exactly the kind of global state that makes concurrent runs flake.
+enabled = false
+sql_paths = []
+
+[realtime]
+# Off: nothing in this app subscribes to realtime (server-rendered
+# templates, no websockets). One less container per stack.
+enabled = false
+
+[studio]
+# Off: a browser UI is of no use to an automated suite, and it is the
+# heaviest container in the set. Inspect the local database with psql on
+# port 54322 instead.
+enabled = false
+port = 54323
+
+[local_smtp]
+# Kept ON, unlike the other UI services. It is small, and it is the
+# mailbox GoTrue hands any auth email to, so an auth email can never
+# escape to a real inbox from a test run. Email confirmations are off
+# (see [auth.email]) so in practice almost nothing lands here.
+enabled = true
+port = 54324
+
+[storage]
+# Off: this app stores no files in Supabase Storage (nothing under app/
+# imports the storage client). Disabling it also disables imgproxy.
+enabled = false
+
+[storage.image_transformation]
+enabled = false
+
+[auth]
+enabled = true
+# Loopback only. The app under test serves on 127.0.0.1 (see the
+# live_server fixture in tests/e2e/conftest.py, which picks an ephemeral
+# port), and no redirect-based auth flow is exercised by these suites.
+site_url = "http://127.0.0.1:8000"
+additional_redirect_urls = ["http://127.0.0.1:8000"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+enable_anonymous_sign_ins = false
+enable_manual_linking = false
+# 6 is the GoTrue minimum. The suite's throwaway passwords are long
+# random hex; this only has to not reject them.
+minimum_password_length = 6
+password_requirements = ""
+
+# ---------------------------------------------------------------------
+# RATE LIMITS — deliberately, enormously raised. This is the single most
+# important block in this file for QA-2.
+# ---------------------------------------------------------------------
+# The DB suite creates a fresh confirmed user per fixture per test (the
+# guest / student A / student B / reviewer access matrix, plus a second
+# reviewer for maker-checker), so one serial run already makes tens of
+# sign-in calls, and a concurrent run multiplies that. GoTrue's limits
+# are per 5-minute window PER IP ADDRESS, and every container in this
+# stack sees the whole host as a single Docker-gateway IP — so the
+# entire suite, however many workers, shares one bucket.
+#
+# At the stock `sign_in_sign_ups = 30` the suite starts returning 429
+# within seconds. These values are not a tuned number; they are "far
+# beyond anything a test run can reach", which is the correct setting
+# for a throwaway loopback stack with no attacker on it. Nothing here
+# describes or licenses any rate limit on a real deployment — the cloud
+# project keeps its own defaults.
+[auth.rate_limit]
+# Per hour. Only applies when an SMTP sender is configured.
+email_sent = 3000
+sms_sent = 30
+anonymous_users = 3000
+# Per 5 minutes per IP.
+token_refresh = 30000
+# Per 5 minutes per IP. THIS is the one the suite actually hits: every
+# `_create_test_user` does a real password sign-in.
+sign_in_sign_ups = 30000
+token_verifications = 30000
+web3 = 30
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+# OFF, and it must stay off: with confirmations on, every fixture user
+# would need an email round-trip before it could sign in, and
+# tests/db/test_api_auth.py's sign-up tests would only ever see the
+# 202-pending branch. Off means a created user is immediately usable.
+enable_confirmations = false
+secure_password_change = false
+# Per email address, not global — the suite uses a fresh random address
+# every time, so this never throttles it.
+max_frequency = "1s"
+otp_length = 6
+otp_expiry = 3600
+
+[auth.sms]
+enable_signup = false
+enable_confirmations = false
+template = "Your code is {{ .Code }}"
+max_frequency = "5s"
+
+[auth.mfa]
+max_enrolled_factors = 10
+
+[auth.mfa.totp]
+enroll_enabled = false
+verify_enabled = false
+
+[auth.mfa.phone]
+enroll_enabled = false
+verify_enabled = false
+otp_length = 6
+template = "Your code is {{ .Code }}"
+max_frequency = "5s"
+
+# No external OAuth provider is configured for the local stack: the app
+# has no social sign-in, and a provider block here would be the one
+# place a real third-party secret could get committed.
+[auth.external.apple]
+enabled = false
+
+[auth.web3.solana]
+enabled = false
+
+[auth.oauth_server]
+enabled = false
+
+[edge_runtime]
+# Off: this project is a FastAPI monolith (CLAUDE.md pinned stack). It
+# has no Deno edge functions, and there is no supabase/functions/
+# directory for this runtime to mount.
+enabled = false
+
+[analytics]
+# Off: the Logflare container is pure overhead for a test stack, and it
+# is the slowest of the set to become healthy.
+enabled = false
+port = 54327
+backend = "postgres"
