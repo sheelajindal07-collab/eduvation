@@ -600,6 +600,28 @@ _SCOPE_SKIP_REASON = (
 )
 
 
+def _guest_session_migration_applied() -> bool:
+    """Same marker-function pattern as 0003-0008, for
+    0009_guest_sessions.sql. Its two new tables are deliberately
+    unreachable through PostgREST by every role these tests can use
+    (deny-all RLS plus revoked grants), so a "select from it" existence
+    check would report "not applied" forever."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("guest_session_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_GUEST_SESSION_SKIP_REASON = (
+    "db/migrations/0009_guest_sessions.sql not yet applied to this stack. "
+    "Run `make test-db-up`; see db/migrations/README.md. A stale PostgREST "
+    "schema cache looks identical — `make test-db-migrate` reloads it."
+)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Enforce the target guard before anything is collected or run.
 
@@ -689,6 +711,10 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     # Same pattern, for 0008_jurisdiction_currency.sql.
     if not _scope_migration_applied():
         _mark_unavailable(_in(("test_scope_columns.py",)), _SCOPE_SKIP_REASON)
+
+    # Same pattern, for 0009_guest_sessions.sql.
+    if not _guest_session_migration_applied():
+        _mark_unavailable(_in(("test_guest_session.py",)), _GUEST_SESSION_SKIP_REASON)
 
 
 @pytest.fixture(scope="module")
