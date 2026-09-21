@@ -1210,6 +1210,33 @@ class TestCrossUserAccessMatrix:
             raised = True
         assert raised, "an anon (guest) client must not be able to insert a guardian_consents row"
 
+    def test_guest_cannot_call_the_create_guardian_consent_request_rpc(
+        self, guest_client: Client
+    ) -> None:
+        """adversarial-review finding (2026-09-21, LOW): the test above
+        only proves a guest can't use the RLS-guarded direct table
+        insert. The RPC (db/migrations/0005_guardian_consent_request_rpc.sql)
+        is SECURITY DEFINER and bypasses RLS entirely for its own
+        insert -- its only two defenses against an unauthenticated
+        caller are the `grant execute ... to authenticated` (not
+        `anon`) and the function's own `auth.uid() is null` check.
+        Neither was exercised live by any test until now."""
+        raised = False
+        try:
+            guest_client.rpc(
+                "create_guardian_consent_request",
+                {
+                    "p_date_of_birth": "2012-01-01",
+                    "p_guardian_email": "guest-attacker@example.com",
+                },
+            ).execute()
+        except Exception:  # noqa: BLE001
+            raised = True
+        assert raised, (
+            "an anon (guest) client must not be able to call "
+            "create_guardian_consent_request at all"
+        )
+
     def test_reviewer_has_no_special_access_to_student_accounts_or_guardian_consents(
         self,
         admin_client: Client,
