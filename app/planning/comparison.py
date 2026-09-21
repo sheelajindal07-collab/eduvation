@@ -29,7 +29,7 @@ from app.rules.cost import (
 )
 
 # Only these schemes are safe to render as a clickable evidence link
-# (see `_safe_source_url` below).
+# (see `safe_source_url` below).
 _SAFE_URL_SCHEMES = frozenset({"http", "https"})
 
 # Tier-1-ish default freshness SLA for Lite, in days (docs/DATA.md S11
@@ -124,7 +124,7 @@ class FieldValue:
     it)."""
 
 
-def _safe_source_url(raw_url: str | None) -> str | None:
+def safe_source_url(raw_url: str | None) -> str | None:
     """Only ever return a URL that is safe to render as a clickable
     `<a href>` (app/web/templates/_trust_badge.html renders `source_url`
     directly into an anchor tag: `href="{{ fv.source_url }}"`). Jinja's
@@ -147,12 +147,34 @@ def _safe_source_url(raw_url: str | None) -> str | None:
     is treated exactly like "no URL at all" (`None`), the same "hide it"
     pattern already used for `not_available`, rather than raised or
     passed through unescaped.
+
+    **Public since RULES-8** (it was `_safe_source_url`): this is now the
+    ONE implementation of the check, imported by `app/api/eligibility.py`
+    rather than copied there. That route used to carry its own
+    `startswith(("http://", "https://"))` variant -- a strictly weaker
+    test than the `urlsplit` one here, which is why the duplication was
+    a live divergence and not just tidiness: the copy accepted nothing
+    this one rejects, but it also had no `.strip()`, so a padded
+    `" javascript:..."` was rejected there by accident rather than by
+    design, and any future relaxation of one copy would silently not
+    reach the other. See `docs/DECISIONS.md`'s 2026-09-20 entry, which
+    recorded the two independent fixes and the reason they existed.
     """
     if not raw_url:
         return None
     stripped = raw_url.strip()
     scheme = urlsplit(stripped).scheme
     return stripped if scheme in _SAFE_URL_SCHEMES else None
+
+
+_safe_source_url = safe_source_url
+"""Back-compatible private alias for the now-public `safe_source_url`.
+
+`tests/unit/test_comparison.py` imports this name directly (nine
+assertions on the URL-scheme guard), and that file is outside RULES-8's
+owned set -- renaming it there is a one-line change for whichever lane
+next touches that test module, not a reason for this task to reach into
+it. No behaviour of its own: it IS the same function object."""
 
 
 def field_value_for(
@@ -171,7 +193,7 @@ def field_value_for(
     return FieldValue(
         value=claim.value if (claim and available) else None,
         label=label,
-        source_url=_safe_source_url(source.official_url) if (source and available) else None,
+        source_url=safe_source_url(source.official_url) if (source and available) else None,
         verification_date=claim.verification_date if (claim and available) else None,
         source_authority=source.authority_name if (source and available) else None,
         currency=claim.currency if (claim and available) else None,
