@@ -30,6 +30,28 @@
   "global.guest_session.notice": "Not saved to an account.",
   "global.guest_session.save_prompt": "Create a free account to keep this after 7 days.",
 
+  "global.month.jan": "Jan",
+  "global.month.feb": "Feb",
+  "global.month.mar": "Mar",
+  "global.month.apr": "Apr",
+  "global.month.may": "May",
+  "global.month.jun": "Jun",
+  "global.month.jul": "Jul",
+  "global.month.aug": "Aug",
+  "global.month.sep": "Sep",
+  "global.month.oct": "Oct",
+  "global.month.nov": "Nov",
+  "global.month.dec": "Dec",
+
+  "global.duration.week_one": "1 week",
+  "global.duration.weeks": "{weeks} weeks",
+  "global.duration.month_one": "1 month",
+  "global.duration.months": "{months} months",
+  "global.duration.year_one": "1 year",
+  "global.duration.years": "{years} years",
+  "global.duration.years_and_months": "{years} {months}",
+  "global.duration.weeks_with_approximation": "{weeks} (about {approximate})",
+
   "compare.closing_prompt.text": "Which option would you like to investigate further?",
 
   "askbcion.answer.not_available": "We don't have a verified record for this yet.",

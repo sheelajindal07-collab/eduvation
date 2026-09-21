@@ -31,6 +31,15 @@ and an empty reviewer: it is a development agent's draft, not a
 translation anyone has checked. `HINDI_UI_ENABLED` stays false in
 production until I18N-11's named human reviewer fills that block in.
 
+**Decision — one string, one key (I18N-2's "not available").** The
+display formatters render `None` — a missing fee, an unparsable
+verification date, an absent duration — using
+`global.trust_badge.not_available`, the key that already exists, rather
+than a second key carrying the same words. `docs/COPY.md` section 2:
+"do not give the same string two different keys". A missing number and a
+missing fact read identically to a student, so they share one string and
+one future translation.
+
 **Decision — placeholders.** `{name}` only, matching `docs/COPY.md`
 ("plain `{name}` interpolation, no other templating syntax").
 Substitution is a regex pass, deliberately **not** `str.format`:

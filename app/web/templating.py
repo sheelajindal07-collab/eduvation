@@ -50,6 +50,7 @@ remember rather than something the mechanism guarantees.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextvars import ContextVar
 from typing import Any
 
@@ -58,6 +59,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from app.i18n import DEFAULT_LOCALE, LOCALE_COOKIE_NAME, resolve_locale, translate
+from app.i18n.formatting import format_date, format_duration_weeks, format_inr, format_number
 
 TEMPLATE_DIRECTORY = "app/web/templates"
 """Unchanged from the instances this module replaces: relative to the
@@ -110,7 +112,36 @@ def _t(context: jinja2.runtime.Context, key: str, /, **variables: object) -> str
     return translate(key, locale_from_context(context), **variables)
 
 
+def _locale_aware_filter(
+    function: Callable[..., str],
+) -> Callable[[jinja2.runtime.Context, Any], str]:
+    """Wrap one pure `app/i18n/formatting.py` function as a Jinja filter
+    that supplies the current locale.
+
+    The formatting functions stay pure and locale-explicit (I18N-2:
+    "pure functions ... registered as Jinja filters"), so they are
+    table-testable without Jinja; only this wrapper knows about a
+    request. An optional explicit locale still wins —
+    `{{ d | date("hi") }}` — which is what the components gallery uses
+    to show both locales on one page.
+    """
+
+    @jinja2.pass_context
+    def filter_(context: jinja2.runtime.Context, value: Any, locale: str | None = None) -> str:
+        return function(value, resolve_locale(locale) if locale else locale_from_context(context))
+
+    return filter_
+
+
 templates = Jinja2Templates(directory=TEMPLATE_DIRECTORY, context_processors=[_locale_context])
 """THE templates object. Import this, never construct another."""
 
 templates.env.globals["t"] = _t
+
+# I18N-2 — display formatting. Registered here, on the one shared
+# environment, so `{{ fee | inr }}` means the same thing on a student
+# screen and in the reviewer console.
+templates.env.filters["inr"] = _locale_aware_filter(format_inr)
+templates.env.filters["number"] = _locale_aware_filter(format_number)
+templates.env.filters["date"] = _locale_aware_filter(format_date)
+templates.env.filters["duration_weeks"] = _locale_aware_filter(format_duration_weeks)
