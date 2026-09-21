@@ -197,7 +197,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] I18N-2 - Locale-aware formatting helpers [W2]
 - [ ] A11Y-4 - Cache-Control middleware, shared-device hygiene [W2]
 - [ ] A11Y-5 - Guard test: no service worker or client persistence [W2]
-- [ ] A11Y-2 - State macros and base.html landmarks [W3a]
+- [x] A11Y-2 - State macros and base.html landmarks [W3a]
 - [ ] A11Y-3 - Global HTML error pages [P2]
 - [ ] I18N-7 - Hindi label columns [P2]
 - [ ] I18N-8 - Search schema [P2]
