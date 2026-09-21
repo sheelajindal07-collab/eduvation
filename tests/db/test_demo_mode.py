@@ -24,10 +24,14 @@ from collections.abc import Iterator
 from datetime import date, timedelta
 
 import pytest
+from fastapi.testclient import TestClient
 from postgrest.exceptions import APIError
 from supabase import Client
 
+from app.main import app
 from tests.db.conftest import run_name
+
+http = TestClient(app)
 
 TODAY = date.today()
 DUE = TODAY + timedelta(days=365)
@@ -355,6 +359,107 @@ class TestTurningItBackOffCloses:
 # --------------------------------------------------------------------
 # The 0001 guarantee this migration must not have weakened
 # --------------------------------------------------------------------
+
+
+class TestTheReadPathLabelsSampleRows:
+    """Acceptance, verbatim: "read path marks them sample" — and DATA-8's
+    "staging Explore and Compare show rows with the sample-data label".
+
+    Read through the actual FastAPI app with no Authorization header, so
+    `app.api.deps.get_db_client` falls back to the anon client and these
+    go through real RLS, exactly as a visitor's request would (the shape
+    tests/db/test_api_explore_compare.py established).
+    """
+
+    @pytest.fixture
+    def sample_pathway(
+        self, admin_client: Client, synthetic_source: str
+    ) -> Iterator[dict[str, str]]:
+        career_id = (
+            admin_client.table("careers")
+            .insert({"name": run_name("demo-mode career")})
+            .execute()
+            .data[0]["id"]
+        )
+        pathway_id = (
+            admin_client.table("pathways")
+            .insert(
+                {
+                    "career_id": career_id,
+                    "name": run_name("demo-mode pathway"),
+                    "description": "Seeded by tests/db/test_demo_mode.py",
+                }
+            )
+            .execute()
+            .data[0]["id"]
+        )
+        claim_id = (
+            admin_client.table("claims")
+            .insert(
+                _claim_payload(
+                    synthetic_source,
+                    "in_review",
+                    entity_id=pathway_id,
+                    field="entry_requirements",
+                    value="Sample requirement - not verified",
+                )
+            )
+            .execute()
+            .data[0]["id"]
+        )
+        try:
+            yield {"career": career_id, "pathway": pathway_id, "claim": claim_id}
+        finally:
+            admin_client.table("claims").delete().eq("id", claim_id).execute()
+            # pathways cascade from careers (0001_init.sql).
+            admin_client.table("careers").delete().eq("id", career_id).execute()
+
+    def test_explore_reports_demo_mode_off_by_default(self) -> None:
+        response = http.get("/careers")
+        assert response.status_code == 200
+        assert response.json()["demo_mode"] is False
+
+    def test_explore_reports_demo_mode_on(self, demo_mode_on: None) -> None:
+        response = http.get("/careers")
+        assert response.status_code == 200
+        assert response.json()["demo_mode"] is True
+
+    def test_compare_marks_a_sample_field_is_sample(
+        self, sample_pathway: dict[str, str], demo_mode_on: None
+    ) -> None:
+        """The label must ride on the field the sample claim actually
+        backs — not on the whole response, and not on a neighbouring
+        field that has no claim at all."""
+        response = http.get(
+            "/compare",
+            params=[
+                ("pathway_id", sample_pathway["pathway"]),
+                ("pathway_id", str(uuid.uuid4())),
+            ],
+        )
+        assert response.status_code == 200
+        fields = response.json()["pathways"][0]["fields"]
+        assert fields["entry_requirements"]["is_sample"] is True
+        # A field with no claim behind it is "not available", never a
+        # sample — labelling an absence would be a fabricated label.
+        assert fields["location"]["is_sample"] is False
+
+    def test_compare_does_not_mark_anything_sample_with_demo_mode_off(
+        self, sample_pathway: dict[str, str]
+    ) -> None:
+        """With the flag off the claim is not visible at all, so there is
+        nothing to label — and nothing must be labelled anyway."""
+        response = http.get(
+            "/compare",
+            params=[
+                ("pathway_id", sample_pathway["pathway"]),
+                ("pathway_id", str(uuid.uuid4())),
+            ],
+        )
+        assert response.status_code == 200
+        fields = response.json()["pathways"][0]["fields"]
+        assert all(field["is_sample"] is False for field in fields.values())
+        assert fields["entry_requirements"]["value"] is None
 
 
 class TestSyntheticPublishTriggerStillIntact:

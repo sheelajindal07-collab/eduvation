@@ -77,6 +77,44 @@ Combine with `--dry-run` to preview a bounded batch. Only the owner runs
 this against a cloud project, from their own shell, always with
 `--through`.
 
+## Seeding sample content (`scripts/seed_synthetic.py`)
+
+For dev and staging only. Inserts a few obviously-fictional careers,
+pathways, sources and claims so there is something on the screen before
+real verified content exists:
+
+```
+python scripts/seed_synthetic.py                    # insert or refresh
+python scripts/seed_synthetic.py --dry-run          # show, write nothing
+python scripts/seed_synthetic.py --purge            # remove exactly what it seeded
+python scripts/seed_synthetic.py --enable-demo-mode # ... and turn demo mode on
+```
+
+Needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (the owner's admin
+credential — the application itself never reads it).
+
+Every seeded Source is `source_type = 'synthetic'` and every seeded
+claim stops at `in_review`, so **nothing it writes can be published**:
+`forbid_publishing_synthetic_claims()` in `0001_init.sql` refuses that
+outright, for every caller including `service_role`. Seeded rows stay
+invisible to visitors until demo mode is switched on
+(`0007_demo_mode.sql`), which the script only does when explicitly
+asked. Ids are UUIDv5 from a fixed namespace, so re-running rewrites the
+same rows rather than adding a second copy — two runs give identical row
+counts, and `--purge` deletes by id, never by name pattern.
+
+**The production guard is two independent checks, both of which must
+pass:**
+
+| Check | Refuses when | Why alone it is not enough |
+| --- | --- | --- |
+| Environment | `APP_ENV=production` | A shell with a production URL and no `APP_ENV` set would pass |
+| Target | `SUPABASE_URL`'s project ref matches `BCION_PRODUCTION_PROJECT_REF`, **or** the target is not loopback and its exact origin is not in `BCION_SEED_TARGET` | Relies on an allowlist somebody has to maintain |
+
+Anything non-loopback and unrecognised is refused, never seeded on the
+assumption that it is probably disposable. Set the two variable *values*
+in your own environment — never in this repo.
+
 **One-time bootstrap note:** `0001_init.sql` was applied manually via the
 SQL Editor before this script existed. The first time `DATABASE_URL` is
 available, that gets recorded in `_schema_migrations` as already-applied
