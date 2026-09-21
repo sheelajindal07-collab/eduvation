@@ -137,7 +137,22 @@ def _migrate_pending_plan(
 
 @router.post("/sign-up", response_model=AuthResponse, status_code=201)
 def sign_up(request: SignUpRequest) -> AuthResponse:
-    client = get_anon_client()
+    try:
+        client = get_anon_client()
+    except Exception as exc:
+        # UI-review finding, 2026-09-21 (HIGH, FIX 3): this used to
+        # construct the client BEFORE any try block, so
+        # app/db/client.py's SupabaseNotConfiguredError (whose own
+        # docstring asks every caller to catch it and degrade
+        # gracefully) -- or any other construction-time failure --
+        # propagated as an unhandled 500 instead of a clean response.
+        # This is a JSON API route, so "gracefully" means a clean error
+        # response, not a page redirect (that's reviewer_sign_in_submit's
+        # job, fixed the same way below).
+        raise HTTPException(
+            status_code=503,
+            detail="Sign-up isn't available right now. Please try again shortly.",
+        ) from exc
     try:
         try:
             result = client.auth.sign_up({"email": request.email, "password": request.password})
@@ -194,6 +209,22 @@ def sign_up(request: SignUpRequest) -> AuthResponse:
         client.postgrest.aclose()
 
 
+# UI-review finding, 2026-09-21 (HIGH, FIX 2): Supabase's own structured
+# rate-limit errors (429, exc.code in this set) used to be flattened by
+# authenticate()'s bare `except Exception` into the same generic 401 as
+# a wrong password -- indistinguishable, unloggable, unfixable from the
+# caller's side. This is an explicit allowlist, not "propagate any
+# AuthApiError's real status" -- deliberately narrow, so the
+# anti-enumeration guarantee below stays exactly as strong as before for
+# every OTHER structured error (most importantly "invalid_credentials",
+# Supabase's own code for both "no such email" and "wrong password"):
+# only a provider-level signal that has nothing to do with whether THIS
+# email/password pair is valid is ever allowed to escape the generic
+# 401. See sign_up()'s own AuthApiError handling for the pattern this
+# mirrors.
+_RATE_LIMIT_ERROR_CODES = frozenset({"over_request_rate_limit", "over_email_send_rate_limit"})
+
+
 def authenticate(client: Client, email: str, password: str) -> Session:
     """The one place this app calls Supabase Auth's
     `sign_in_with_password` — shared by this route and by the reviewer
@@ -205,10 +236,18 @@ def authenticate(client: Client, email: str, password: str) -> Session:
 
     Never distinguishes "no such email" from "wrong password" — that
     distinction is an account-enumeration leak — so every failure raises
-    the same 401 with the same message, regardless of caller.
+    the same 401 with the same message, regardless of caller. The one
+    exception (FIX 2 above) is a structured, provider-level error that
+    ISN'T a login failure at all, e.g. a rate limit -- propagating THAT
+    doesn't weaken anti-enumeration, since it says nothing about whether
+    this particular email exists.
     """
     try:
         result = client.auth.sign_in_with_password({"email": email, "password": password})
+    except AuthApiError as exc:
+        if exc.code in _RATE_LIMIT_ERROR_CODES:
+            raise HTTPException(status_code=exc.status, detail=exc.message) from exc
+        raise HTTPException(status_code=401, detail="Invalid email or password.") from exc
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid email or password.") from exc
     if result.session is None or result.user is None:
@@ -218,7 +257,14 @@ def authenticate(client: Client, email: str, password: str) -> Session:
 
 @router.post("/sign-in", response_model=AuthResponse)
 def sign_in(request: SignInRequest) -> AuthResponse:
-    client = get_anon_client()
+    try:
+        client = get_anon_client()
+    except Exception as exc:
+        # Same FIX 3 reasoning as sign_up() above.
+        raise HTTPException(
+            status_code=503,
+            detail="Sign-in isn't available right now. Please try again shortly.",
+        ) from exc
     try:
         session = authenticate(client, request.email, request.password)
         return AuthResponse(access_token=session.access_token, user_id=session.user.id)

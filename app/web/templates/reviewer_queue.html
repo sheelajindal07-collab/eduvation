@@ -12,7 +12,12 @@
   </div>
 
   {% if error %}
-    <div class="alert alert--error mb-6">
+    {# role="alert" (UI-review finding, 2026-09-21, FIX 7): without it, a
+       screen-reader user isn't reliably notified that an action failed
+       after the redirect back to this page -- the alert is only in the
+       page's initial content, no separate live-region announcement
+       would otherwise happen. #}
+    <div class="alert alert--error mb-6" role="alert">
       <span aria-hidden="true">&#9888;</span>
       <span>{{ error }}</span>
     </div>
@@ -25,14 +30,25 @@
     </div>
   {% else %}
     <div class="space-y-4">
-      {% for c in claims %}
+      {# Each row is a ReviewQueueRow (app/web/reviewer_pages.py): `row.claim`
+         is the claim itself, `row.entity_name`/`row.source`/`row.source_url`
+         are resolved for display (UI-review finding, 2026-09-21, FIX 4) --
+         a bare entity_id/source_id UUID told a reviewer nothing about which
+         real-world record a claim is about, or gave them any way to click
+         through and verify it. #}
+      {% for row in claims %}
+        {% set c = row.claim %}
         <section class="card">
           <div class="flex items-start justify-between gap-4 mb-3">
             <div>
               <p class="text-xs text-neutral uppercase tracking-wide mb-1">
                 {{ c.entity_type }} &middot; {{ c.field }}
               </p>
-              <p class="text-charcoal font-medium break-all">
+              {# break-words, not break-all (FIX 9): this is prose (an
+                 eligibility criterion, a fee amount, ...) -- break-all
+                 chops mid-word, which only makes sense for the opaque
+                 id fields below when no resolved name/link is available. #}
+              <p class="text-charcoal font-medium break-words">
                 {%- if c.value is none -%}
                   <span class="text-neutral italic">(no value)</span>
                 {%- else -%}
@@ -59,16 +75,37 @@
 
           <dl class="grid grid-cols-1 gap-x-4 gap-y-1 text-sm mb-4 sm:grid-cols-2">
             <div>
-              <dt class="text-neutral">Entity id</dt>
-              <dd class="text-charcoal break-all">{{ c.entity_id }}</dd>
+              <dt class="text-neutral">{{ c.entity_type }}</dt>
+              {% if row.entity_name %}
+                <dd class="text-charcoal">{{ row.entity_name }}</dd>
+              {% else %}
+                <dd class="text-charcoal break-all">{{ c.entity_id }}</dd>
+              {% endif %}
             </div>
             <div>
-              <dt class="text-neutral">Source id</dt>
-              <dd class="text-charcoal break-all">{{ c.source_id }}</dd>
+              <dt class="text-neutral">Source</dt>
+              {% if row.source %}
+                <dd class="text-charcoal">
+                  {% if row.source_url %}
+                    <a href="{{ row.source_url }}" class="underline hover:text-accent" target="_blank" rel="noopener">
+                      {{ row.source.authority_name }}
+                      <span class="sr-only"> (opens in a new tab)</span>
+                    </a>
+                  {% else %}
+                    {{ row.source.authority_name }}
+                  {% endif %}
+                </dd>
+              {% else %}
+                <dd class="text-charcoal break-all">{{ c.source_id }}</dd>
+              {% endif %}
             </div>
             <div>
               <dt class="text-neutral">Verifier</dt>
               <dd class="text-charcoal">{{ c.verifier }}</dd>
+            </div>
+            <div>
+              <dt class="text-neutral">Verified</dt>
+              <dd class="text-charcoal">{{ c.verification_date }}</dd>
             </div>
             <div>
               <dt class="text-neutral">Review due</dt>
@@ -87,7 +124,11 @@
                 <button
                   type="submit"
                   class="btn-primary"
-                  aria-label="Submit {{ c.entity_type }} {{ c.field }} claim ({{ c.entity_id }}) for review"
+                  {# FIX 6 (WCAG 2.5.3 Label in Name): the visible text
+                     "Submit for review" must be a contiguous prefix of the
+                     accessible name -- the disambiguating claim details go
+                     AFTER it now, not spliced into the middle. #}
+                  aria-label="Submit for review -- {{ c.entity_type }} {{ c.field }} claim ({{ c.entity_id }})"
                 >Submit for review</button>
               </form>
             {% elif c.status == "in_review" %}

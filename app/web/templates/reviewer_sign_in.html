@@ -5,7 +5,9 @@
   <p class="text-neutral mb-6">Sign in to review and publish claims.</p>
 
   {% if error %}
-    <div class="alert alert--caution mb-6">
+    {# role="alert" (UI-review finding, 2026-09-21, FIX 7): without it, a
+       screen-reader user isn't reliably notified that sign-in failed. #}
+    <div class="alert alert--caution mb-6" role="alert">
       <span aria-hidden="true">&#9888;</span>
       <span>{{ error }}</span>
     </div>

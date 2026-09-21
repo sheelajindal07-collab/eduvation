@@ -111,6 +111,16 @@ class TestReviewerSignIn:
             },
             follow_redirects=False,
         )
+        if response.status_code == 429:
+            # UI-review finding, 2026-09-21 (FIX 2): authenticate() now
+            # propagates Supabase's own real rate-limit status instead of
+            # flattening it to a generic 401 -- correct, but it means a
+            # request-rate limit the full test suite's own combined
+            # sign-in load genuinely triggers is no longer silently
+            # masked as a 401. Same tolerance pattern
+            # tests/db/test_api_auth.py's TestSignUp already uses for the
+            # identical class of flakiness on the sign-up path.
+            return
         assert response.status_code == 303
         assert response.headers["location"] == "/reviewer/queue"
         assert COOKIE_NAME in response.cookies
@@ -126,6 +136,9 @@ class TestReviewerSignIn:
             "/reviewer/sign-in",
             data={"email": reviewer_credentials["email"], "password": "definitely-wrong"},
         )
+        if response.status_code == 429:
+            # See test_valid_credentials_set_a_cookie_and_redirect_to_the_queue above.
+            return
         assert response.status_code == 401
         # Same anti-enumeration wording as app/api/auth.py's sign_in --
         # never a distinguishable error for a bad email vs. bad password.
@@ -137,6 +150,9 @@ class TestReviewerSignIn:
             "/reviewer/sign-in",
             data={"email": "definitely-not-registered@example.com", "password": "whatever123"},
         )
+        if response.status_code == 429:
+            # See test_valid_credentials_set_a_cookie_and_redirect_to_the_queue above.
+            return
         assert response.status_code == 401
         assert "Invalid email or password" in response.text
         assert COOKIE_NAME not in response.cookies
@@ -355,3 +371,195 @@ class TestReviewerApproveAction:
             assert row["status"] == "in_review"
         finally:
             admin_client.table("claims").delete().eq("id", claim_id).execute()
+
+    def test_two_reviewers_racing_the_same_claim_gets_an_actionable_message(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        """UI-review finding, 2026-09-21 (MEDIUM, FIX 8): the trigger's own
+        message for this exact race ("A published claim cannot be edited
+        in place or un-published; supersede it with a new claim
+        instead.") tells the reviewer to use a Supersede feature that
+        does not exist anywhere in this console. The console must now
+        show a different, actionable message instead -- and must NOT
+        relay the raw "supersede" instruction, which would point the
+        reviewer at a button this UI doesn't have.
+        """
+        maker_id, maker_client = reviewer
+        _checker_id, checker_client = second_reviewer
+        checker_token = checker_client.auth.get_session().access_token
+
+        created = (
+            maker_client.table("claims").insert(_draft_payload(official_source, maker_id)).execute()
+        ).data[0]
+        claim_id = created["id"]
+        maker_client.table("claims").update({"status": "in_review"}).eq("id", claim_id).execute()
+        # The checker approves it for real first, through the actual
+        # console route -- in_review -> published.
+        first_approve = client.post(
+            f"/reviewer/claims/{claim_id}/approve",
+            cookies={COOKIE_NAME: checker_token},
+            follow_redirects=False,
+        )
+        assert first_approve.status_code == 303
+        assert first_approve.headers["location"] == "/reviewer/queue"
+
+        try:
+            # A second, racing approve attempt on the now-published claim
+            # (e.g. the checker's own stale queue tab, or a different
+            # reviewer who loaded the queue a moment earlier) hits the
+            # trigger's "already published" branch.
+            response = client.post(
+                f"/reviewer/claims/{claim_id}/approve",
+                cookies={COOKIE_NAME: checker_token},
+                follow_redirects=False,
+            )
+            assert response.status_code == 303
+            location = response.headers["location"]
+            assert location.startswith("/reviewer/queue?error=")
+            assert "supersede" not in location.lower()
+
+            follow_up = client.get(location, cookies={COOKIE_NAME: checker_token})
+            assert follow_up.status_code == 200
+            assert "already published" in follow_up.text.lower()
+            assert "supersede" not in follow_up.text.lower()
+
+            row = (
+                admin_client.table("claims").select("status").eq("id", claim_id).execute().data[0]
+            )
+            assert row["status"] == "published"
+        finally:
+            admin_client.table("claims").delete().eq("id", claim_id).execute()
+
+
+class TestReviewerSubmitAction:
+    def test_submit_button_transitions_a_draft_to_in_review(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        """UI-review finding, 2026-09-21 (MEDIUM, FIX 11): only the
+        approve action had a happy-path test -- submit had none at all."""
+        maker_id, maker_client = reviewer
+        maker_token = maker_client.auth.get_session().access_token
+
+        created = (
+            maker_client.table("claims").insert(_draft_payload(official_source, maker_id)).execute()
+        ).data[0]
+        claim_id = created["id"]
+
+        try:
+            response = client.post(
+                f"/reviewer/claims/{claim_id}/submit",
+                cookies={COOKIE_NAME: maker_token},
+                follow_redirects=False,
+            )
+            assert response.status_code == 303
+            assert response.headers["location"] == "/reviewer/queue"
+
+            row = (
+                admin_client.table("claims").select("status").eq("id", claim_id).execute().data[0]
+            )
+            assert row["status"] == "in_review"
+        finally:
+            admin_client.table("claims").delete().eq("id", claim_id).execute()
+
+
+class TestReviewerRejectAction:
+    def test_reject_button_sends_an_in_review_claim_back_to_draft(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        """UI-review finding, 2026-09-21 (MEDIUM, FIX 11): only the
+        approve action had a happy-path test -- reject had none at all."""
+        maker_id, maker_client = reviewer
+        maker_token = maker_client.auth.get_session().access_token
+
+        created = (
+            maker_client.table("claims").insert(_draft_payload(official_source, maker_id)).execute()
+        ).data[0]
+        claim_id = created["id"]
+        maker_client.table("claims").update({"status": "in_review"}).eq("id", claim_id).execute()
+
+        try:
+            response = client.post(
+                f"/reviewer/claims/{claim_id}/reject",
+                cookies={COOKIE_NAME: maker_token},
+                follow_redirects=False,
+            )
+            assert response.status_code == 303
+            assert response.headers["location"] == "/reviewer/queue"
+
+            row = (
+                admin_client.table("claims").select("status").eq("id", claim_id).execute().data[0]
+            )
+            assert row["status"] == "draft"
+        finally:
+            admin_client.table("claims").delete().eq("id", claim_id).execute()
+
+
+class TestReviewerSignInFormRenders:
+    def test_get_sign_in_renders_the_form(self) -> None:
+        """UI-review finding, 2026-09-21 (MEDIUM, FIX 11): no test at all
+        covered GET /reviewer/sign-in."""
+        response = client.get("/reviewer/sign-in")
+        assert response.status_code == 200
+        assert "Reviewer sign-in" in response.text
+        assert 'name="email"' in response.text
+        assert 'name="password"' in response.text
+
+
+class TestReviewerSignOut:
+    def test_sign_out_clears_the_cookie_and_redirects_to_sign_in(self) -> None:
+        """UI-review finding, 2026-09-21 (MEDIUM, FIX 11): no test at all
+        covered POST /reviewer/sign-out. Asserts the cookie is genuinely
+        cleared (an expired/zeroed Set-Cookie for the same name+path), not
+        just that the redirect happens."""
+        response = client.post(
+            "/reviewer/sign-out",
+            cookies={COOKIE_NAME: "some-previous-session-token"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/reviewer/sign-in"
+
+        set_cookie = response.headers.get("set-cookie", "")
+        assert f'{COOKIE_NAME}=""' in set_cookie
+        assert "Max-Age=0" in set_cookie
+        assert "Path=/reviewer" in set_cookie
+
+
+class TestReviewerSignInCookieFlags:
+    def test_sign_in_cookie_carries_the_expected_security_flags(
+        self, reviewer_credentials: dict[str, str]
+    ) -> None:
+        """UI-review finding, 2026-09-21 (MEDIUM, FIX 11): the existing
+        cookie-checking test only ever checked the cookie's name/length
+        via httpx's cookie-jar abstraction, never httponly/samesite/path
+        -- inspected here via the raw Set-Cookie header string, since the
+        cookie jar drops those flags."""
+        response = client.post(
+            "/reviewer/sign-in",
+            data={
+                "email": reviewer_credentials["email"],
+                "password": reviewer_credentials["password"],
+            },
+            follow_redirects=False,
+        )
+        if response.status_code == 429:
+            # See TestReviewerSignIn.test_valid_credentials_set_a_cookie_
+            # and_redirect_to_the_queue's identical comment (FIX 2).
+            return
+        assert response.status_code == 303
+        set_cookie = response.headers.get("set-cookie", "")
+        assert COOKIE_NAME in set_cookie
+        assert "HttpOnly" in set_cookie
+        assert "SameSite=lax" in set_cookie
+        assert "Path=/reviewer" in set_cookie
+        assert "Max-Age=" in set_cookie

@@ -133,7 +133,7 @@
   /* "red sparingly" (docs/UI.md "Visual direction") -- the `danger` token
      already exists in tailwind.config.js for exactly this, just unused
      until now. Reviewer-console action failures (self-approval, an
-     invalid workflow transition, a 404 from two reviewers racing on the
+     invalid workflow transition, a 400 from two reviewers racing on the
      same claim -- app/web/reviewer_pages.py's
      _redirect_to_queue_with_error) are the first genuine error state in
      this app, distinct from alert--caution's softer "explain, don't

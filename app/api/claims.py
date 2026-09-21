@@ -249,6 +249,20 @@ def list_claims(
     for anything but published, never an error that would reveal drafts
     exist at all."""
     statuses = status or ["draft", "in_review"]
-    result = session.client.table("claims").select("*").in_("status", statuses).execute()
+    # UI-review finding, 2026-09-21 (FIX 10, MEDIUM): no ORDER BY at all
+    # means Postgres gives no ordering guarantee -- the queue's row order
+    # could shift between requests as the table grows. Most-overdue-first
+    # (review_due_date ascending) is the most useful default for a
+    # reviewer actually working the queue, not just a tie-breaker for
+    # determinism's own sake. Existing tests only assert set/dict
+    # membership over the response, never a specific order, so this is
+    # additive, not breaking.
+    result = (
+        session.client.table("claims")
+        .select("*")
+        .in_("status", statuses)
+        .order("review_due_date")
+        .execute()
+    )
     rows = cast("list[dict[str, Any]]", result.data)
     return [_to_claim_out(row) for row in rows]
