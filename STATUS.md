@@ -160,6 +160,27 @@ reviewer-queue e2e test — both are correctly written and verified by
 hand outside pytest; the hang itself is a queued follow-up, not an app
 bug.
 
+**`RULES-8` merged** — `GET /eligibility` now resolves through the
+rules-engine registry (a pathway's published `rule_key` claim, plus its
+own `academic_cycle`/`jurisdiction` columns) instead of only the
+generic claim-shape reader; falls back to the generic path when no
+`rule_key` is published. Fixed two real bugs along the way (a
+non-UUID `pathway_id` 500, a JSON-list claim value rendered as garbage
+subject names) and one real wrong-behaviour bug the contract had
+already settled (a pathway with zero rules used to vacuously report
+"meets" — now correctly `insufficient_information`). `tests/unit`: 966
+passed. `tests/db`: 574 passed, 8 xfailed, 0 skipped, 0 failed.
+**Needs your input:** RULES-8 had to invent the `rule_key`
+claim-field convention (which claim field names a pathway's rule set) —
+no such convention existed before this task, and it isn't a contract
+decision, just what the code needed to exist. Whoever builds
+content-authoring around named rule sets next should either adopt it
+or deliberately change it; see `docs/DECISIONS.md`'s 2026-09-22 "RULES-8"
+entry for the exact shape. Also disclosed, not fixed: a non-`IN`
+(foreign) pathway's claims still reach the eligibility engine on the
+fallback path, contrary to `docs/CONTRACTS.md` — no live impact today
+(no foreign-pathway content exists yet), flagged for a follow-up.
+
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
 - `GET /compare?pathway_id=X&pathway_id=Y` — trust-labelled fields plus

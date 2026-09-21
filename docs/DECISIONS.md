@@ -5,6 +5,60 @@ never deleted.
 
 ---
 
+## 2026-09-22 — RULES-8: the eligibility engine now uses the rules registry, and invents the "rule_key" claim convention doing it
+**Event:** `GET /eligibility`'s `_criteria_from_claims` used to be the whole
+story — a generic claim-shape reader, never touching the Rules lane's own
+registry/case-table mechanism (`RULES-2..6,11`, already merged). RULES-8 wires
+a real lookup in ahead of it: a pathway's published claim on a new field,
+`rule_key` (value = the exam module's `exam_key`; the same claim row's own
+`academic_cycle`/`jurisdiction` columns from migration `0008` complete the
+match), resolves through `app.rules.ruleset`'s exact-match registry. No
+`rule_key` claim published → falls back to the generic builders unchanged.
+**No such claim-field convention existed before this task** — it was invented
+here, in the absence of one, because the task required it to exist. Recording
+it here rather than letting it stay implicit in one file's docstring: whoever
+next builds content-authoring around named rule sets (a `PUB-*`/`CONTENT-*`
+task) needs to either adopt this convention or deliberately change it — this
+is a proposal made real by code, not a settled contract decision.
+**An unpublished `rule_key` is ignored entirely, not honoured as "named but
+not_checked."** A reviewer's RLS-scoped client can see draft claims; letting a
+draft `rule_key` change the outcome would blank a pathway's real published
+criteria based on an unapproved row — the same maker-checker bypass shape
+this codebase already guards against elsewhere, pointed in the other
+direction. Two published `rule_key` claims on one pathway resolve
+deterministically (latest `verification_date`, ties broken by claim id) — the
+full contract rule ("loser flagged for review") isn't built anywhere in this
+codebase yet; only the deterministic half was in scope here.
+**Two real bugs found and fixed, unrelated to the registry work itself:** (1)
+a non-UUID `pathway_id` 500'd — the same validation gap already closed on
+`compare.py`/`requirements_pages.py` had never been carried to this route. (2)
+A claim value stored as a JSON list (allowed since `RULES-3`) was stringified
+with `str(value).split(",")`, turning `["Physics","Chemistry"]` into the
+literal garbage subject names `"['Physics'"` / `"'Chemistry']"` — a student
+who had studied both would have been told they were missing a subject called
+`['Physics'`.
+**A real, previously-wrong behaviour, now matching the already-settled
+contract:** `docs/CONTRACTS.md`'s "Three eligibility outcomes" section
+requires a pathway with no published rules to return `insufficient_information`
++ `no_verified_rules`, "never a guess" — the pre-existing code instead
+vacuously reported the student "meets" criteria that didn't exist. Fixed; the
+test that had pinned the old (wrong) behaviour was rewritten, not deleted.
+**Also consolidates a known duplication:** `app/planning/comparison.py`'s
+`_safe_source_url` is now public (`safe_source_url`, old private name kept as
+a compatibility alias for an existing test file), and `app/api/eligibility.py`
+now imports it instead of keeping its own strictly-weaker `startswith(...)`
+copy — the two had already silently diverged (missing `.strip()`) before
+this task noticed.
+**Disclosed, not fixed:** `docs/CONTRACTS.md`'s "a non-`IN` pathway's fields
+are display-only, never fed to the eligibility engine" is not implemented on
+the fallback path. No live impact today (no non-`IN` pathway content is
+published yet), but a real gap for whoever builds foreign-pathway eligibility
+content next.
+**Verified live:** `tests/unit` 966 passed; `tests/db` 574 passed, 8 xfailed,
+0 skipped, 0 failed (up from 552, +22 for the new registry/edge-case tests) —
+run in the implementer's own worktree and again against the shared local
+stack after merge.
+
 ## 2026-09-22 — Cache-Control middleware for shared/borrowed phones (A11Y-4)
 **Decision.** Every response now sets `Cache-Control` explicitly — nothing is
 left to a browser or intermediate cache's own default. `CachePolicyMiddleware`
