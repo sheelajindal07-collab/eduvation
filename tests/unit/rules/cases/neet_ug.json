@@ -1,0 +1,182 @@
+{
+  "exam_key": "neet_ug",
+  "exam_name": "NEET (UG)",
+  "cycle": "2027",
+  "cycle_end": "2027-12-31",
+  "jurisdiction": "IN",
+  "rule_version": "v1",
+  "reviewed_by": null,
+  "reviewed_on": null,
+  "source_note": "docs/content-drafts/neet-ug-eligibility.md -- DRAFT RESEARCH, not verified, not published (see that file's own header). The two facts below (minimum age relative to a 31-December cutoff, and the any-of Biology/Biotechnology subject requirement) are each independently confirmed twice in the draft (the official information bulletin plus the primary Gazette regulation/corrigendum) -- the best-sourced facts in that draft -- but still require RULES-12's named human reviewer against the current cycle's own bulletin before reviewed_by/reviewed_on above may be filled in; until then this rule set is excluded from a production-mode registry listing (app.rules.ruleset.RuleSet.is_reviewed). The draft explicitly recommends publishing no minimum_marks_percentage, no maximum_age and no domicile_states claim for this exam (each is either 'not found' after checking both the bulletin and the primary regulation, or -- for the upper age limit -- sourced only to two NMC letters the draft could not independently confirm), so none of those appear in \"facts\" below; see \"not_checked\" instead.",
+  "facts": {
+    "minimum_age": 17,
+    "minimum_age_cutoff": "2027-12-31",
+    "minimum_age_source_claim_id": "draft:neet-ug-eligibility.md#fact-1",
+    "required_subject_groups": [["Physics"], ["Chemistry"], ["Biology", "Biotechnology"]],
+    "required_subject_groups_source_claim_id": "draft:neet-ug-eligibility.md#fact-3"
+  },
+  "not_checked": [
+    {
+      "name": "Minimum marks percentage in the qualifying (Class 12) examination",
+      "note": "Not found in either the official information bulletin or the primary regulation checked for this draft -- not checked here. A commonly repeated figure exists on third-party sites but could not be confirmed against a primary source; confirm with the official notification for your cycle."
+    },
+    {
+      "name": "Qualifying percentile (for admission, not for eligibility to appear)",
+      "note": "This is a result of the exam, not an input a student has, and must never be turned into a score or rank prediction -- not checked here."
+    },
+    {
+      "name": "Domicile / nationality for state-quota seats",
+      "note": "Delegated to each state's own notifications and not modelled here -- confirm with the relevant state counselling authority."
+    }
+  ],
+  "cases": [
+    {
+      "name": "meets_well_before_cutoff_with_biology",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Biology", "English"]
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "meets",
+      "reason": "Turns 17 well before the 31 Dec 2027 cutoff and has Physics, Chemistry and Biology.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md facts 1 and 3"
+    },
+    {
+      "name": "meets_with_biotechnology_instead_of_biology",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Biotechnology"]
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "meets",
+      "reason": "The any-of group accepts Biotechnology as an alternative to Biology.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md fact 3"
+    },
+    {
+      "name": "does_not_meet_neither_biology_nor_biotechnology",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Maths"]
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "does_not_meet",
+      "reason": "Age is fine, but neither Biology nor Biotechnology was studied.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md fact 3"
+    },
+    {
+      "name": "does_not_meet_missing_chemistry",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Biology"]
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "does_not_meet",
+      "reason": "Chemistry, its own required group, is missing.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md fact 3"
+    },
+    {
+      "name": "does_not_meet_too_young",
+      "input": {
+        "date_of_birth": "2015-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Biology"]
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "does_not_meet",
+      "reason": "Will not have completed the minimum age by the 31 Dec 2027 cutoff.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md fact 1"
+    },
+    {
+      "name": "meets_exact_boundary_on_cutoff_day",
+      "input": {
+        "date_of_birth": "2010-12-31",
+        "subjects_studied": ["Physics", "Chemistry", "Biology"]
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "meets",
+      "reason": "Turns the minimum age exactly on the 31 Dec 2027 cutoff day, which meets, not fails.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md fact 1"
+    },
+    {
+      "name": "does_not_meet_one_day_after_cutoff_birthday",
+      "input": {
+        "date_of_birth": "2011-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Biology"]
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "does_not_meet",
+      "reason": "Turns the minimum age one day after the 31 Dec 2027 cutoff.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md fact 1"
+    },
+    {
+      "name": "insufficient_information_unknown_date_of_birth",
+      "input": {
+        "subjects_studied": ["Physics", "Chemistry", "Biology"]
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "insufficient_information",
+      "reason": "Date of birth is not given, so the age cutoff can't be checked -- must never be treated as a failure.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md fact 1"
+    },
+    {
+      "name": "insufficient_information_unknown_subjects",
+      "input": {
+        "date_of_birth": "2010-01-01"
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "insufficient_information",
+      "reason": "Subjects studied are not given, so the any-of group can't be checked.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md fact 3"
+    },
+    {
+      "name": "insufficient_information_both_unknown",
+      "input": {},
+      "as_of": "2026-09-19",
+      "expected_outcome": "insufficient_information",
+      "reason": "Neither date of birth nor subjects studied are given.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md facts 1 and 3"
+    },
+    {
+      "name": "does_not_meet_wins_over_unknown_subjects",
+      "input": {
+        "date_of_birth": "2015-01-01"
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "does_not_meet",
+      "reason": "A definite age failure must not be masked by the unrelated unknown subjects.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md fact 1"
+    },
+    {
+      "name": "insufficient_information_stale_cycle_masks_a_would_be_meets",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Biology"]
+      },
+      "as_of": "2028-06-01",
+      "expected_outcome": "insufficient_information",
+      "reason": "as_of is past the 2027 cycle's cycle_end -- a would-be meets is downgraded so a lapsed cycle is never reported as a confident pass.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md cycle warning"
+    },
+    {
+      "name": "does_not_meet_survives_a_stale_cycle",
+      "input": {
+        "date_of_birth": "2015-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Biology"]
+      },
+      "as_of": "2028-06-01",
+      "expected_outcome": "does_not_meet",
+      "reason": "A real failure found under a lapsed cycle's rules is still true information and must not be hidden by the staleness downgrade.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md cycle warning"
+    },
+    {
+      "name": "meets_with_all_optional_subjects_also_present",
+      "input": {
+        "date_of_birth": "2010-01-01",
+        "subjects_studied": ["Physics", "Chemistry", "Biology", "Biotechnology", "English", "Maths"]
+      },
+      "as_of": "2026-09-19",
+      "expected_outcome": "meets",
+      "reason": "Extra subjects beyond the required groups don't change a meets.",
+      "source_pointer": "docs/content-drafts/neet-ug-eligibility.md fact 3"
+    }
+  ]
+}
