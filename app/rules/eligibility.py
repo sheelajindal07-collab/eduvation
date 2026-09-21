@@ -40,6 +40,16 @@ class EligibilityInput:
     domicile_state: str | None = None
     category: str | None = None
     as_of: date | None = None
+    date_of_birth: date | None = None
+    """A per-request, POST-only personal input (docs/CONTRACTS.md "Duration,
+    dates, cycle, DOB"): never a query param, never in a URL, never logged.
+    Added for RULES-2's reference-date age criteria
+    (`app/rules/criteria_dates.py`) — the existing integer `age` field above
+    is kept as-is for callers that only have an already-computed age; this
+    field is for the DOB-cutoff checks that replace the naive
+    today-minus-birth-year subtraction for exams like NEET-UG, where the
+    rule is "completed N years as on 31 December of the exam year", not
+    "is N years old today"."""
 
 
 @dataclass(frozen=True)
