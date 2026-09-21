@@ -19,6 +19,20 @@
       "Bash(printenv)",
       "Bash(env)",
       "Bash(set)"
+    ],
+    "allow": [
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(git worktree*)",
+      "Bash(python -m pytest*)",
+      "Bash(python -m ruff*)",
+      "Bash(python -m mypy*)",
+      "Bash(npm ci)",
+      "Bash(npm run*)"
     ]
   }
 }
