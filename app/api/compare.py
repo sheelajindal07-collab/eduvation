@@ -65,7 +65,7 @@ def _looks_like_a_uuid(value: str) -> bool:
 
 
 class FieldValueOut(BaseModel):
-    value: str | int | float | bool | None
+    value: str | int | float | bool | list[Any] | dict[str, Any] | None
     label: str
     source_url: str | None = None
     verification_date: date | None = None

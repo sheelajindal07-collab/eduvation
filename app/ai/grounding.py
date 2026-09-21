@@ -174,6 +174,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from enum import StrEnum
+from typing import Any
 
 from app.ai.adapter import AIProvider
 from app.ai.budget import AIRequestBudget
@@ -213,7 +214,7 @@ class Citation:
 
     claim_id: str
     field: str
-    value: str | int | float | bool | None
+    value: str | int | float | bool | list[Any] | dict[str, Any] | None
     source_authority: str | None
     source_url: str | None
     verification_date: date
