@@ -243,7 +243,14 @@ class TestComparePathways:
         real net_to_arrange, not just the raw verified_charges figure --
         and that the ?estimated_additional_expenses override (Lite Build
         Pack §6 "assumption editing") changes it for this request only,
-        without writing anything to the database."""
+        without writing anything to the database.
+
+        RULES-10 (Money type): a fee claim's `currency` must be set
+        explicitly now -- a null currency renders not_available rather
+        than being assumed INR (docs/CONTRACTS.md, db/migrations/
+        0008_jurisdiction_currency.sql's own comment on why that column
+        has no backfill default, unlike `jurisdiction`). See the sibling
+        test below for the null-currency case itself."""
         official_source = (
             admin_client.table("sources")
             .insert(
@@ -276,6 +283,7 @@ class TestComparePathways:
                     "entity_id": other_pathway["id"],
                     "field": "verified_charges",
                     "value": 100000,
+                    "currency": "INR",
                     "source_id": official_source["id"],
                     "verification_date": "2026-09-01",
                     "verifier": run_name("test-fixture-reviewer"),
@@ -319,6 +327,85 @@ class TestComparePathways:
                 if p["pathway_id"] == seeded_pathway["pathway"]["id"]
             )
             assert unpublished["cost"]["net_to_arrange"] is None
+        finally:
+            admin_client.table("claims").delete().eq("id", published_claim["id"]).execute()
+            admin_client.table("pathways").delete().eq("id", other_pathway["id"]).execute()
+            admin_client.table("sources").delete().eq("id", official_source["id"]).execute()
+
+    def test_a_fee_claim_with_no_currency_makes_net_to_arrange_unavailable(
+        self, admin_client: Client, seeded_pathway: dict[str, Any]
+    ) -> None:
+        """RULES-10 (Money type), live proof: a published verified_charges
+        claim with `currency` left null (the state of every pre-Money-type
+        claim in this database -- db/migrations/0008_jurisdiction_currency
+        .sql deliberately gives `currency` no backfill default, unlike
+        `jurisdiction`) must show net_to_arrange as unavailable, never a
+        confident-looking figure that silently assumed INR."""
+        official_source = (
+            admin_client.table("sources")
+            .insert(
+                {
+                    "authority_name": run_name("API TEST OFFICIAL SOURCE (no currency)"),
+                    "official_url": "https://example.invalid/official-test-source-3",
+                    "source_type": "official",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        other_pathway = (
+            admin_client.table("pathways")
+            .insert(
+                {
+                    "career_id": seeded_pathway["career"]["id"],
+                    "name": run_name("fifth API test pathway (SYNTHETIC)"),
+                    "description": "Seeded by tests/db/test_api_explore_compare.py",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        published_claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": other_pathway["id"],
+                    "field": "verified_charges",
+                    "value": 100000,
+                    # No "currency" key -- exercises the real, common
+                    # case: a claim written before/without currency capture.
+                    "source_id": official_source["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": run_name("test-fixture-reviewer"),
+                    "status": "published",
+                    "review_due_date": "2099-01-01",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get(
+                "/compare",
+                params={"pathway_id": [seeded_pathway["pathway"]["id"], other_pathway["id"]]},
+            )
+            assert response.status_code == 200
+            target = next(
+                p for p in response.json()["pathways"] if p["pathway_id"] == other_pathway["id"]
+            )
+            assert target["cost"]["net_to_arrange"] is None
+            # Known, disclosed inconsistency (not this test's bug):
+            # `cost.verified_charges` is built by the still-untouched
+            # `assemble_cost_breakdown` path (SCOPE-4's job, per
+            # docs/CONTRACTS.md), so it still shows the claim's normal
+            # trust label here even though the computed net total above
+            # is correctly unavailable -- a student would see a
+            # confidently-labelled fee figure next to a total that
+            # mysteriously won't compute. Pinning the CURRENT behaviour
+            # so SCOPE-4 has a failing test to turn green when it unifies
+            # the two paths, not silently reproducing a stale assumption.
+            assert target["cost"]["verified_charges"]["label"] == "checked_against_official_source"
         finally:
             admin_client.table("claims").delete().eq("id", published_claim["id"]).execute()
             admin_client.table("pathways").delete().eq("id", other_pathway["id"]).execute()
