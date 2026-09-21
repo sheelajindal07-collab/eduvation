@@ -19,6 +19,7 @@ from app.api.plans import router as plans_router
 from app.api.timeline import router as timeline_router
 from app.core.config import get_settings
 from app.web.pages import router as pages_router
+from app.web.reviewer_pages import router as reviewer_pages_router
 
 
 def create_app() -> FastAPI:
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
     app.include_router(plans_router)
     app.include_router(claims_router)
     app.include_router(pages_router)
+    app.include_router(reviewer_pages_router)
     return app
 
 
