@@ -100,10 +100,12 @@
                   <p class="text-xs text-neutral mb-1">What you'd need to arrange</p>
                   {% if c.cost_summary.net_to_arrange is not none %}
                     <p class="text-lg font-semibold text-charcoal">
-                      {# RULES-10: net_to_arrange is now a Money value;
-                         unwrapped to a bare rupee figure here until
-                         SCOPE-4 does the real currency-aware display. #}
-                      &#8377;{{ "{:,.0f}".format(c.cost_summary.net_to_arrange.amount) }}
+                      {# SCOPE-4: net_to_arrange is a Money value -- amount
+                         AND currency, formatted by the one formatter
+                         (docs/CONTRACTS.md "Money and currency"). No
+                         currency sign is written in this template. #}
+                      {{ c.cost_summary.net_to_arrange.amount
+                         | money(c.cost_summary.net_to_arrange.currency) }}
                     </p>
                     <p class="text-xs text-neutral mt-1">
                       Verified charges + estimated extras, minus confirmed assistance only.
@@ -113,9 +115,24 @@
                     <span class="trust-badge trust-badge--not_available">
                       <span aria-hidden="true">&mdash;</span> Not available yet
                     </span>
-                    <p class="text-xs text-neutral mt-1">
-                      Verified charges aren't published for this pathway yet.
-                    </p>
+                    {# Two different reasons a total can be missing, two
+                       different sentences (docs/CONTRACTS.md: a
+                       mixed-currency total is shown as such, never
+                       silently dropped). "We don't know one of the
+                       charges" and "we know them all but they aren't in
+                       one currency" are not the same message, and the
+                       second one must not read as a data gap. #}
+                    {% if c.cost_summary.net_to_arrange_unavailable_reason == "mixed_currencies" %}
+                      <p class="text-xs text-neutral mt-1">
+                        This pathway's amounts are published in more than one currency, so
+                        they are not added into a single total here. BCION does not convert
+                        between currencies.
+                      </p>
+                    {% else %}
+                      <p class="text-xs text-neutral mt-1">
+                        Verified charges aren't published for this pathway yet.
+                      </p>
+                    {% endif %}
                   {% endif %}
                   {# UI-11's cost-card entry point, pre-wired by UI-1. #}
                   {{ ask_bcion("cost_breakdown", pathway_id=c.pathway_id) }}

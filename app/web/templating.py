@@ -60,7 +60,13 @@ from starlette.requests import Request
 
 from app.core.config import get_settings
 from app.i18n import DEFAULT_LOCALE, LOCALE_COOKIE_NAME, resolve_locale, translate
-from app.i18n.formatting import format_date, format_duration_weeks, format_inr, format_number
+from app.i18n.formatting import (
+    format_date,
+    format_duration_weeks,
+    format_inr,
+    format_money,
+    format_number,
+)
 
 TEMPLATE_DIRECTORY = "app/web/templates"
 """Unchanged from the instances this module replaces: relative to the
@@ -142,6 +148,43 @@ def _locale_aware_filter(
     return filter_
 
 
+@jinja2.pass_context
+def _money_filter(
+    context: jinja2.runtime.Context,
+    value: Any,
+    currency: Any = None,
+    locale: str | None = None,
+) -> str:
+    """`{{ amount | money(fv.currency) }}` — the ONE way a template
+    renders money (SCOPE-4 / docs/CONTRACTS.md "Money and currency": "One
+    formatter, `format_money(amount, currency)` — no currency symbol
+    literal may exist outside it"). Not built with
+    `_locale_aware_filter` because it takes a second value argument, the
+    currency, which is the whole point: a fee is an amount AND a
+    currency, never an amount alone.
+
+    A missing, empty or non-string currency (an Undefined from a dict
+    that has no `currency` key, a `None` from a claim that never stated
+    one) renders the catalogue's "Not available" — deliberately NOT
+    rupees. Assuming INR here is exactly the bug this task exists to
+    prevent: a foreign fee shown with a ₹ in front of it. The value is
+    withheld one layer earlier too (`_money_field_value` in
+    `app/planning/comparison.py` labels such a claim `not_available`),
+    so this is defence in depth, not the primary guard.
+    """
+    resolved_locale = resolve_locale(locale) if locale else locale_from_context(context)
+    if not isinstance(currency, str) or not currency.strip():
+        return format_money(None, DEFAULT_CURRENCY_FOR_DISPLAY, resolved_locale)
+    return format_money(value, currency.strip(), resolved_locale)
+
+
+DEFAULT_CURRENCY_FOR_DISPLAY = "INR"
+"""Only ever passed alongside a `None` amount (see `_money_filter`), i.e.
+only to reach `format_money`'s "Not available" branch, which ignores the
+currency entirely. Named rather than inlined so nobody mistakes it for a
+fallback currency this module would ever format a real amount in."""
+
+
 templates = Jinja2Templates(directory=TEMPLATE_DIRECTORY, context_processors=[_locale_context])
 """THE templates object. Import this, never construct another."""
 
@@ -151,6 +194,7 @@ templates.env.globals["t"] = _t
 # environment, so `{{ fee | inr }}` means the same thing on a student
 # screen and in the reviewer console.
 templates.env.filters["inr"] = _locale_aware_filter(format_inr)
+templates.env.filters["money"] = _money_filter
 templates.env.filters["number"] = _locale_aware_filter(format_number)
 templates.env.filters["date"] = _locale_aware_filter(format_date)
 templates.env.filters["duration_weeks"] = _locale_aware_filter(format_duration_weeks)

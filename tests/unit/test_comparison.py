@@ -260,7 +260,14 @@ def test_field_value_for_hides_javascript_scheme_source_url() -> None:
 
 def test_cost_breakdown_keeps_three_amounts_separate() -> None:
     """The core UI/data rule: verified, estimated and potential must
-    never be merged into one number (docs/UI.md, docs/DATA.md)."""
+    never be merged into one number (docs/UI.md, docs/DATA.md).
+
+    Both money claims state a `currency` (SCOPE-4): a money claim
+    without one now renders not_available on the display path too, the
+    same rule the arithmetic path has applied since RULES-10 -- see
+    `TestAssembleCostBreakdownMoneyCurrency` below, which tests exactly
+    that. This test is about the three amounts staying separate, so it
+    uses an ordinary, fully-stated Indian fee claim."""
     verified_claim = Claim(
         id="c1",
         entity_type="Programme",
@@ -272,6 +279,7 @@ def test_cost_breakdown_keeps_three_amounts_separate() -> None:
         verifier="test-reviewer",
         status=ClaimStatus.published,
         review_due_date=date(2099, 1, 1),
+        currency="INR",
     )
     potential_claim = Claim(
         id="c2",
@@ -284,6 +292,7 @@ def test_cost_breakdown_keeps_three_amounts_separate() -> None:
         verifier="test-reviewer",
         status=ClaimStatus.published,
         review_due_date=date(2099, 1, 1),
+        currency="INR",
     )
     claims_by_field = {
         "verified_charges": verified_claim,
@@ -418,14 +427,20 @@ class TestAssembleCostSummary:
         assert summary.additional_expenses_override == Money(amount=2000)
         assert summary.net_to_arrange == Money(amount=102000)
 
-    def test_an_override_is_always_inr_regardless_of_the_verified_charges_currency(
-        self,
-    ) -> None:
-        """A student's own typed-in assumption has no currency-selection
-        UI -- it is always INR (docs/CONTRACTS.md's `Money` default),
-        even when the pathway's own verified charges are in another
-        currency (in which case net_to_arrange correctly can't combine
-        them -- see TestNetToArrangeCurrencyMismatch in test_cost.py)."""
+    def test_an_override_inherits_the_verified_charges_currency(self) -> None:
+        """SCOPE-4 changed this deliberately (it previously asserted the
+        override was always INR).
+
+        A student's own typed-in assumption has no currency-selection UI,
+        so it has to be denominated in SOMETHING. Forcing INR meant a
+        USD-fee pathway's total became "unavailable: mixed currencies"
+        the moment the student edited the assumption -- a currency mix
+        they never created, reading on screen as a broken site rather
+        than as the no-FX rule it was meant to express. The only
+        non-inventing answer is the currency this pathway's own charges
+        are published in, and `assemble_cost_breakdown` shows that
+        currency beside the figure, so the assumption is visible rather
+        than implied (docs/CONTRACTS.md "Money and currency")."""
         claims_by_field = {
             "verified_charges": _field_claim("verified_charges", 100000, currency="USD")
         }
@@ -435,7 +450,27 @@ class TestAssembleCostSummary:
             as_of=TODAY,
             estimated_additional_expenses_override=5000,
         )
+        assert summary.additional_expenses_override == Money(amount=5000, currency="USD")
+        assert summary.net_to_arrange == Money(amount=105000, currency="USD")
+
+    def test_an_override_is_inr_when_the_charges_currency_is_unknowable(self) -> None:
+        """No usable charges claim -> no currency to inherit, so the
+        override falls back to `DEFAULT_CURRENCY` (docs/CONTRACTS.md:
+        Lite is India-first and has no currency-selection UI). The total
+        stays `None` regardless, because the charges are unknown."""
+        claims_by_field = {
+            "verified_charges": _field_claim(
+                "verified_charges", 100000, status=ClaimStatus.draft
+            )
+        }
+        summary = assemble_cost_summary(
+            claims_by_field,
+            SOURCES_BY_ID,
+            as_of=TODAY,
+            estimated_additional_expenses_override=5000,
+        )
         assert summary.additional_expenses_override == Money(amount=5000, currency="INR")
+        assert summary.net_to_arrange is None
 
     def test_no_hint_and_no_override_assumes_zero_extra_not_unknown(self) -> None:
         claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
@@ -705,10 +740,216 @@ class TestAssembleCostBreakdownEstimateHintProvenance:
         breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
         summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
         assert breakdown.estimated_additional_expenses.value == 0.0
-        # breakdown's line item is a plain number (SCOPE-4's display layer,
-        # untouched by RULES-10's Money type); summary's is a Money -- the
-        # two must still agree on the underlying rupee amount.
+        # breakdown's line item is a plain number plus a currency;
+        # summary's is a Money -- the two must agree on BOTH (SCOPE-4).
         assert (
             breakdown.estimated_additional_expenses.value
             == summary.estimated_additional_expenses.amount
         )
+        assert (
+            breakdown.estimated_additional_expenses.currency
+            == summary.estimated_additional_expenses.currency
+        )
+
+    def test_a_null_currency_hint_does_not_leak_its_number_into_the_displayed_line(
+        self,
+    ) -> None:
+        """SCOPE-4: the displayed estimate used to show a null-currency
+        hint's figure (15,000) while the total ignored it and used 0 --
+        a number on screen that the total beside it was not computed
+        from. Both now say zero."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "estimated_additional_expenses_hint": _field_claim(
+                "estimated_additional_expenses_hint", 15000, currency=None
+            ),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.estimated_additional_expenses.value == 0
+        assert summary.estimated_additional_expenses == Money(amount=0)
+        assert summary.net_to_arrange == Money(amount=100000)
+
+
+class TestAssembleCostBreakdownMoneyCurrency:
+    """SCOPE-4: every money line the Compare screen displays carries the
+    currency it is denominated in, and a money claim with no stated
+    currency is `not_available` on the DISPLAY path too -- not just in
+    the arithmetic. The gap this closes was pinned by
+    tests/db/test_api_explore_compare.py: a null-currency fee claim used
+    to show its number under "Checked against official source" right
+    beside a total that said "not available"."""
+
+    def test_a_null_currency_verified_charges_claim_is_not_available_not_a_bare_number(
+        self,
+    ) -> None:
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000, currency=None)
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.verified_charges.label == TrustLabel.not_available
+        assert breakdown.verified_charges.value is None
+        # ...and the same claim gives no total, for the same reason:
+        assert summary.net_to_arrange is None
+        assert summary.net_to_arrange_unavailable_reason == "missing"
+
+    def test_a_null_currency_claim_shows_no_evidence_link_either(self) -> None:
+        """Withholding the number but still linking "official source"
+        beside it would imply the figure is published and merely
+        hidden."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000, currency=None)
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.verified_charges.source_url is None
+        assert breakdown.verified_charges.verification_date is None
+        assert breakdown.verified_charges.source_authority is None
+
+    def test_a_null_currency_potential_assistance_claim_is_not_available(self) -> None:
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "potential_assistance_not_yet_awarded": _field_claim(
+                "potential_assistance_not_yet_awarded", 50000, currency=None
+            ),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.potential_assistance_not_yet_awarded.label == TrustLabel.not_available
+        assert breakdown.potential_assistance_not_yet_awarded.value is None
+
+    def test_an_ordinary_inr_pathway_is_unchanged(self) -> None:
+        """The common case must be exactly what it always was: the value,
+        the real trust label, and INR."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 125000),
+            "potential_assistance_not_yet_awarded": _field_claim(
+                "potential_assistance_not_yet_awarded", 20000
+            ),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.verified_charges.value == 125000
+        assert breakdown.verified_charges.label == TrustLabel.checked_against_official_source
+        assert breakdown.verified_charges.currency == "INR"
+        assert breakdown.potential_assistance_not_yet_awarded.currency == "INR"
+        assert breakdown.estimated_additional_expenses.currency == "INR"
+
+    def test_a_foreign_currency_fee_keeps_its_own_currency(self) -> None:
+        """The whole point of this task: a GBP fee is labelled GBP all
+        the way to the display layer, never rendered as rupees."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 9500, currency="GBP")
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.verified_charges.value == 9500
+        assert breakdown.verified_charges.currency == "GBP"
+
+    def test_the_estimate_line_inherits_the_pathway_charges_currency(self) -> None:
+        """A stated assumption has no claim and so no currency of its
+        own; it must not be silently INR beside a GBP fee."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 9500, currency="GBP")
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.estimated_additional_expenses.value == 0
+        assert breakdown.estimated_additional_expenses.currency == "GBP"
+
+    def test_a_published_hint_keeps_its_own_currency_not_the_charges_one(self) -> None:
+        """A claim states its own facts: an INR hint beside a GBP fee is
+        shown as INR (and the total then correctly won't combine them),
+        rather than being relabelled to match the fee."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 9500, currency="GBP"),
+            "estimated_additional_expenses_hint": _field_claim(
+                "estimated_additional_expenses_hint", 15000, currency="INR"
+            ),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.estimated_additional_expenses.value == 15000
+        assert breakdown.estimated_additional_expenses.currency == "INR"
+        assert summary.net_to_arrange is None
+        assert summary.net_to_arrange_unavailable_reason == "mixed_currencies"
+
+    def test_the_estimate_line_shows_the_students_override_and_its_currency(self) -> None:
+        """With an override in play the total is computed from the
+        student's figure, so the line above it shows the student's
+        figure -- and the currency it was treated as."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 9500, currency="GBP"),
+            "estimated_additional_expenses_hint": _field_claim(
+                "estimated_additional_expenses_hint", 1000, currency="GBP"
+            ),
+        }
+        breakdown = assemble_cost_breakdown(
+            claims_by_field,
+            SOURCES_BY_ID,
+            as_of=TODAY,
+            estimated_additional_expenses_override=2500,
+        )
+        summary = assemble_cost_summary(
+            claims_by_field,
+            SOURCES_BY_ID,
+            as_of=TODAY,
+            estimated_additional_expenses_override=2500,
+        )
+        assert breakdown.estimated_additional_expenses.value == 2500
+        assert breakdown.estimated_additional_expenses.currency == "GBP"
+        assert summary.net_to_arrange == Money(amount=12000, currency="GBP")
+
+    def test_an_all_gbp_pathway_gets_a_real_gbp_total(self) -> None:
+        """SCOPE-4 regression: a pathway whose fees are entirely in one
+        non-INR currency has an ordinary, computable total. It used to
+        come back `None` because the zero-valued default-currency terms
+        (no hint, no confirmed assistance) made the sum look mixed."""
+        claims_by_field = {
+            "fee_component:tuition": _field_claim(
+                "fee_component:tuition", 9500, currency="GBP"
+            ),
+            "fee_component:hostel": _field_claim("fee_component:hostel", 4500, currency="GBP"),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.verified_charges.total == Money(amount=14000, currency="GBP")
+        assert summary.net_to_arrange == Money(amount=14000, currency="GBP")
+        assert summary.net_to_arrange_unavailable_reason is None
+
+    def test_mixed_currency_components_report_mixed_not_missing(self) -> None:
+        """The two reasons a total is absent must stay distinguishable
+        all the way out of this layer (docs/CONTRACTS.md)."""
+        claims_by_field = {
+            "fee_component:tuition": _field_claim(
+                "fee_component:tuition", 9500, currency="GBP"
+            ),
+            "fee_component:application_fee": _field_claim(
+                "fee_component:application_fee", 5000, currency="INR"
+            ),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.net_to_arrange is None
+        assert summary.net_to_arrange_unavailable_reason == "mixed_currencies"
+
+    def test_an_unpublished_component_reports_missing_not_mixed(self) -> None:
+        claims_by_field = {
+            "fee_component:tuition": _field_claim(
+                "fee_component:tuition", 9500, currency="GBP"
+            ),
+            "fee_component:hostel": _field_claim(
+                "fee_component:hostel", 4500, currency="GBP", status=ClaimStatus.draft
+            ),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.net_to_arrange is None
+        assert summary.net_to_arrange_unavailable_reason == "missing"
+
+    def test_a_non_numeric_money_value_is_left_alone_not_relabelled(self) -> None:
+        """A money field whose claim holds text (a range, a note) carries
+        no currency to check -- `_money_field_value` must not "fix" it by
+        labelling it not_available, which would hide a published fact
+        that the display layer renders perfectly well as text."""
+        claims_by_field = {
+            "verified_charges": _field_claim(
+                "verified_charges", "Fees not yet notified for this cycle", currency=None
+            )
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.verified_charges.value == "Fees not yet notified for this cycle"
+        assert breakdown.verified_charges.label == TrustLabel.checked_against_official_source

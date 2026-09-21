@@ -81,6 +81,11 @@ def two_pathways(
                 "entity_id": pathway_a["id"],
                 "field": "verified_charges",
                 "value": 85000,
+                # SCOPE-4: an ordinary Indian fee states its currency. A
+                # money claim with a null currency renders not_available
+                # (docs/CONTRACTS.md), which is its own test below rather
+                # than an accident of this shared fixture.
+                "currency": "INR",
                 "source_id": official_source["id"],
                 "verification_date": "2026-09-01",
                 "verifier": run_name("test-fixture-reviewer"),
@@ -266,11 +271,94 @@ class TestComparePage:
         assert two_pathways["pathway_b"]["name"] in response.text
         # Pathway A's published official claim:
         assert "Checked against official source" in response.text
-        assert "85,000" in response.text
+        assert "₹85,000" in response.text
         # Pathway B has no claims at all -- every field must degrade to
         # "not available", never a blank or a crash (docs/UI.md: "name
         # the missing requirement/information, never guess").
         assert "Not available" in response.text
+
+    def test_an_inr_fee_renders_exactly_as_it_always_did(
+        self, two_pathways: dict[str, Any]
+    ) -> None:
+        """SCOPE-4's "don't break the common case" check: the ordinary
+        Indian pathway still shows a rupee sign and the same figures,
+        now produced by `format_money` instead of a literal `&#8377;` in
+        the template. The net total is the fee plus a zero assumption, so
+        it renders identically to the fee itself."""
+        response = client.get(
+            "/compare/view",
+            params={
+                "pathway_id": [
+                    two_pathways["pathway_a"]["id"],
+                    two_pathways["pathway_b"]["id"],
+                ]
+            },
+        )
+        assert response.status_code == 200
+        # The fee line AND the "what you'd need to arrange" total:
+        assert response.text.count("₹85,000") == 2
+        assert "What you'd need to arrange" in response.text
+        # The estimate line, zero, still in rupees for an INR pathway:
+        assert "₹0" in response.text
+
+    def test_a_foreign_currency_fee_is_never_shown_as_rupees(
+        self, admin_client: Client, two_pathways: dict[str, Any]
+    ) -> None:
+        """SCOPE-4, the riskiest display bug this screen can have: a fee
+        published in pounds rendered with a rupee sign in front of it.
+        `compare.html`/`_trust_badge.html` used to write `&#8377;`
+        literally, in front of whatever number they were handed."""
+        gbp_source = (
+            admin_client.table("sources")
+            .insert(
+                {
+                    "authority_name": run_name("WEB UI TEST OFFICIAL SOURCE (GBP)"),
+                    "official_url": "https://example.invalid/web-ui-test-source-gbp",
+                    "source_type": "official",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        gbp_claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": two_pathways["pathway_b"]["id"],
+                    "field": "verified_charges",
+                    "value": 9500,
+                    "currency": "GBP",
+                    "jurisdiction": "GB",
+                    "source_id": gbp_source["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": run_name("test-fixture-reviewer"),
+                    "status": "published",
+                    "review_due_date": "2099-01-01",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get(
+                "/compare/view",
+                params={
+                    "pathway_id": [
+                        two_pathways["pathway_a"]["id"],
+                        two_pathways["pathway_b"]["id"],
+                    ]
+                },
+            )
+            assert response.status_code == 200
+            assert "GBP 9,500" in response.text
+            # The pound figure never appears with a rupee sign in front,
+            # and no template writes a currency symbol of its own:
+            assert "₹9,500" not in response.text
+            assert "&#8377;" not in response.text
+        finally:
+            admin_client.table("claims").delete().eq("id", gbp_claim["id"]).execute()
+            admin_client.table("sources").delete().eq("id", gbp_source["id"]).execute()
 
     def test_closing_prompt_is_present(self, two_pathways: dict[str, Any]) -> None:
         """docs/UI.md's exact required closing prompt for this screen."""

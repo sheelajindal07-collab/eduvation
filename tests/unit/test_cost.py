@@ -327,6 +327,113 @@ class TestNetToArrangeCurrencyMismatch:
         )
         assert summary.net_to_arrange == Money(amount=20000 + 1000 - 500, currency="USD")
 
+    def test_no_confirmed_assistance_does_not_poison_a_non_inr_total(self) -> None:
+        """SCOPE-4: `confirmed_assistance_total` is `Money(0)` — an INR
+        zero — for an empty tuple, and feeding that into the sum made
+        every all-GBP pathway's total `None` as if its currencies were
+        mixed. "Nothing was awarded" must not behave like "₹0 was
+        awarded"."""
+        summary = compute_cost_summary(
+            fee_components=[FeeComponent("Tuition", _verified(9500, currency="GBP"))],
+            estimated_additional_expenses=Money(amount=1500, currency="GBP"),
+            confirmed_assistance=[],
+            potential_assistance=[],
+        )
+        assert summary.net_to_arrange == Money(amount=11000, currency="GBP")
+        assert summary.net_to_arrange_unavailable_reason is None
+
+    def test_a_zero_confirmed_assistance_item_in_another_currency_still_blocks_the_sum(
+        self,
+    ) -> None:
+        """The fix above is about the ABSENCE of assistance, not about
+        zeros in general: an assistance item that really exists and
+        really is in another currency is still a mismatch, even at zero
+        — the engine never guesses which currency a stated figure is
+        in."""
+        summary = compute_cost_summary(
+            fee_components=[FeeComponent("Tuition", _verified(9500, currency="GBP"))],
+            estimated_additional_expenses=Money(amount=0, currency="GBP"),
+            confirmed_assistance=[AssistanceItem("Indian grant", Money(amount=0))],
+            potential_assistance=[],
+        )
+        assert summary.net_to_arrange is None
+
+
+class TestNetToArrangeUnavailableReason:
+    """SCOPE-4 / docs/CONTRACTS.md "Money and currency": a total over
+    mixed currencies is `None` "with reason `mixed_currencies`, shown to
+    the student" — so the reason travels with the `None` instead of each
+    display layer re-guessing it. "We don't know a charge" and "we know
+    them all but they aren't in one currency" are different sentences."""
+
+    def test_a_computable_total_has_no_reason(self) -> None:
+        summary = compute_cost_summary(
+            fee_components=[FeeComponent("Tuition", _verified(100000))],
+            estimated_additional_expenses=Money(amount=0),
+            confirmed_assistance=[],
+            potential_assistance=[],
+        )
+        assert summary.net_to_arrange is not None
+        assert summary.net_to_arrange_unavailable_reason is None
+
+    def test_an_unpublished_component_is_missing(self) -> None:
+        summary = compute_cost_summary(
+            fee_components=[
+                FeeComponent("Tuition", _verified(100000)),
+                FeeComponent("Hostel", _missing()),
+            ],
+            estimated_additional_expenses=Money(amount=0),
+            confirmed_assistance=[],
+            potential_assistance=[],
+        )
+        assert summary.net_to_arrange_unavailable_reason == "missing"
+
+    def test_a_null_currency_component_is_missing_not_mixed(self) -> None:
+        """A claim with no stated currency is an unknown amount, not a
+        currency clash — it reads as "not published yet" to a student,
+        which is the honest description of a fee we cannot denominate."""
+        summary = compute_cost_summary(
+            fee_components=[FeeComponent("Tuition", _no_currency(100000))],
+            estimated_additional_expenses=Money(amount=0),
+            confirmed_assistance=[],
+            potential_assistance=[],
+        )
+        assert summary.net_to_arrange_unavailable_reason == "missing"
+
+    def test_components_in_different_currencies_are_mixed(self) -> None:
+        summary = compute_cost_summary(
+            fee_components=[
+                FeeComponent("Indian application fee", _verified(5000, currency="INR")),
+                FeeComponent("Foreign tuition", _verified(20000, currency="USD")),
+            ],
+            estimated_additional_expenses=Money(amount=0),
+            confirmed_assistance=[],
+            potential_assistance=[],
+        )
+        assert summary.net_to_arrange_unavailable_reason == "mixed_currencies"
+
+    def test_an_estimate_in_another_currency_than_known_charges_is_mixed(self) -> None:
+        """The charges ARE all known here — nothing is missing; the sum
+        fails only because the estimate is in another currency."""
+        summary = compute_cost_summary(
+            fee_components=[FeeComponent("Tuition", _verified(20000, currency="USD"))],
+            estimated_additional_expenses=Money(amount=5000, currency="INR"),
+            confirmed_assistance=[],
+            potential_assistance=[],
+        )
+        assert summary.net_to_arrange_unavailable_reason == "mixed_currencies"
+
+    def test_confirmed_assistance_in_another_currency_is_mixed(self) -> None:
+        summary = compute_cost_summary(
+            fee_components=[FeeComponent("Tuition", _verified(100000))],
+            estimated_additional_expenses=Money(amount=0),
+            confirmed_assistance=[
+                AssistanceItem("Foreign grant", Money(amount=100, currency="USD"))
+            ],
+            potential_assistance=[],
+        )
+        assert summary.net_to_arrange_unavailable_reason == "mixed_currencies"
+
 
 class TestEstimateVsUserAssumptionOverride:
     """RULES-10: `CostSummary` keeps the computed estimate and a
