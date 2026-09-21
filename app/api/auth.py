@@ -187,6 +187,20 @@ def _migrate_pending_plan(
     return rows[0]["id"] if rows else None
 
 
+def _normalize_email_for_self_check(email: str) -> str:
+    """Normalize an email for the guardian_email-vs-own-email self-check
+    below — NOT a general-purpose email canonicalizer, and deliberately
+    narrower than one: lowercase, strip surrounding whitespace, and drop
+    a `local+tag@domain` sub-address tag, because that's the one bypass
+    an adversarial live check actually demonstrated (see the comment on
+    that check). No dot-stripping — see the same comment for why that
+    would trade a real bypass for a false-positive rejection of a
+    genuinely different guardian on non-Gmail providers."""
+    local, _, domain = email.strip().casefold().partition("@")
+    local = local.partition("+")[0]
+    return f"{local}@{domain}"
+
+
 @router.post("/sign-up", response_model=AuthResponse, status_code=201)
 def sign_up(request: SignUpRequest) -> AuthResponse:
     today = datetime.now(tz=UTC).date()
@@ -201,23 +215,35 @@ def sign_up(request: SignUpRequest) -> AuthResponse:
                 "'Consent & safeguarding')."
             ),
         )
-    # Adversarial review, 2026-09-21 (HIGH): nothing previously stopped a
-    # self-declared minor from entering their OWN sign-up email as
-    # guardian_email. Not exploitable TODAY — no real email provider is
-    # configured (app/notifications/logging_sender.py) — but the moment
-    # one is, a minor could receive their own "guardian confirmation"
-    # email and self-confirm instantly, a complete, trivial defeat of the
-    # whole mechanism triggered by nothing more than an owner action this
-    # app cannot see coming. Case-insensitive (email addresses are
-    # case-insensitive in practice; Supabase Auth itself normalizes
-    # `email` case-insensitively, so comparing case-sensitively here would
-    # miss the exact "SelfEmail@x.com" vs "selfemail@x.com" trick this
-    # check exists to catch). Same posture/status code as the check just
-    # above: reject outright, before any account is ever created.
+    # Adversarial review, 2026-09-21 (HIGH, then a second-pass MEDIUM):
+    # nothing previously stopped a self-declared minor from entering
+    # their OWN sign-up email as guardian_email. Not exploitable TODAY —
+    # no real email provider is configured
+    # (app/notifications/logging_sender.py) — but the moment one is, a
+    # minor could receive their own "guardian confirmation" email and
+    # self-confirm instantly, a complete, trivial defeat of the whole
+    # mechanism triggered by nothing more than an owner action this app
+    # cannot see coming.
+    #
+    # A first version compared case-insensitively but exact-match, which
+    # a live adversarial re-check defeated trivially: most providers
+    # (Gmail, Outlook/M365, ProtonMail, FastMail — RFC 5233 "Sieve
+    # Subaddress") deliver `local+anything@domain` to the same inbox as
+    # `local@domain`, so `name+guardian@gmail.com` sailed straight past
+    # an exact-match check while still reaching the student's own inbox.
+    # `_normalize_email_for_self_check` strips a `+...` suffix from the
+    # local part before comparing. Deliberately NOT stripping dots too
+    # (Gmail treats `r.kumar@gmail.com`/`rkumar@gmail.com` as identical,
+    # but most OTHER providers, including Outlook, do not — two genuinely
+    # different people can differ only by a dot on those providers, and
+    # blanket dot-stripping would wrongly reject a real, different
+    # guardian's address as "the same email", the opposite failure mode
+    # from the one this check exists to catch).
     if (
         minor
         and request.guardian_email is not None
-        and request.guardian_email.strip().casefold() == request.email.strip().casefold()
+        and _normalize_email_for_self_check(request.guardian_email)
+        == _normalize_email_for_self_check(request.email)
     ):
         raise HTTPException(
             status_code=400,

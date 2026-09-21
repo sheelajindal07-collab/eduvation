@@ -198,6 +198,63 @@ class TestUnder18SignUpValidation:
         assert response.status_code == 400
         assert "guardian_email" in response.json()["detail"]
 
+    def test_under_18_sign_up_with_plus_tagged_own_email_as_guardian_is_rejected(self) -> None:
+        """Adversarial re-check, 2026-09-21 (MEDIUM), of the fix above:
+        the exact-match (post-casefold) comparison it introduced was
+        live-reproduced as bypassable via '+tag' sub-addressing —
+        `local+anything@domain` is delivered to the same inbox as
+        `local@domain` on Gmail, Outlook/M365, ProtonMail, FastMail, etc.
+        (RFC 5233 "Sieve Subaddress"), so a minor could type
+        `name+guardian@gmail.com` as guardian_email, receive the
+        "guardian confirmation" email in their own inbox, and
+        self-confirm -- the exact defeat the check above exists to
+        prevent, just via a different-looking string. See
+        `app.api.auth._normalize_email_for_self_check`."""
+        email = f"bcion-consent-plustag-{uuid.uuid4().hex[:12]}@example.com"
+        local, _, domain = email.partition("@")
+        response = client.post(
+            "/auth/sign-up",
+            json={
+                "email": email,
+                "password": "correct-horse-battery-staple-6",
+                "date_of_birth": _MINOR_DOB,
+                "guardian_email": f"{local}+guardian@{domain}",
+            },
+        )
+        assert response.status_code == 400
+        assert "guardian_email" in response.json()["detail"]
+
+    def test_under_18_sign_up_with_genuinely_different_guardian_dotted_email_is_accepted(
+        self, admin_client: Client, stub_email_sender: LoggingEmailSender
+    ) -> None:
+        """Guards the other direction of the same fix: dot-stripping was
+        deliberately NOT added to `_normalize_email_for_self_check`
+        (Gmail treats dots as insignificant, but Outlook/M365 and many
+        Indian ISPs/school email systems do not -- two different real
+        people can differ only by a dot on those providers), so a
+        genuinely different guardian address that merely happens to
+        contain a dot must still be accepted, not wrongly rejected as
+        'the same email'."""
+        email = f"bcion-consent-dotguardian-{uuid.uuid4().hex[:12]}@example.com"
+        local, _, domain = email.partition("@")
+        guardian_email = f"{local}.guardian@{domain}"
+        response = client.post(
+            "/auth/sign-up",
+            json={
+                "email": email,
+                "password": "correct-horse-battery-staple-6",
+                "date_of_birth": _MINOR_DOB,
+                "guardian_email": guardian_email,
+            },
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["status"] == "pending_guardian_consent"
+        users = admin_client.auth.admin.list_users()
+        match = next((u for u in users if u.email == email.casefold()), None)
+        if match is not None:
+            admin_client.auth.admin.delete_user(match.id)
+
     def test_under_18_sign_up_with_guardian_email_reports_pending_not_active(
         self, admin_client: Client, stub_email_sender: LoggingEmailSender
     ) -> None:
