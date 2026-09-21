@@ -363,10 +363,13 @@ class TestAssembleCostSummary:
         assert summary.estimated_additional_expenses == 15000
         assert summary.net_to_arrange == 115000
 
-    def test_override_replaces_the_hint_for_this_request_only(self) -> None:
-        """The "assumption editing" mechanic (Lite Build Pack §6,
-        docs/UI.md): a caller-supplied value wins over the published
-        hint, without touching any Claim."""
+    def test_override_wins_the_arithmetic_but_the_estimate_stays_visible_too(self) -> None:
+        """RULES-10: the "assumption editing" mechanic (Lite Build Pack
+        §6, docs/UI.md) no longer clobbers the computed estimate --
+        `estimated_additional_expenses` still holds the published hint,
+        `additional_expenses_override` carries the caller's edit
+        separately, and `net_to_arrange` uses the override, exactly as
+        before this split."""
         claims_by_field = {
             "verified_charges": _field_claim("verified_charges", 100000),
             "estimated_additional_expenses_hint": _field_claim(
@@ -379,8 +382,33 @@ class TestAssembleCostSummary:
             as_of=TODAY,
             estimated_additional_expenses_override=30000,
         )
-        assert summary.estimated_additional_expenses == 30000
+        assert summary.estimated_additional_expenses == 15000
+        assert summary.additional_expenses_override == 30000
+        assert summary.effective_additional_expenses == 30000
         assert summary.net_to_arrange == 130000
+
+    def test_no_override_given_leaves_the_override_field_none(self) -> None:
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "estimated_additional_expenses_hint": _field_claim(
+                "estimated_additional_expenses_hint", 15000
+            ),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.additional_expenses_override is None
+        assert summary.estimated_additional_expenses == 15000
+        assert summary.effective_additional_expenses == 15000
+
+    def test_a_paise_level_override_is_rounded_to_whole_rupees(self) -> None:
+        claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
+        summary = assemble_cost_summary(
+            claims_by_field,
+            SOURCES_BY_ID,
+            as_of=TODAY,
+            estimated_additional_expenses_override=1999.995,
+        )
+        assert summary.additional_expenses_override == 2000
+        assert summary.net_to_arrange == 102000
 
     def test_no_hint_and_no_override_assumes_zero_extra_not_unknown(self) -> None:
         claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
@@ -441,6 +469,115 @@ class TestAssembleCostSummary:
         summary = assemble_cost_summary(claims_by_field, synthetic_sources, as_of=TODAY)
         assert summary.estimated_additional_expenses == 0.0
         assert summary.net_to_arrange == 100000
+
+
+class TestAssembleCostSummaryItemisedFeeComponents:
+    """RULES-10: `assemble_cost_summary` sums every published
+    `fee_component:*` claim on the pathway, falling back to the single
+    legacy `verified_charges` claim when none exist -- both paths go
+    through the exact same `sum_verified_charges` guarantees."""
+
+    def test_no_fee_component_claims_falls_back_to_verified_charges(self) -> None:
+        """Don't break the existing single-claim path (task card's own
+        requirement)."""
+        claims_by_field = {"verified_charges": _field_claim("verified_charges", 100000)}
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.verified_charges.total == 100000
+        assert len(summary.verified_charges.components) == 1
+        assert summary.verified_charges.components[0].name == "Verified charges"
+
+    def test_multiple_fee_component_claims_are_all_summed(self) -> None:
+        claims_by_field = {
+            "fee_component:tuition": _field_claim("fee_component:tuition", 50000),
+            "fee_component:hostel": _field_claim("fee_component:hostel", 30000),
+            "fee_component:exam_fee": _field_claim("fee_component:exam_fee", 2000),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.verified_charges.total == 82000
+        assert summary.net_to_arrange == 82000
+        names = {c.name for c in summary.verified_charges.components}
+        assert names == {"Tuition", "Hostel", "Exam fee"}
+
+    def test_fee_component_claims_take_priority_over_a_legacy_verified_charges_claim(
+        self,
+    ) -> None:
+        """If a pathway somehow has both (a mid-migration state), the
+        itemised components are the more specific, more current source
+        of truth -- the legacy single claim is not also added on top
+        (which would double-count the charges)."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 999999),
+            "fee_component:tuition": _field_claim("fee_component:tuition", 50000),
+            "fee_component:hostel": _field_claim("fee_component:hostel", 30000),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.verified_charges.total == 80000
+
+    def test_one_missing_fee_component_among_several_gives_none_total_not_a_partial_sum(
+        self,
+    ) -> None:
+        """The core safety property, now proven for the itemised path
+        too: a single unpublished component must null out the whole
+        total, never silently shrink it."""
+        claims_by_field = {
+            "fee_component:tuition": _field_claim("fee_component:tuition", 50000),
+            "fee_component:hostel": _field_claim(
+                "fee_component:hostel", 30000, status=ClaimStatus.draft
+            ),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.verified_charges.total is None
+        assert summary.verified_charges.complete is False
+        assert summary.net_to_arrange is None
+
+    def test_a_stale_fee_component_still_sums_but_flags_the_summary_stale(self) -> None:
+        old_date = TODAY - timedelta(days=DEFAULT_FRESHNESS_SLA_DAYS + 1)
+        claims_by_field = {
+            "fee_component:tuition": _field_claim("fee_component:tuition", 50000),
+            "fee_component:hostel": _field_claim(
+                "fee_component:hostel", 30000, verification_date=old_date
+            ),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.verified_charges.total == 80000
+        assert summary.verified_charges.stale is True
+
+    def test_a_paise_level_fee_component_is_rounded_to_whole_rupees(self) -> None:
+        claims_by_field = {
+            "fee_component:tuition": _field_claim("fee_component:tuition", 50000.10),
+            "fee_component:hostel": _field_claim("fee_component:hostel", 29999.90),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.verified_charges.total == 80000
+        assert isinstance(summary.verified_charges.total, int)
+
+    def test_unpublished_fee_component_claims_are_treated_as_no_components_at_all(self) -> None:
+        """A pathway with only draft fee_component:* claims (nothing
+        published yet) must fall back to the legacy verified_charges
+        claim exactly like a pathway with no fee_component:* fields at
+        all -- `_fee_components` decides based on which claim FIELDS
+        exist, not on their publish status, so this pins the fallback
+        boundary precisely: fields present but unpublished still count
+        as "itemised components exist", each independently not_available."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "fee_component:tuition": _field_claim(
+                "fee_component:tuition", 50000, status=ClaimStatus.draft
+            ),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        # The itemised (but unpublished) component wins field-selection,
+        # so its own missing-component rule applies: total is None, not
+        # a silent fall-through to the legacy claim's value.
+        assert summary.verified_charges.total is None
+        assert summary.net_to_arrange is None
+
+    def test_fee_component_display_names_are_humanised_from_the_field_suffix(self) -> None:
+        claims_by_field = {
+            "fee_component:exam_fee": _field_claim("fee_component:exam_fee", 2000),
+        }
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert summary.verified_charges.components[0].name == "Exam fee"
 
 
 class TestAssembleCostBreakdownEstimateHintProvenance:

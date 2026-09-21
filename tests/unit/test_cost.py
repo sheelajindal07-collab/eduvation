@@ -14,6 +14,7 @@ from app.rules.cost import (
     FeeComponent,
     compute_cost_summary,
     sum_verified_charges,
+    to_whole_rupees,
 )
 
 TODAY = date(2026, 9, 19)
@@ -154,6 +155,58 @@ class TestCostSummaryFourAmountsNeverMerge:
             potential_assistance=[],
         )
         assert summary.net_to_arrange == 0
+
+
+class TestEstimateVsUserAssumptionOverride:
+    """RULES-10: `CostSummary` keeps the computed estimate and a
+    per-request user override as two distinct lines rather than one
+    clobbering the other. `net_to_arrange`'s arithmetic still uses
+    whichever is authoritative -- the override when the caller supplies
+    one, else the estimate -- so this splits the DISPLAY of the two
+    figures without changing the total a student is shown."""
+
+    def test_no_override_uses_the_estimate_for_both_display_and_arithmetic(self) -> None:
+        summary = compute_cost_summary(
+            fee_components=[FeeComponent("Tuition", _verified(100000))],
+            estimated_additional_expenses=15000,
+            confirmed_assistance=[],
+            potential_assistance=[],
+        )
+        assert summary.estimated_additional_expenses == 15000
+        assert summary.additional_expenses_override is None
+        assert summary.effective_additional_expenses == 15000
+        assert summary.net_to_arrange == 115000
+
+    def test_override_is_visible_separately_and_still_wins_the_arithmetic(self) -> None:
+        summary = compute_cost_summary(
+            fee_components=[FeeComponent("Tuition", _verified(100000))],
+            estimated_additional_expenses=15000,
+            confirmed_assistance=[],
+            potential_assistance=[],
+            additional_expenses_override=30000,
+        )
+        # Both lines stay visible, distinctly -- neither clobbers the other:
+        assert summary.estimated_additional_expenses == 15000
+        assert summary.additional_expenses_override == 30000
+        # ...but the override is what net_to_arrange actually uses:
+        assert summary.effective_additional_expenses == 30000
+        assert summary.net_to_arrange == 130000
+
+    def test_a_zero_override_is_distinct_from_no_override_at_all(self) -> None:
+        """A student explicitly zeroing out the estimate ("I have no
+        extra expenses") must not look identical to never having
+        touched the field -- `None` and `0` are different facts."""
+        summary = compute_cost_summary(
+            fee_components=[FeeComponent("Tuition", _verified(100000))],
+            estimated_additional_expenses=15000,
+            confirmed_assistance=[],
+            potential_assistance=[],
+            additional_expenses_override=0,
+        )
+        assert summary.additional_expenses_override == 0
+        assert summary.additional_expenses_override is not None
+        assert summary.effective_additional_expenses == 0
+        assert summary.net_to_arrange == 100000
 
 
 class TestNegativeEstimatedAdditionalExpenses:
@@ -305,25 +358,52 @@ class TestDuplicateNamedItems:
         assert summary.net_to_arrange == 100000
 
 
-class TestFloatingPointPrecision:
-    """Repeated fractional sums (e.g. paise-level fee components) can
-    accumulate binary floating-point error. Pin down the actual precision
-    the engine delivers rather than assuming exactness."""
+class TestToWholeRupees:
+    """RULES-10: every amount this engine produces is a whole rupee
+    `int`, never a `float`. `to_whole_rupees` is the one conversion
+    point; pin down its rounding rule directly before trusting the
+    higher-level engine functions that depend on it."""
 
-    def test_many_fractional_components_sum_within_tolerance(self) -> None:
-        # 0.1 repeated 10 times is the textbook float-imprecision case:
-        # naive summation gives 0.9999999999999999, not exactly 1.0.
-        components = [FeeComponent(f"Fee {i}", _verified(0.1)) for i in range(10)]
+    def test_int_passes_through_unchanged(self) -> None:
+        assert to_whole_rupees(50000) == 50000
+
+    def test_float_below_half_rounds_down(self) -> None:
+        assert to_whole_rupees(50000.10) == 50000
+
+    def test_float_above_half_rounds_up(self) -> None:
+        assert to_whole_rupees(29999.90) == 30000
+
+    def test_exact_half_uses_round_half_to_even_like_the_display_layer(self) -> None:
+        """Same rule as `format(value, ".0f")` in app/i18n/formatting.py
+        -- an exact `.5` resolves to the nearest EVEN integer, not always
+        up, so a total computed here and the same figure rendered on
+        screen never disagree at a rounding boundary."""
+        assert to_whole_rupees(2.5) == 2
+        assert to_whole_rupees(3.5) == 4
+
+    def test_result_is_always_an_int(self) -> None:
+        assert isinstance(to_whole_rupees(29999.5), int)
+        assert isinstance(to_whole_rupees(50000), int)
+
+
+class TestIntegerRupeeRounding:
+    """RULES-10: cost arithmetic moved from float to whole-rupee `int`.
+    A component whose claim value still carries a paise-level fraction
+    is rounded to the nearest rupee as it is summed (`to_whole_rupees`),
+    so the total this engine returns is always exact whole rupees --
+    never a float carrying binary-imprecision artefacts."""
+
+    def test_paise_level_components_round_before_summing(self) -> None:
+        components = [
+            FeeComponent("Tuition", _verified(50000.10)),  # rounds to 50000
+            FeeComponent("Hostel", _verified(29999.90)),  # rounds to 30000
+            FeeComponent("Exam fee", _verified(1999.995)),  # rounds to 2000
+        ]
         result = sum_verified_charges(components)
-        assert result.total is not None
-        assert abs(result.total - 1.0) < 1e-9
-        # Document the actual float behaviour precisely: naive
-        # left-to-right accumulation of ten 0.1s lands one ULP short of
-        # 1.0, not exactly 1.0.
-        assert result.total == 0.9999999999999999
-        assert result.total != 1.0
+        assert result.total == 82000
+        assert isinstance(result.total, int)
 
-    def test_fractional_rupee_components_sum_and_net_within_tolerance(self) -> None:
+    def test_fractional_rupee_summary_nets_to_exact_whole_rupees(self) -> None:
         components = [
             FeeComponent("Tuition", _verified(50000.10)),
             FeeComponent("Hostel", _verified(29999.90)),
@@ -331,22 +411,45 @@ class TestFloatingPointPrecision:
         ]
         summary = compute_cost_summary(
             fee_components=components,
-            estimated_additional_expenses=1000.005,
-            confirmed_assistance=[AssistanceItem("Scholarship", 999.995)],
+            estimated_additional_expenses=to_whole_rupees(1000.005),
+            confirmed_assistance=[AssistanceItem("Scholarship", to_whole_rupees(999.995))],
             potential_assistance=[],
         )
-        assert summary.net_to_arrange is not None
-        expected = 50000.10 + 29999.90 + 1999.995 + 1000.005 - 999.995
-        assert abs(summary.net_to_arrange - expected) < 1e-6
+        # 50000 + 30000 + 2000 = 82000 verified; +1000 estimate -1000 confirmed
+        assert summary.net_to_arrange == 82000
 
-    def test_int_and_float_components_mixed_sum_correctly(self) -> None:
+    def test_int_and_float_components_mixed_sum_to_a_whole_rupee_int(self) -> None:
         """FeeComponent values may arrive as plain ints (e.g. round-rupee
-        claims) alongside floats — both must contribute correctly to the
-        float total."""
+        claims) alongside floats -- both must contribute correctly to
+        the whole-rupee total, and an already-whole int is never
+        perturbed by a float round-trip."""
         components = [
             FeeComponent("Tuition", _verified(50000)),  # int
-            FeeComponent("Hostel", _verified(29999.5)),  # float
+            FeeComponent("Hostel", _verified(29999.5)),  # float, rounds to 30000 (half-to-even)
         ]
         result = sum_verified_charges(components)
-        assert result.total == 79999.5
-        assert isinstance(result.total, float)
+        assert result.total == 80000
+        assert isinstance(result.total, int)
+
+    def test_large_sum_with_paise_fraction_rounds_correctly_at_scale(self) -> None:
+        """Large-magnitude (crore-scale) components with a paise-level
+        fraction must round exactly, the same as a small one -- no float
+        precision loss creeping in at scale."""
+        components = [
+            FeeComponent("Tuition", _verified(99_99_999.60)),  # rounds to 1,00,00,000
+            FeeComponent("Hostel", _verified(5_00_000.40)),  # rounds to 5,00,000
+        ]
+        result = sum_verified_charges(components)
+        assert result.total == 1_05_00_000
+        assert isinstance(result.total, int)
+
+    def test_many_sub_rupee_components_each_round_to_zero(self) -> None:
+        """Ten 0.1-rupee components each individually round to 0 rupees
+        before summing (RULES-10 rounds per component, not the final
+        float sum) -- the old float-accumulation-error case this test
+        used to pin down no longer applies once the arithmetic is
+        integer throughout."""
+        components = [FeeComponent(f"Fee {i}", _verified(0.1)) for i in range(10)]
+        result = sum_verified_charges(components)
+        assert result.total == 0
+        assert isinstance(result.total, int)
