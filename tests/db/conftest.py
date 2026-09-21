@@ -25,6 +25,7 @@ running application must never read it (docs/SECURITY.md).
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -82,9 +83,23 @@ def _load_test_env() -> list[str]:
             if not separator:
                 continue
             key = key.strip()
-            value = value.strip()
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-                value = value[1:-1]
+            value = value.lstrip()
+            if value[:1] in {'"', "'"}:
+                # Quoted: take exactly what is between the quotes, so a
+                # '#' inside a value (a URL fragment, a password) is
+                # kept. `supabase status -o env` always quotes.
+                closing = value.find(value[0], 1)
+                value = value[1:closing] if closing != -1 else value[1:]
+            else:
+                # Unquoted: drop a trailing inline comment, which
+                # .env.test.example uses in the same style
+                # .env.example does ("APP_ENV=development   # ..."), so
+                # that copying that file by hand gives 'development'
+                # and not the whole rest of the line. A '#' only starts
+                # a comment at the value's start or after whitespace,
+                # so FOO=a#b keeps 'a#b'; `NAME=   # only a comment`
+                # correctly yields an empty value.
+                value = re.split(r"(?:^|\s)#", value, maxsplit=1)[0].strip()
             os.environ[key] = value
         loaded.append(name)
     if loaded:
