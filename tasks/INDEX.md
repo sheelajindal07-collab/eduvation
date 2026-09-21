@@ -29,7 +29,7 @@ Lockboard (lead only): `RESET` line goes here before the shared local stack is r
 Memory refresh tasks are under "Cross-cutting" below.
 
 ## Step 2 Scaffold and tests (M0) - DONE, hardening open
-- [ ] SEC-7 - Pinned lockfile, dependency audit, secret scan in CI [W1]
+- [x] SEC-7 - Pinned lockfile, dependency audit, secret scan in CI [W1]
 - [ ] QA-5 - CI: local-stack DB job, e2e job, caching, no-skip, fresh rebuild, additive-only check [W2]
 
 ## Step 3 Agent team (M0) - PARTIAL (two reviewers exist, never calibrated)
@@ -37,22 +37,22 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] QA-9b - ux-qa-reviewer calibration and file edit [P2, new]
 
 ## Step 4 Data foundation (M1) - DONE (BCI-002..006, 0001-0003), hardening open
-- [ ] QA-1 - Docker + Supabase CLI; approve local test backend [W0, owner]
-- [ ] QA-2 - Local Supabase stack, target guard, strict no-skip, `make verify` [W1]
-- [ ] QA-3 - Run-tagged fixtures, sweeper, xdist (exclusive window on tests/db and tests/e2e) [W1]
-- [ ] DESIGN-5 - Three journeys plus the teacher demonstration journey [W1]
-- [ ] SCOPE-3 - Migration 0008: jurisdiction, cycle, currency columns, freeze-trigger update [W2]
+- [x] QA-1 - Docker + Supabase CLI; approve local test backend [W0, owner]
+- [x] QA-2 - Local Supabase stack, target guard, strict no-skip, `make verify` [W1]
+- [x] QA-3 - Run-tagged fixtures, sweeper, xdist (exclusive window on tests/db and tests/e2e) [W1]
+- [x] DESIGN-5 - Three journeys plus the teacher demonstration journey [W1]
+- [x] SCOPE-3 - Migration 0008: jurisdiction, cycle, currency columns, freeze-trigger update [W2]
 - [ ] QA-6 - Cross-user access matrix with a table guard [W2]
 - [ ] SEC-6 - Migration 0013: grants and exposure hardening, catalogue test [W4]
 
 ## Step 5 Private staging (M1) - PARTIAL (app on the VM, localhost only)
 - [ ] CONSENT-18 - Supabase dashboard sign-ups OFF [W0, owner, new]
 - [ ] DEPLOY-1 - Record Oracle VM facts and hosting decisions [W0, owner]
-- [ ] DEPLOY-18 - Flags and wiring stub (config flags, middleware and router registry, mk/*.mk) [W1, new]
-- [ ] DEPLOY-5 - Readiness endpoint and read-only smoke script [W1]
-- [ ] DATA-15 - `--through NNNN` for apply_migrations.py [W2, new]
-- [ ] DATA-12 - Migration 0007: DB-gated demo mode for synthetic data [W2]
-- [ ] DATA-8 - Synthetic seed script [W2]
+- [x] DEPLOY-18 - Flags and wiring stub (config flags, middleware and router registry, mk/*.mk) [W1, new]
+- [x] DEPLOY-5 - Readiness endpoint and read-only smoke script [W1]
+- [x] DATA-15 - `--through NNNN` for apply_migrations.py [W2, new]
+- [x] DATA-12 - Migration 0007: DB-gated demo mode for synthetic data [W2]
+- [x] DATA-8 - Synthetic seed script [W2]
 - [ ] DEPLOY-2 - Environment contract, hosting docs (its hosting facts for `docs/DECISIONS.md`/`STATUS.md` come back as proposed lines; the lead drafts D13/D16 in DOCS-5, not here) [W2]
 - [ ] DEPLOY-3 - Dockerfile, install from requirements.lock, make build, CI image build [W2]
 - [ ] DEPLOY-4 - Compose file and nginx site templates [W2]
@@ -60,9 +60,9 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] DEPLOY-7 - Bring up private staging on the VM, owner-only [W2-W3, owner, days 8-10]
 
 ## Step 6 UI system and Explore (M1) - PARTIAL (Explore exists; no shell, no keys)
-- [ ] DESIGN-2 - Copy rules, microcopy deck, key convention (docs/COPY.md) [W1]
-- [ ] DESIGN-1 - Component and state contract v1 in docs/UI.md [W1]
-- [ ] DESIGN-3 - Banned-phrase lint test [W1]
+- [x] DESIGN-2 - Copy rules, microcopy deck, key convention (docs/COPY.md) [W1]
+- [x] DESIGN-1 - Component and state contract v1 in docs/UI.md [W1]
+- [x] DESIGN-3 - Banned-phrase lint test [W1]
 - [ ] I18N-1 - i18n mechanism, shared Jinja env, frozen key contract [W2]
 - [ ] UI-1 - App shell, nav, stub partials, macros, sample-data ribbon (2 sessions; does **not** edit the journey templates — A11Y-2 adds the `_save.html` include lines) [W2]
 - [ ] DESIGN-18 - Content component macros; fills `_ask` and `_why` stubs [W2]
@@ -73,17 +73,17 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] I18N-4 - Language switch with a prod flag [P2]
 
 ## Step 7 Compare and calculators (M2) + usability round 1 - PARTIAL (screens exist; no exam modules)
-- [ ] RULES-1 - Rules contract v2 [W1, contract burst]
+- [x] RULES-1 - Rules contract v2 [W1, contract burst]
 - [ ] I18N-6 - Name the Hindi reviewer, fix the critical-key list [W0, owner, day 3]
 - [ ] DESIGN-6 - Owner picks the round-1 vehicle [W0, owner, day 4]
-- [ ] RULES-2 - Date-based age criteria (input fields only; before SEC-5) [W2]
-- [ ] RULES-3 - Any-of subject groups, thresholds, qualification criteria [W2]
-- [ ] RULES-4 - RuleSet, registry, cycle and jurisdiction guard, honest empty result [W2]
-- [ ] RULES-5 - Reference exam module: NEET-UG [W2]
-- [ ] RULES-6 - JEE Main and GUJCET modules (one implementer) [W2]
+- [x] RULES-2 - Date-based age criteria (input fields only; before SEC-5) [W2]
+- [x] RULES-3 - Any-of subject groups, thresholds, qualification criteria [W2]
+- [x] RULES-4 - RuleSet, registry, cycle and jurisdiction guard, honest empty result [W2]
+- [x] RULES-5 - Reference exam module: NEET-UG [W2]
+- [x] RULES-6 - JEE Main and GUJCET modules (one implementer) [W2]
 - [ ] RULES-10 - Itemised cost, Money type, public `safe_source_url` [W2]
-- [ ] SEC-5 - Move eligibility inputs out of URLs [W2]
-- [ ] SCOPE-5 - State/UT and country code list, domicile select [W2]
+- [x] SEC-5 - Move eligibility inputs out of URLs [W2]
+- [x] SCOPE-5 - State/UT and country code list, domicile select [W2]
 - [ ] UI-5 - Career card and pathway detail page [W3a]
 - [ ] RULES-8 - Wire RuleSets into the eligibility API [W3a]
 - [ ] RULES-9 - Timeline seeding from stage claims (session 1 W3a, session 2 W3b)
@@ -106,11 +106,11 @@ Memory refresh tasks are under "Cross-cutting" below.
 ## Step 8 Sign-in, plans, consent (M3) - PARTIAL and BLOCKED (no age or consent gate)
 - ~~CONSENT-1~~ - **SUPERSEDED, not built.** Another session merged a real age + guardian-email consent gate (`db/migrations/0004_guardian_consent.sql`, `0005_guardian_consent_request_rpc.sql`, confirmed live in production) while this plan was being written — it does the actual job this stopgap was a cheap stand-in for, more completely. No checkbox; not counted in the 260 total's checklist.
 - [ ] CONSENT-2 - Owner names safeguarding people and the non-author reviewer [W0, owner, day 3]
-- [ ] AUTH-1 - Session, guest and plan-store contract (owner explicit yes) [W1, contract burst]
-- [ ] CONSENT-3 - Consent and safeguarding design doc (placeholders; human read follows) [W1, contract burst]
+- [x] AUTH-1 - Session, guest and plan-store contract (owner explicit yes) [W1, contract burst]
+- [x] CONSENT-3 - Consent and safeguarding design doc (placeholders; human read follows) [W1, contract burst]
 - [ ] SEC-2 - CSRF contract for cookie sessions [W2]
-- [ ] AUTH-4 - Migration 0009: guest server session [W2]
-- [ ] AUTH-5 - Migration 0010: next actions, plan validation [W2]
+- [x] AUTH-4 - Migration 0009: guest server session [W2]
+- [x] AUTH-5 - Migration 0010: next actions, plan validation [W2]
 - [ ] AUTH-6 - My Plan and Save controls, guest mode, new files only, cross-user lines [W3a]
 - [ ] CONSENT-4 - Migration 0014: **card text is stale, rewrite before carding** — the merged guardian-consent gate (0004-0006) already created `account_status`; this task now EXTENDS that enum additively (`frozen`, `deletion_due`) and adds the admission axis (`admitted_at`, `is_admitted()`, invite redemption via `pilot_invites`/`redeem_invite`) — see `docs/CONSENT.md` sections 2-4 for the full, already-settled design. Its RLS must gate `saved_plans`/`student_profiles` writes on `is_admitted()` (`docs/CONSENT.md` §7) [W4, else float]
 - [ ] AUTH-2 - Student cookie session [float]
@@ -137,7 +137,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 
 ## Step 9 Publishing console (M4) - PARTIAL (console exists; self-approval bypass open)
 - [ ] PUB-13a - Owner names reviewers [W0, owner, day 3]
-- [ ] PUB-1 - Publishing contract incl. content hash (owner explicit yes) [W1, contract burst]
+- [x] PUB-1 - Publishing contract incl. content hash (owner explicit yes) [W1, contract burst]
 - [ ] PUB-5 - Split reviewer_pages.py into a package [W1]
 - [ ] PUB-2 - Migration 0011: identity enforcement, source versions, claim columns [W3]
 - [ ] PUB-3 - Migration 0012: audit events, atomic publish functions, plan flag [W3]
@@ -157,12 +157,12 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] CONTENT-1 - Owner names editor, checker, corrections owner [W0, owner, day 3]
 - [ ] TRIAL-7 - Open the editor-hours log [W0, owner, day 4]
 - [~] CONTENT-2 - Import contract: CSV templates, closed vocabulary, hash rule — **contract half done** (the content-hash field list and source_version rule are frozen in `docs/CONTRACTS.md` "Publishing evidence in Phase 1"); **artefacts still open**: `docs/CONTENT-IMPORT.md`, `content/templates/claims_import.csv`, `content/templates/sources_register.csv`, the closed `field` vocabulary — deliberately left outside the contract-burst agent's owned files, needs its own small session before CONTENT-3 [W1, contract burst]
-- [ ] CONTENT-3 - Offline draft extractor and inventory [W1]
+- [x] CONTENT-3 - Offline draft extractor and inventory [W1]
 - [ ] QA-12 - Sweep test residue out of the live project (before DATA-10a) [W2]
-- [ ] CONTENT-4 - Source register and allow-list checker (`make content-check`) [W2-W3, mixed]
-- [ ] CONTENT-5 - Curate the trial subset (deadline, backup, scholarship per family) [W2-W3, mixed]
-- [ ] CONTENT-15 - Editor and checker handbook [W2-W3, mixed]
-- [ ] CONTENT-6 - Importer session 1: validation, no DB writes [W2]
+- [x] CONTENT-4 - Source register and allow-list checker (`make content-check`) [W2-W3, mixed]
+- [x] CONTENT-5 - Curate the trial subset (deadline, backup, scholarship per family) [W2-W3, mixed]
+- [x] CONTENT-15 - Editor and checker handbook [W2-W3, mixed]
+- [x] CONTENT-6 - Importer session 1: validation, no DB writes [W2]
 - [ ] CONTENT-6b - Importer DB half after PUB-3: upsert, tier, source_version, hash [W4, new]
 - [ ] CONTENT-7 - Per-source review packets with hashes [W4]
 - [ ] CONTENT-9 - Content batch 0: one family end to end on staging, timed [W4-W5, people]
@@ -193,7 +193,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] AI-17 - Owner sign-off to enable AI (after AI-13) [P2, owner]
 
 ## Step 12 Hindi, accessibility, difficult states (M6) - OPEN
-- [ ] A11Y-1 - Difficult-states and cache-class contract [W1, contract burst]
+- [x] A11Y-1 - Difficult-states and cache-class contract [W1, contract burst]
 - [ ] I18N-2 - Locale-aware formatting helpers [W2]
 - [ ] A11Y-4 - Cache-Control middleware, shared-device hygiene [W2]
 - [ ] A11Y-5 - Guard test: no service worker or client persistence [W2]
@@ -221,7 +221,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 ## Step 13 Operational safety and release review - OPEN
 - [ ] OPS-1 - Owner: vendors, backup tier, VM region, n8n status [W0, owner]
 - [ ] OPS-2 - PII-free structured logging and request id [W2]
-- [ ] RULES-11 - "Critical rule cases" gate command [W2]
+- [x] RULES-11 - "Critical rule cases" gate command [W2]
 - [ ] SEC-3 - Proxy rate limiting [P2]
 - [ ] TRIAL-5 - usage_events table and metric views [P2]
 - [ ] TRIAL-16 - Usage event write hook [P2]
@@ -253,8 +253,8 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] DEPLOY-13 - Production deploy, public hostname, pause drill [P2, owner]
 
 ## Step 15 Ten-person trial - OPEN
-- [ ] TRIAL-2 - Research pack: scripts, scoring sheet, adult consent sheet [W1]
-- [ ] TRIAL-10 - Go/no-go template and batch expansion checklist [W2 filler]
+- [x] TRIAL-2 - Research pack: scripts, scoring sheet, adult consent sheet [W1]
+- [x] TRIAL-10 - Go/no-go template and batch expansion checklist [W2 filler]
 - [ ] TRIAL-3 - Decision-quality instrument, English draft [W4]; Hindi half [P2]
 - [ ] TRIAL-4 - Owner approves Step 15 gates and pause limits [end of P2, owner]
 - [ ] TRIAL-11 - Ten-person trial, round 2, instrument pre-test [P3, people]
@@ -287,13 +287,13 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [~] DOCS-3 - Task-card template, this index finalised, ledgers, card stubs [W0] — **3a done** (this index finalised, ledger, `tasks/TEMPLATE.md`, `docs/CONTRACTS.md` skeleton); **3b open** (per-task card stubs — mechanical, does not gate fan-out, generated from the inventories on demand)
 - [ ] DOCS-2 - Slim STATUS.md [W0-W1]
 - [ ] DOCS-5 - KNOWN_ISSUES.md, decisions digest, D16 draft [W0-W1]
-- [ ] DOCS-4 - Parallel-work protocol (docs/PARALLEL.md) [W1]
-- [ ] DOCS-13 - implementer.md, migration-owner.md, reviewer path fix, .claude/settings.json [W1]
-- [ ] DOCS-6 - docs/COSTS.md, per-batch metrics line, tripwire [W1, same session as DOCS-4]
-- [ ] SCOPE-2 - Jurisdiction, cycle, currency, coverage contract [W1, contract burst]
-- [ ] UI-2 - Split pages.py into per-screen modules [W1]
-- [ ] SEC-1 - Security middleware, trusted hosts, env guard [W1]
-- [ ] CONTENT-18 - Scrub researcher email from drafts [W1]
+- [x] DOCS-4 - Parallel-work protocol (docs/PARALLEL.md) [W1]
+- [x] DOCS-13 - implementer.md, migration-owner.md, reviewer path fix, .claude/settings.json [W1]
+- [x] DOCS-6 - docs/COSTS.md, per-batch metrics line, tripwire [W1, same session as DOCS-4]
+- [x] SCOPE-2 - Jurisdiction, cycle, currency, coverage contract [W1, contract burst]
+- [x] UI-2 - Split pages.py into per-screen modules [W1]
+- [x] SEC-1 - Security middleware, trusted hosts, env guard [W1]
+- [x] CONTENT-18 - Scrub researcher email from drafts [W1]
 - [ ] QA-4 - Parallel-agent testing contract (docs/TESTING.md) [W2]
 - [ ] DOCS-12 - Refresh CLAUDE.md links and verified commands [W2]
 - [ ] DATA-10a - Owner: QA-12 sweep, apply through 0008, synthetic seed [W2, owner]

@@ -33,57 +33,63 @@ sign-off (`docs/SECURITY.md`). 193 unit tests passing.
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
 verified healthy, talking to the real database).
 
-## Development plan — Wave 1 fully executed, Wave 2 underway (2026-09-21)
-`docs/DEVELOPMENT-PLAN.md` (produced by an owner-requested 64-agent
-planning run, then revised across seven passes as real migrations from a
-concurrent session moved its ledger three times) is now being executed
-for real, not just planned. `tasks/INDEX.md` is finalised (DOCS-3a);
-`docs/CONTRACTS.md` is fully frozen (all 7 Wave 1 contract-burst tasks +
-A11Y-1); `docs/PARALLEL.md`/`docs/COSTS.md`/`.claude/agents/implementer.md`
-+`migration-owner.md` exist (DOCS-4/13/6).
-**Merged, in order:** contract burst (7 tasks) → design docs (4 tasks,
-found and fixed a real touch-target bug) → docs-and-scripts (3 tasks,
-scrubbed the owner's personal email from 116 content-draft files) →
-content-prep (5 tasks) → Rules lane (`RULES-2..6,11`: real eligibility
-engines for NEET-UG/JEE Main/GUJCET) → mechanical lane
-(`DEPLOY-18,SEC-7,UI-2,SEC-1,DEPLOY-5`: the shared middleware/flag
-registry, a hashed lockfile, `pages.py` split into modules, security
-headers) → **QA-2** (local Supabase test stack — the first real local-DB
-test run in this project's history).
-**Two real bugs found and fixed by the lead across these merges** (not
-just accepted from agent reports): SEC-7's new CI jobs failed on their
-first run for two genuine reasons — a known CVE in the pinned `pytest`
-version, and fixing that surfaced a resolver picking a `pytest-asyncio`
-version that **crashes outright** under the new `pytest` (verified by
-installing that exact combination, not just reading a version-conflict
-warning); both fixed, re-verified on real CI, green. Separately, merging
-QA-2's `supabase/` directory broke `ruff` for everyone (isort
-misclassified the real `supabase` package as first-party) — fixed with
-`known-third-party` in `pyproject.toml`.
-**Real numbers, this session:** 442 unit tests passing (up from 193).
-Against the new local stack: `tests/db` 148 passed/0 failed/0 skipped,
-`tests/e2e` 6 passed; a 3-concurrent-lane measurement (228s wall clock,
-zero flakes) supports the plan's default DB-lane cap of 3 with evidence,
-not just an assumption. CI green throughout.
-**Migration ledger, current real state:** `0004`–`0006` are the merged
-guardian-consent gate (another session's real work, now confirmed
-live-verified in production per that milestone above). This plan's own
-next migration (`DATA-12`) is `0007` — **still marked provisional in the
-plan; re-verify `ls db/migrations/` before trusting it**, since it has
-already moved three times from concurrent migration work.
-**CONSENT-1 (the plan's sign-up kill-switch stopgap) is superseded and
-its ~25 stale references across the plan are fixed** — the real merged
-gate does the job.
-**Still open:** SEC-15 is done (owner confirmed, keys moved out of the
-repo); `.claude/settings.json` now has both deny and allow rules. The
-locked worktree `wf_9b7797a4-e76-1` ("Held, not merged" student sign-up
-UI) still needs its own bounded merge task — not yet carded. Two small
-follow-ups flagged mid-session, not yet started: moving `explore.html`'s
-inline `<script>` to tighten the CSP, and widening a Pydantic field type
-in `app/api/compare.py` (already fixed) plus its `Citation` counterpart
-(already fixed).
-**Next:** Wave 2's DB-touching lanes (migration, eligibility) can now
-start for real — the local stack exists.
+## Development plan — Wave 1 done, Wave 2's migration/eligibility lanes done (2026-09-21)
+`docs/DEVELOPMENT-PLAN.md` is being executed for real. `tasks/INDEX.md`
+finalised (DOCS-3a); `docs/CONTRACTS.md` fully frozen (all 7 Wave 1
+contract-burst tasks + A11Y-1); `docs/PARALLEL.md`/`docs/COSTS.md`/
+`.claude/agents/implementer.md`+`migration-owner.md` exist (DOCS-4/13/6).
+**Merged, in order:** contract burst (7) → design docs (4) →
+docs-and-scripts (3, scrubbed the owner's personal email from 116
+content-draft files) → content-prep (5) → Rules lane (`RULES-2..6,11`) →
+mechanical lane (`DEPLOY-18,SEC-7,UI-2,SEC-1,DEPLOY-5`: the shared
+middleware/flag registry, a hashed lockfile) → **QA-2/QA-3** (local
+Supabase test stack, RUN_ID-tagged concurrent-safe tests — the first
+real local-DB testing in this project's history) → eligibility lane
+(`SEC-5,SCOPE-5`: no personal data in a URL anywhere now, real state/UT
++ country jurisdiction codes) → **migration lane**
+(`DATA-15,DATA-12,SCOPE-3,DATA-8,AUTH-4,AUTH-5`: migrations `0007`-`0010`
+— demo mode, jurisdiction/cycle/currency columns with the freeze trigger
+correctly extended, hashed-token guest sessions, plan-actions).
+**Real bugs found and fixed, not just accepted from agent reports** —
+by the migration lane's own author (an `ON CONFLICT` firing before an
+`INSERT` trigger; a 400 that was an existence oracle, now 404), by an
+independent data-security-reviewer pass run before merging (live against
+the real stack, not on trust): `_schema_migrations` had no RLS/grant
+protection — anon could read *and delete* the owner's own
+applied-migrations ledger, confirmed live via curl, now fixed; `PATCH
+/plans/{id}` cleared a student's current plan before confirming the
+target update would succeed, so a 404 silently left them with zero
+current plans, now fixed and proven by a failing-then-passing regression
+test; a case-sensitivity gap in the seed script's production-ref check.
+Earlier: SEC-7's CI jobs found a real `pytest` CVE, then a
+`pytest-asyncio` version that crashed outright under the fix (installed
+and confirmed, not just read a warning); merging `supabase/` broke `ruff`
+for everyone (fixed with `known-third-party`).
+**Tracked, correctly disclosed, not yet fixed:**
+`claims.approved_draft_version` was never added to the maker-checker
+freeze trigger (a pre-existing gap, not introduced this session) —
+confirmed real, confirmed **dormant** (nothing writes that column yet),
+becomes a real bypass the moment a publishing-console feature starts
+relying on it.
+**Real numbers, this session: 605 unit tests (up from 193), 303 db tests,
+zero skipped** (migrations `0007`-`0010` now applied to the shared local
+stack too, not only the migration lane's own separate one). CI green
+throughout. A 3-concurrent-lane measurement (228s wall clock, zero
+flakes) supports the plan's default DB-lane cap of 3 with evidence.
+**Migration ledger, now settled:** `0001`-`0006` are the merged
+guardian-consent gate (another session, confirmed live in production);
+`0007`-`0010` are this plan's own (demo mode, jurisdiction/currency,
+guest sessions, plan actions) — no longer provisional, all four real
+numbers used and applied. **CONSENT-1 superseded**, ~25 stale plan
+references fixed.
+**Still open:** the locked worktree `wf_9b7797a4-e76-1` ("Held, not
+merged" student sign-up UI) still needs its own bounded merge task — not
+yet carded. Small flagged follow-ups, not yet started: moving
+`explore.html`'s inline `<script>` to tighten the CSP; `mypy app` is a
+no-op in this environment (a pre-existing numpy-stub issue, confirmed
+reproducible on a clean checkout, unrelated to any of this session's work).
+**Next:** the Shell lane (`I18N-1`→`DESIGN-18`) and the Hardening lane's
+`OPS-2` are next up — both now unblocked.
 
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.

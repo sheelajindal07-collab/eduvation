@@ -200,7 +200,21 @@ def update_plan(
     # adding a student_id filter here would mean trusting a value this
     # layer would have to fetch rather than the policy that is already
     # authoritative.
+    #
+    # Security review, migration-lane merge (2026-09-21): confirmed live
+    # that clearing before checking the target left a caller with ZERO
+    # current plans on a 404 (a nonexistent id, a plan raced away in
+    # another tab, or one deleted elsewhere) -- two separate requests,
+    # not one transaction, so a failure of the second couldn't undo the
+    # first. Fixed by checking existence (RLS-scoped, same "not found or
+    # not yours" ambiguity as the final 404 below) BEFORE touching
+    # anything, so a 404 now genuinely changes nothing.
     if updates.get("is_current") is True:
+        exists = (
+            session.client.table("saved_plans").select("id").eq("id", plan_id).execute()
+        )
+        if not cast("list[dict[str, Any]]", exists.data):
+            raise HTTPException(status_code=404, detail="Plan not found.")
         session.client.table("saved_plans").update({"is_current": False}).eq(
             "is_current", True
         ).execute()

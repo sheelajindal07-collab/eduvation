@@ -242,7 +242,18 @@ def main(argv: list[str] | None = None) -> int:
                 create table if not exists _schema_migrations (
                     filename text primary key,
                     applied_at timestamptz not null default now()
-                )
+                );
+                -- Security review, migration-lane merge (2026-09-21):
+                -- this table had no RLS and no grant revocation, so
+                -- PostgREST's anon key could read AND write/delete the
+                -- owner's own "already applied" ledger (confirmed live,
+                -- 401 vs 200 before this fix) -- the same
+                -- grants-before-RLS class of bug 0007/0009 close for
+                -- app_settings/guest_sessions/guest_plans. Idempotent:
+                -- safe to run on every invocation, including against a
+                -- database where this already ran.
+                alter table _schema_migrations enable row level security;
+                revoke all on _schema_migrations from anon, authenticated;
                 """
             )
             conn.commit()

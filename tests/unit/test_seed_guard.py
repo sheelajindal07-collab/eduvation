@@ -148,6 +148,21 @@ class TestTargetGuard:
         assert problem is not None
         assert "prodref123456" in problem
 
+    def test_a_mixed_case_production_ref_still_matches(self) -> None:
+        """Security review, migration-lane merge (2026-09-21): `ref` (from
+        `project_ref(url)`) is always lowercased, but `production_ref` was
+        compared without lowercasing its own side — an operator setting
+        BCION_PRODUCTION_PROJECT_REF with any uppercase character silently
+        defeated this specific defense-in-depth check."""
+        problem = guard_problem(
+            app_env="development",
+            url=PROD,
+            production_ref="ProdRef123456",
+            allowlisted={PROD},
+        )
+        assert problem is not None
+        assert "prodref123456" in problem
+
 
 # --------------------------------------------------------------------
 # Argument parsing

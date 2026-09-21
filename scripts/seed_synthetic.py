@@ -307,7 +307,7 @@ def guard_problem(
     if ref is None:
         return None  # loopback: always fine
 
-    if production_ref and ref == production_ref.strip():
+    if production_ref and ref == production_ref.strip().lower():
         return (
             f"REFUSING TO SEED: SUPABASE_URL points at project ref {ref!r}, "
             "which matches BCION_PRODUCTION_PROJECT_REF. That is the "

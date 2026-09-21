@@ -5,6 +5,72 @@ never deleted.
 
 ---
 
+## 2026-09-21 — Demo mode is a database read policy, never a publish path
+**Event:** DATA-12 (migration `0007_demo_mode.sql`, Wave 2 migration lane)
+added a way to show synthetic sample content to anonymous staging
+visitors before real verified content exists.
+**Decision:** an owner-writable `app_settings.demo_mode` flag, checked by
+a `demo_mode()` stable function. A new `claims` SELECT policy makes an
+`in_review` claim visible to `anon` only when it is *both* `in_review`
+**and** synthetic-sourced — never a real (non-synthetic) draft, under any
+combination. `forbid_publishing_synthetic_claims()`
+(`db/migrations/0001_init.sql`) is untouched: no synthetic claim can be
+published by any caller, including `service_role`, demo mode or not.
+Outside development, the app refuses to start with `DEMO_MODE=true` and
+`APP_ENV=production` set together.
+**Reason:** the alternative (a signed-in reviewer preview) needs a real
+person and a real session for every staging demo; this needs only a flag,
+and the database — not the application layer — is what a curious or
+malicious anonymous caller cannot talk their way around.
+**Verified, independently re-checked (data-security-reviewer, live
+against the branch's own local stack) before merging:** RLS-enabled with
+zero policies plus an explicit `revoke all` on `app_settings`; every
+combination of `demo_mode`/`status`/`source_type` tested; the synthetic-
+publish trigger re-confirmed intact.
+**What this does NOT change:** the maker-checker workflow, the freeze
+trigger, or any other publication rule. A published, non-synthetic
+record is exactly as protected with demo mode on as with it off.
+
+## 2026-09-21 — Migration lane (DATA-15, DATA-12, SCOPE-3, DATA-8, AUTH-4,
+## AUTH-5) merged — real numbers 0007-0010, independently security-reviewed
+**Event:** Wave 2's migration lane landed all six tasks in one session,
+on its own local Supabase stack, then an independent data-security-
+reviewer pass (live against that same stack, not taken on trust) before
+merging to `main`.
+**What's real now:** `claims`/`pathways`/`sources` carry jurisdiction/
+academic-cycle/currency columns, with the maker-checker freeze trigger
+extended to cover them (`0008`) — closing the exact bypass named in
+SCOPE-3's own risk line, reproduced live before the fix and closed after.
+Guest server sessions (`0009`) with SHA-256-hashed tokens and
+`SECURITY DEFINER` RPCs are the only way into `guest_sessions`/
+`guest_plans`. A student's current-decision flag and up-to-three derived
+next actions (`0010`), reading only published, non-synthetic claims.
+**Two real bugs found by review and fixed in the same merge, not left
+open:** (1) `_schema_migrations` — the table `scripts/apply_migrations.py`
+itself creates to track what's applied — had no RLS or grant revocation;
+confirmed live that the anon key could read and write/delete the owner's
+own applied-migrations ledger. Fixed with the same
+`enable row level security` + `revoke all from anon, authenticated`
+pattern this lane established for `app_settings`/`guest_sessions`.
+(2) `PATCH /plans/{id}` with `is_current: true` cleared the caller's
+existing current plan *before* confirming the target plan update would
+succeed, as two separate requests — a 404 on the target (bad id, a plan
+deleted or raced away elsewhere) silently left the student with zero
+current plans. Fixed to check the target exists first; both fixes proven
+by a failing-then-passing regression test (revert-to-prove), not just
+asserted.
+**Tracked, not fixed, correctly disclosed rather than silently patched:**
+`claims.approved_draft_version` was never added to the maker-checker
+freeze trigger's frozen-column list (`0001_init.sql`'s own note said "M4"
+would add this; `0003` and this lane's `0008` both did not). Confirmed
+real by independent review, and confirmed **dormant** — nothing in the
+codebase writes that column today, so there is nothing to bypass yet. It
+becomes a real gap the moment a publishing-console feature starts writing
+and relying on it; whoever builds that closes this in the same migration.
+**Verified, this session:** 605 unit tests, 303 db tests (0 skipped) —
+migrations 0007-0010 now applied to the shared local test stack too, not
+only the migration lane's own separate one.
+
 ## 2026-09-21 — Component and state contract v1 frozen in docs/UI.md
 **Event:** DESIGN-1 (Wave 1 design-docs lane) added "Component and state
 contract v1" to `docs/UI.md`: a component inventory checked directly

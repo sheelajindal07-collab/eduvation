@@ -170,6 +170,32 @@ class TestOneCurrentPlanPerStudent:
         current = client.table("saved_plans").select("id").eq("is_current", True).execute()
         assert [row["id"] for row in current.data] == [second]
 
+    def test_a_failed_switch_leaves_the_old_current_plan_alone(
+        self, student_a: tuple[str, Client], pathways: list[str], admin_client: Client
+    ) -> None:
+        """Security review, migration-lane merge (2026-09-21): the route
+        used to clear the caller's current plan BEFORE checking the
+        target update would succeed -- two separate requests, not one
+        transaction -- so a 404 on the target (a bad id, a plan raced
+        away in another tab, one already deleted) left the student with
+        ZERO current plans, silently. A 404 must change nothing."""
+        student_id, client = student_a
+        token = _access_token(admin_client, client, student_id)
+        first = _save(client, student_id, pathways[0])
+        assert (
+            http.patch(f"/plans/{first}", json={"is_current": True}, headers=_auth(token))
+        ).status_code == 200
+
+        response = http.patch(
+            "/plans/00000000-0000-0000-0000-000000000000",
+            json={"is_current": True},
+            headers=_auth(token),
+        )
+        assert response.status_code == 404
+
+        current = client.table("saved_plans").select("id").eq("is_current", True).execute()
+        assert [row["id"] for row in current.data] == [first]
+
 
 def _access_token(admin_client: Client, user_client: Client, user_id: str) -> str:
     """The signed-in student's own access token, for the HTTP layer.
