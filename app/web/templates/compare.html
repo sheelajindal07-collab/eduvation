@@ -100,7 +100,10 @@
                   <p class="text-xs text-neutral mb-1">What you'd need to arrange</p>
                   {% if c.cost_summary.net_to_arrange is not none %}
                     <p class="text-lg font-semibold text-charcoal">
-                      &#8377;{{ "{:,.0f}".format(c.cost_summary.net_to_arrange) }}
+                      {# RULES-10: net_to_arrange is now a Money value;
+                         unwrapped to a bare rupee figure here until
+                         SCOPE-4 does the real currency-aware display. #}
+                      &#8377;{{ "{:,.0f}".format(c.cost_summary.net_to_arrange.amount) }}
                     </p>
                     <p class="text-xs text-neutral mt-1">
                       Verified charges + estimated extras, minus confirmed assistance only.

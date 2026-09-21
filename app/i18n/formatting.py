@@ -115,9 +115,12 @@ def group_indian(digits: str) -> str:
     return ",".join([*pairs, tail])
 
 
-def _integer_digits(value: Number) -> tuple[str, str]:
-    """`(sign, grouped digits)` using the same rounding as the
-    `"{:,.0f}"` formatting this replaces — see the module docstring."""
+def _rounded_digits(value: Number) -> tuple[str, str]:
+    """`(sign, ungrouped digits)` using the same rounding as the
+    `"{:,.0f}"` formatting this replaces — see the module docstring.
+    Shared by `_integer_digits` (Indian grouping, below) and
+    `format_money`'s non-INR fallback (Western grouping), so both stay
+    on the identical rounding rule."""
     try:
         rendered = format(value, ".0f")
     except (ValueError, TypeError, InvalidOperation):  # pragma: no cover - guarded above
@@ -128,6 +131,12 @@ def _integer_digits(value: Number) -> tuple[str, str]:
         # format(-0.4, ".0f") is "-0": a rounded-away negative, shown as
         # plain "0" rather than a "-0" nobody means.
         sign = ""
+    return sign, digits
+
+
+def _integer_digits(value: Number) -> tuple[str, str]:
+    """`(sign, Indian-grouped digits)`."""
+    sign, digits = _rounded_digits(value)
     return sign, group_indian(digits)
 
 
@@ -139,6 +148,43 @@ def format_number(value: Number | None, locale: str = DEFAULT_LOCALE) -> str:
     return f"{sign}{digits}"
 
 
+def format_money(
+    amount: Number | None, currency: str = "INR", locale: str = DEFAULT_LOCALE
+) -> str:
+    """The one formatter for a money amount (RULES-10 / docs/CONTRACTS.md
+    "Money and currency": "One formatter, format_money(amount, currency)
+    — no currency symbol literal may exist outside it").
+
+    `INR` (the default — Lite is an India-first pilot) keeps the exact
+    pre-existing rendering: Indian digit grouping, the `₹` sign, no
+    decimals — the same string `format_inr` has always produced, now
+    delegated from it rather than duplicated (see below), so no
+    student-visible output changes for the common case.
+
+    Any other ISO 4217 code has no Indian-grouping convention and no
+    symbol table in this pilot (a `₹`-style glyph per currency is not
+    something Lite maintains), so it falls back to the plain currency
+    CODE plus Western thousands grouping — e.g. `"USD 1,000"` — which is
+    unambiguous even though it is not how a US invoice would typically
+    render the same amount. This fallback is a deliberate, documented
+    judgement call (RULES-10), not a designed international format;
+    SCOPE-4 owns whatever the Compare screen actually needs once a
+    non-INR pathway is real content, not a test fixture.
+
+    `None` or an unreal value (`NaN`, `inf`, a `bool`) renders "Not
+    available", the same convention every formatter in this module
+    follows — never a blank, never a zero standing in for "unknown".
+    """
+    if amount is None or not _is_real_number(amount):
+        return translate(NOT_AVAILABLE_KEY, locale)
+    if currency == "INR":
+        sign, digits = _integer_digits(amount)
+        return f"{sign}{RUPEE_SIGN}{digits}"
+    sign, digits = _rounded_digits(amount)
+    grouped = f"{int(digits):,}" if digits else digits
+    return f"{sign}{currency} {grouped}"
+
+
 def format_inr(value: Number | None, locale: str = DEFAULT_LOCALE) -> str:
     """Rupees: `₹1,00,000`. No decimals — every money figure in this
     pilot is a whole-rupee fee, charge or estimate, and a trailing `.0`
@@ -147,11 +193,14 @@ def format_inr(value: Number | None, locale: str = DEFAULT_LOCALE) -> str:
     A negative total (confirmed assistance exceeding the charges) prints
     as `-₹5,000`, with the minus leading the whole amount rather than
     sitting between the sign and the digits.
+
+    A thin wrapper over `format_money`'s `INR` branch (RULES-10 /
+    docs/CONTRACTS.md: "One formatter") — kept as its own name because
+    every existing caller (the `inr` Jinja filter, this module's own
+    tests) already spells it this way, and INR is the only currency
+    Lite has ever actually displayed.
     """
-    if value is None or not _is_real_number(value):
-        return translate(NOT_AVAILABLE_KEY, locale)
-    sign, digits = _integer_digits(value)
-    return f"{sign}{RUPEE_SIGN}{digits}"
+    return format_money(value, "INR", locale)
 
 
 def _coerce_date(value: date | datetime | str | None) -> date | None:

@@ -354,7 +354,17 @@ def compare_pathways(
                         c.cost_breakdown.potential_assistance_not_yet_awarded,
                         is_sample="potential_assistance_not_yet_awarded" in c.sample_fields,
                     ),
-                    net_to_arrange=c.cost_summary.net_to_arrange,
+                    # RULES-10 made CostSummary.net_to_arrange a Money
+                    # value (currency-mismatch safety); this response
+                    # shape is still a bare rupee figure until SCOPE-4
+                    # does the real currency-aware display work, so only
+                    # the amount is unwrapped here -- a currency-mismatch
+                    # None (mixed_currencies) still comes through as None.
+                    net_to_arrange=(
+                        c.cost_summary.net_to_arrange.amount
+                        if c.cost_summary.net_to_arrange is not None
+                        else None
+                    ),
                 ),
             )
             for c in comparisons
