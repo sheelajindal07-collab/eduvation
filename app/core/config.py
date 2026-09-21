@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = Field(default=None)
     ai_monthly_spend_cap_inr: int = Field(default=5000)
     ai_request_timeout_seconds: int = Field(default=15)
+    # Pilot-scale spend guard (app/ai/budget.py) — a request count, not a
+    # money figure (ai_monthly_spend_cap_inr above is the separate
+    # rupee-denominated ceiling from docs/SECURITY.md's spend controls).
+    # In-memory, per-process, resets at UTC-date rollover; deliberately
+    # not a distributed limiter (CLAUDE.md: 10-100 users, don't
+    # over-engineer this).
+    ai_daily_request_budget: int = Field(default=200)
 
     whatsapp_cloud_api_token: str | None = Field(default=None)
     whatsapp_phone_number_id: str | None = Field(default=None)
