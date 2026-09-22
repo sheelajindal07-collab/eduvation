@@ -102,6 +102,7 @@ from app.core.logging import RequestIdLoggingMiddleware, configure_observability
 from app.web.ask_pages import router as ask_pages_router
 from app.web.cache_policy import CachePolicyMiddleware
 from app.web.consent_pages import router as consent_pages_router
+from app.web.errors import register_error_handlers
 from app.web.pages import router as pages_router
 from app.web.reviewer import router as reviewer_pages_router
 
@@ -444,6 +445,7 @@ def create_app(
     )
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
     configure_observability(app)  # OPS-2: JSON formatter + redaction filter, root logger
+    register_error_handlers(app)  # A11Y-3: global HTML 404/403/500 pages
 
     # Reversed: Starlette's `add_middleware` prepends to its own internal
     # list, so the last one added ends up outermost (first to see a

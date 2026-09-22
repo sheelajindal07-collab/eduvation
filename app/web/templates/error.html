@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{# A11Y-3 — the one shared template for 404 / 403 / 500 (app/web/errors.py).
+   `heading`/`message`/`alert_variant` are computed server-side (never
+   per-request detail for the 403 case -- see app/web/errors.py's own
+   docstring), rendered here through _states.html's one `alert()`
+   primitive, same "Back to explore" convention compare.html and
+   requirements.html already use for their own friendly degraded states. #}
+{% from "_states.html" import alert %}
+{% block title %}{{ heading }} &mdash; BCION Lite{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-4">{{ heading }}</h1>
+  {% call alert(message, variant=alert_variant, class_names="mb-6") %}
+    <a href="/explore" class="underline">Back to explore</a>.
+  {% endcall %}
+{% endblock %}
