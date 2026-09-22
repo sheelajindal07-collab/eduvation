@@ -22,10 +22,20 @@ class AIProvider(Protocol):
     """A hosted text-generation provider, behind the adapter.
 
     Implementations (see `app/ai/mock_provider.py` for tests,
-    `app/ai/gemini_provider.py` for the real Gemini-backed one) should
+    `app/ai/gemini_provider.py` for the real Gemini-backed one) must
     raise on a transport/API failure rather than returning an empty or
     placeholder string, so a failure is visible to the caller instead of
     silently degrading into something that looks like a grounded answer.
+
+    Confirmed compatible as-is with AI-3's hardening (no change needed to
+    this Protocol's shape): a failure is one of `app/ai/schemas.py`'s four
+    typed provider errors — `AIProviderTimeout`, `AIProviderQuota`,
+    `AIProviderMalformed`, `AIProviderError` (the base class, for anything
+    else) — never a provider-SDK-specific exception type. `Protocol`
+    carries no `raises` clause in Python's type system, so this is a
+    behavioural contract every implementation must uphold, checked by
+    `tests/unit/test_ai_provider.py` for `GeminiProvider` and satisfiable
+    by construction for `MockAIProvider` via its `raise_on_call` hook.
     """
 
     def generate(self, prompt: str) -> str:
