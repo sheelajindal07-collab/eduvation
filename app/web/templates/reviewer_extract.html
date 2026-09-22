@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{# UI-1: no student navigation on a reviewer page -- see
+   reviewer_queue.html's own note. #}
+{% block student_nav %}{% endblock %}
+{% block utility_menu %}{% endblock %}
+{% block title %}AI-assisted extraction &mdash; BCION Lite{% endblock %}
+{% block content %}
+  <div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-charcoal mb-1">AI-assisted claim extraction</h1>
+      <p class="text-neutral text-sm max-w-2xl">
+        Paste the plain text of an official document. Nothing here is ever published
+        automatically -- every candidate fact below still has to be submitted as a normal
+        draft claim and approved by a second reviewer, exactly like one typed in by hand.
+        The pasted text is never stored or logged; it exists only for this request.
+      </p>
+    </div>
+    <a href="/reviewer/queue" class="btn-secondary">Back to queue</a>
+  </div>
+
+  {% if error %}
+    <div class="alert alert--error mb-6" role="alert">
+      <span aria-hidden="true">&#9888;</span>
+      <span>{{ error }}</span>
+    </div>
+  {% elif not ai_available %}
+    <div class="alert alert--neutral mb-6" role="alert">
+      <span aria-hidden="true">&#8505;</span>
+      <span>AI-assisted extraction is turned off in this environment. You can still add
+        claims manually through the review queue.</span>
+    </div>
+  {% endif %}
+
+  {# Zero-JS: a plain HTML form POST is the whole mechanism, same as
+     every other reviewer-console form. #}
+  <form action="/reviewer/extract" method="post" class="card space-y-4 mb-8">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div>
+        <label for="entity_type" class="block text-sm font-medium text-charcoal mb-1">Entity type</label>
+        <select id="entity_type" name="entity_type" required class="input">
+          <option value="" {% if not selected_entity_type %}selected{% endif %}>-- Select --</option>
+          {% for et in entity_types %}
+            <option value="{{ et }}" {% if selected_entity_type == et %}selected{% endif %}>{{ et }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="entity_id" class="block text-sm font-medium text-charcoal mb-1">Entity id</label>
+        <input
+          type="text" id="entity_id" name="entity_id" required class="input"
+          value="{{ selected_entity_id }}" placeholder="pathway or career id"
+        />
+      </div>
+      <div>
+        <label for="source_id" class="block text-sm font-medium text-charcoal mb-1">Source</label>
+        <select id="source_id" name="source_id" required class="input">
+          <option value="" {% if not selected_source_id %}selected{% endif %}>-- Select an existing source --</option>
+          {% for s in sources %}
+            <option value="{{ s.id }}" {% if selected_source_id == s.id %}selected{% endif %}>
+              {{ s.authority_name }} ({{ s.source_type.value }})
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label for="pasted_text" class="block text-sm font-medium text-charcoal mb-1">
+        Pasted document text
+      </label>
+      <textarea
+        id="pasted_text" name="pasted_text" required rows="10" class="input"
+        placeholder="Paste the plain text of an official document here."
+      >{{ pasted_text }}</textarea>
+      <p class="text-xs text-neutral mt-1">
+        Recognised fields only:
+        {{ target_fields | join(', ') }}, fee_component:&lt;name&gt;, stage:&lt;order&gt;:&lt;name|duration_weeks|kind|overlap_weeks_with_previous&gt;.
+      </p>
+    </div>
+
+    <button type="submit" class="btn-primary" {% if not ai_available %}disabled{% endif %}>
+      Extract candidate facts
+    </button>
+  </form>
+
+  {% if result_status is not none %}
+    <section aria-labelledby="extraction-results-heading">
+      <h2 id="extraction-results-heading" class="text-xl font-semibold text-charcoal mb-3">
+        Candidate facts
+      </h2>
+
+      {% if not proposals %}
+        <div class="alert alert--neutral">
+          <span aria-hidden="true">&#8505;</span>
+          <span>No candidate facts survived both AI passes and the verbatim-quote check for
+            this text. Nothing was created -- you can add a claim manually through the review
+            queue instead.</span>
+        </div>
+      {% else %}
+        <div class="space-y-4">
+          {% for p in proposals %}
+            <section class="card">
+              <p class="text-xs text-neutral uppercase tracking-wide mb-1">{{ p.field }}</p>
+              <p class="text-charcoal font-medium break-words mb-2">{{ p.value }}</p>
+              <blockquote class="text-sm text-neutral border-l-2 border-charcoal/20 pl-3 mb-4 break-words">
+                &ldquo;{{ p.quoted_span }}&rdquo;
+              </blockquote>
+              <p class="text-xs text-neutral mb-3">
+                Verified verbatim in the pasted text by this page's own code -- not just the
+                AI's own word for it. Review the quote above before submitting.
+              </p>
+
+              <form action="/reviewer/extract/claims" method="post" class="space-y-3">
+                <input type="hidden" name="entity_type" value="{{ selected_entity_type }}" />
+                <input type="hidden" name="entity_id" value="{{ selected_entity_id }}" />
+                <input type="hidden" name="source_id" value="{{ selected_source_id }}" />
+                <input type="hidden" name="field" value="{{ p.field }}" />
+                <input type="hidden" name="value" value="{{ p.value }}" />
+
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label class="block text-sm font-medium text-charcoal mb-1">Verification date</label>
+                    <input type="date" name="verification_date" required class="input" />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-charcoal mb-1">Verifier</label>
+                    <input
+                      type="text" name="verifier" required class="input"
+                      placeholder="your name or id -- never &quot;ai&quot;"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-charcoal mb-1">Review due date</label>
+                    <input type="date" name="review_due_date" required class="input" />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  class="btn-primary"
+                  aria-label="Create draft claim -- {{ p.field }} ({{ selected_entity_type }} {{ selected_entity_id }})"
+                >Create draft claim</button>
+              </form>
+            </section>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock %}
