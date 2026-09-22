@@ -7,7 +7,68 @@
 {% from "_save.html" import save_action %}
 {% from "_components.html" import pathway_detail_link %}
 {% from "_states.html" import empty_state, alert %}
+{% from "_not_verified.html" import not_verified %}
 {% block title %}Explore careers &mdash; BCION Lite{% endblock %}
+
+{# SCOPE-6: one career/pathway card group, reused for both the "India"
+   and "Abroad" sections below -- exactly the markup this screen already
+   rendered per career before this card, just factored into a macro so
+   splitting the page into two regions doesn't mean two copies of it. #}
+{% macro _region_cards(group) %}
+  <div class="space-y-6">
+    {% for entry in group %}
+      {# UI-3: an id per career so the landing page's "I have a career in
+         mind" choice (and any other future deep link) can jump straight
+         to one career's card instead of the top of a possibly long
+         list. #}
+      <section class="card" id="career-{{ entry.career.id }}">
+        <h3 class="text-lg font-semibold text-charcoal mb-3">{{ entry.career.name }}</h3>
+        <ul class="space-y-1">
+          {# ux-qa-reviewer finding, 2026-09-19: the checkbox's own hit
+             target was 16x16px, well under the ~44px guidance -- the
+             whole row is now one <label>, so clicking anywhere in its
+             padding (not just the tiny box itself) toggles it, and
+             min-h-11 (44px) makes that a real guarantee, not just
+             "probably tall enough" from two lines of text. #}
+          {% for pathway in entry.pathways %}
+            <li>
+              <label
+                for="pathway-{{ pathway.id }}"
+                class="flex items-start gap-3 -mx-2 px-2 py-2 min-h-11 rounded-md hover:bg-charcoal/5 cursor-pointer text-sm"
+              >
+                <input
+                  type="checkbox"
+                  name="pathway_id"
+                  value="{{ pathway.id }}"
+                  id="pathway-{{ pathway.id }}"
+                  class="mt-1 h-5 w-5 rounded border-charcoal/30 text-accent focus:ring-accent compare-checkbox"
+                />
+                <span>
+                  <span class="font-medium text-charcoal">{{ pathway.name }}</span>
+                  <span class="block text-neutral">{{ pathway.description }}</span>
+                </span>
+              </label>
+              {# Smallest sensible wiring to the new Requirements screen
+                 -- a plain link outside the checkbox label above, so it
+                 can't interfere with the compare-selection form/JS. #}
+              <a
+                href="/requirements/view?pathway_id={{ pathway.id }}"
+                class="block text-xs text-accent underline ml-2 mb-1"
+              >
+                See requirements for {{ pathway.name }}
+              </a>
+              {# Pre-wired slots (UI-1): the pathway-detail link and the
+                 save toggle, both empty until their own tasks land. #}
+              {{ pathway_detail_link(pathway.id, label=pathway.name) }}
+              {{ save_action("pathway", pathway.id, return_to="/explore") }}
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
 {% block content %}
   <h1 class="text-2xl font-semibold text-charcoal mb-2">Explore</h1>
 
@@ -28,66 +89,51 @@
   {% if not careers_with_pathways %}
     {{ empty_state("No careers published yet. Check back soon.") }}
   {% else %}
+    {# SCOPE-6: a zero-JS jurisdiction filter -- plain GET links, no
+       script, no form submit needed. "All" (no `region` param) is the
+       default; the other two narrow `pathways.jurisdiction` down to just
+       India or just Abroad (app/web/explore_pages.py's `_is_india`). #}
+    <nav class="flex flex-wrap items-center gap-3 mb-6 text-sm" aria-label="Filter by region">
+      <span class="text-neutral">Show:</span>
+      <a href="/explore" {% if not region %}aria-current="page"{% endif %} class="inline-flex items-center min-h-11 px-1 {% if not region %}font-semibold text-charcoal underline{% else %}text-accent underline{% endif %}">
+        All
+      </a>
+      <a href="/explore?region=india" {% if region == 'india' %}aria-current="page"{% endif %} class="inline-flex items-center min-h-11 px-1 {% if region == 'india' %}font-semibold text-charcoal underline{% else %}text-accent underline{% endif %}">
+        India
+      </a>
+      <a href="/explore?region=abroad" {% if region == 'abroad' %}aria-current="page"{% endif %} class="inline-flex items-center min-h-11 px-1 {% if region == 'abroad' %}font-semibold text-charcoal underline{% else %}text-accent underline{% endif %}">
+        Abroad
+      </a>
+    </nav>
+
     <form action="/compare/view" method="get" id="compare-form">
-      <div class="space-y-6">
-        {% for entry in careers_with_pathways %}
-          {# UI-3: an id per career so the landing page's "I have a
-             career in mind" choice (and any other future deep link) can
-             jump straight to one career's card instead of the top of a
-             possibly long list. #}
-          <section class="card" id="career-{{ entry.career.id }}">
-            <h2 class="text-lg font-semibold text-charcoal mb-3">{{ entry.career.name }}</h2>
-            {% if not entry.pathways %}
-              <p class="text-sm text-neutral">No pathways published for this career yet.</p>
-            {% else %}
-              <ul class="space-y-1">
-                {# ux-qa-reviewer finding, 2026-09-19: the checkbox's own
-                   hit target was 16x16px, well under the ~44px guidance
-                   -- the whole row is now one <label>, so clicking
-                   anywhere in its padding (not just the tiny box itself)
-                   toggles it, and min-h-11 (44px) makes that a real
-                   guarantee, not just "probably tall enough" from two
-                   lines of text. #}
-                {% for pathway in entry.pathways %}
-                  <li>
-                    <label
-                      for="pathway-{{ pathway.id }}"
-                      class="flex items-start gap-3 -mx-2 px-2 py-2 min-h-11 rounded-md hover:bg-charcoal/5 cursor-pointer text-sm"
-                    >
-                      <input
-                        type="checkbox"
-                        name="pathway_id"
-                        value="{{ pathway.id }}"
-                        id="pathway-{{ pathway.id }}"
-                        class="mt-1 h-5 w-5 rounded border-charcoal/30 text-accent focus:ring-accent compare-checkbox"
-                      />
-                      <span>
-                        <span class="font-medium text-charcoal">{{ pathway.name }}</span>
-                        <span class="block text-neutral">{{ pathway.description }}</span>
-                      </span>
-                    </label>
-                    {# Smallest sensible wiring to the new Requirements
-                       screen -- a plain link outside the checkbox
-                       label above, so it can't interfere with the
-                       compare-selection form/JS. #}
-                    <a
-                      href="/requirements/view?pathway_id={{ pathway.id }}"
-                      class="block text-xs text-accent underline ml-2 mb-1"
-                    >
-                      See requirements for {{ pathway.name }}
-                    </a>
-                    {# Pre-wired slots (UI-1): the pathway-detail link
-                       and the save toggle, both empty until their own
-                       tasks land. #}
-                    {{ pathway_detail_link(pathway.id, label=pathway.name) }}
-                    {{ save_action("pathway", pathway.id, return_to="/explore") }}
-                  </li>
-                {% endfor %}
-              </ul>
-            {% endif %}
-          </section>
-        {% endfor %}
-      </div>
+      {% if show_india %}
+        <section class="mb-8">
+          <h2 class="text-xl font-semibold text-charcoal mb-3">India</h2>
+          {% if india_not_verified %}
+            {{ not_verified(india_place_name, class_names="mb-4") }}
+          {% endif %}
+          {% if india_group %}
+            {{ _region_cards(india_group) }}
+          {% elif not india_not_verified %}
+            {{ empty_state("No pathways published for India yet.") }}
+          {% endif %}
+        </section>
+      {% endif %}
+
+      {% if show_abroad %}
+        <section class="mb-8">
+          <h2 class="text-xl font-semibold text-charcoal mb-3">Abroad</h2>
+          {% if abroad_not_verified %}
+            {{ not_verified(abroad_place_name, class_names="mb-4") }}
+          {% endif %}
+          {% if abroad_group %}
+            {{ _region_cards(abroad_group) }}
+          {% elif not abroad_not_verified %}
+            {{ empty_state("No pathways published for Abroad yet.") }}
+          {% endif %}
+        </section>
+      {% endif %}
 
       <div class="mt-6 flex items-center gap-4">
         <button type="submit" class="btn-primary">Compare selected pathways</button>

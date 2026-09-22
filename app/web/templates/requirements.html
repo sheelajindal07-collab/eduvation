@@ -4,6 +4,7 @@
    renders nothing today; this screen's own content is unchanged. #}
 {% from "_ask.html" import ask_bcion %}
 {% from "_states.html" import alert, empty_state %}
+{% from "_not_verified.html" import not_verified %}
 {% block title %}Requirements &mdash; BCION Lite{% endblock %}
 {# FIX 8 (nitpick): the generic name.replace('_', ' ')|capitalize
    treatment reads naturally for every criterion except "domicile_in"
@@ -22,6 +23,14 @@
       {{ pathway_name or "This pathway" }} &mdash; fill in your own details to see whether you
       meet each requirement. Leave anything blank to see just what's required.
     </p>
+
+    {# SCOPE-6: additive to whatever the criteria list below already
+       renders -- explains WHY a pathway's own jurisdiction has little or
+       nothing published yet, instead of the screen just looking sparse
+       with no context (app/web/requirements_pages.py's own docstring). #}
+    {% if not_verified_place %}
+      {{ not_verified(not_verified_place, class_names="mb-6") }}
+    {% endif %}
 
     {# RULES-16: date_of_birth is per-request only -- never stored, never
        logged, never in a URL (see app/web/requirements_pages.py's own
