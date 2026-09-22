@@ -68,6 +68,7 @@ from postgrest.exceptions import APIError
 from postgrest.types import ReturnMethod
 from supabase import Client
 
+from app.ai.budget_db import identity_digest
 from tests.db.access_matrix import (
     CORE_CELLS,
     TABLE_TARGETS,
@@ -789,6 +790,71 @@ def _probe_schema_migrations(operation: Operation, seeds: _Seeds) -> _Probe:
     )
 
 
+def _probe_ai_usage(operation: Operation, seeds: _Seeds) -> _Probe:
+    # The canonical row belongs to STUDENT A, keyed by the SHA-256 digest
+    # of their account id — the same value `ai_usage_select_own` derives
+    # from a caller's own JWT (db/migrations/0011_ai_usage.sql). Seeded as
+    # the service role rather than through `ai_reserve()` on purpose: the
+    # question this table's cells ask is about access, and going through
+    # the definer function would make a busy stack's spend caps able to
+    # fail the setup.
+    identity_hash = identity_digest(seeds.student_a_id())
+    template_id = _unique("qa-6-access-matrix insert probe")
+    target = (
+        None
+        if operation is Operation.INSERT
+        else seeds._once(
+            "ai_usage",
+            lambda: seeds._insert(
+                "ai_usage",
+                {
+                    "identity_kind": "account",
+                    "identity_hash": identity_hash,
+                    "template_id": run_name("qa-6-access-matrix"),
+                    "calls_reserved": 1,
+                    "status": "reserved",
+                },
+            ),
+        )
+    )
+    return _Probe(
+        pk="id",
+        target=target,
+        insert_payload={
+            "identity_kind": "account",
+            "identity_hash": identity_hash,
+            "template_id": template_id,
+            "calls_reserved": 1,
+            "status": "reserved",
+        },
+        # A no-op value: if this ever stopped being denied, the test must
+        # not be the thing that rewrites a recorded spend upwards.
+        update_payload={"calls_made": 0},
+        insert_filter={"template_id": template_id},
+    )
+
+
+def _probe_ai_usage_caps(operation: Operation, seeds: _Seeds) -> _Probe:
+    # The single row (`id boolean primary key check (id)`) is seeded by
+    # the migration itself; nothing to create. `insert_filter` is None for
+    # the same reason as `app_settings`: the only possible key is the live
+    # row's, so registering a cleanup would mean deleting the real AI
+    # spend caps at teardown. The update payload touches `updated_at`
+    # only — a cell that expects a deny must never be the thing that
+    # raises a spend cap if the deny ever breaks.
+    return _Probe(
+        pk="id",
+        target=None if operation is Operation.INSERT else True,
+        insert_payload={
+            "id": True,
+            "per_identity_daily_calls": 1,
+            "global_daily_calls": 1,
+            "global_monthly_calls": 1,
+        },
+        update_payload={"updated_at": "2026-01-01T00:00:00+00:00"},
+    )
+
+
 _PROBE_BUILDERS: dict[str, Callable[[Operation, _Seeds], _Probe]] = {
     "sources": _probe_sources,
     "careers": _probe_careers,
@@ -804,6 +870,8 @@ _PROBE_BUILDERS: dict[str, Callable[[Operation, _Seeds], _Probe]] = {
     "guest_sessions": _probe_guest_sessions,
     "guest_plans": _probe_guest_plans,
     "_schema_migrations": _probe_schema_migrations,
+    "ai_usage": _probe_ai_usage,
+    "ai_usage_caps": _probe_ai_usage_caps,
 }
 
 

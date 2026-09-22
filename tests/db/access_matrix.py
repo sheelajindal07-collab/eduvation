@@ -228,6 +228,15 @@ TABLE_TARGETS: dict[str, str] = {
     "guest_sessions": "a guest session row (unreachable by any API role, so never actually seeded)",
     "guest_plans": "a guest plan row (unreachable by any API role, so never actually seeded)",
     "_schema_migrations": "the migration-bookkeeping row for 0001_init.sql",
+    "ai_usage": (
+        "student A's own reserved AI-spend row — `identity_hash` is the SHA-256 digest of "
+        "student A's account id, which is what `ai_usage_select_own` derives from the "
+        "caller's OWN JWT"
+    ),
+    "ai_usage_caps": (
+        "the single AI spend-cap configuration row (unreachable by any API role, so never "
+        "actually seeded)"
+    ),
 }
 
 
@@ -792,6 +801,102 @@ _SEALED: tuple[Cell, ...] = (
 
 
 # =====================================================================
+# AI spend accounting — readable by its own account, writable by nobody
+# (db/migrations/0011_ai_usage.sql)
+# =====================================================================
+# Two tables with deliberately different shapes:
+#
+#   * `ai_usage` is the only table in this matrix where SELECT is granted
+#     but no write is. The two SECURITY DEFINER functions (`ai_reserve`,
+#     `ai_settle`) are the sole way a row is created or changed, so
+#     "nobody may write" is enforced by the missing GRANT — a flat
+#     permission-denied that no future permissive policy can widen by
+#     accident — rather than by a policy that happens to match nothing.
+#   * `ai_usage_caps` is the spend kill switch and is sealed outright,
+#     exactly like `app_settings`: reading it tells a caller how much
+#     budget is left to burn; writing it removes the cap.
+#
+# NOT covered here, deliberately: the `ai_usage_daily_totals` aggregate
+# view, which is what a reviewer gets instead of row access. The guard in
+# test_access_matrix.py reads `pg_tables`, which excludes views, so a row
+# here would be a hard failure under BCION_REQUIRE_LIVE=1 rather than
+# coverage. Its four per-role expectations are explicit assertions in
+# tests/db/test_ai_usage.py
+# (`test_only_a_reviewer_may_read_the_aggregate_view`).
+_AI_USAGE: tuple[Cell, ...] = (
+    *_row(
+        "ai_usage",
+        SELECT,
+        guest=EMPTY,
+        student_a=ALLOW,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why=(
+            "0011 ai_usage_select_own: `using (identity_kind = 'account' and auth.uid() is "
+            "not null and identity_hash = ai_identity_hash(auth.uid()::text))`. The hash is "
+            "derived from the caller's own JWT, never supplied by the client, so knowing "
+            "another student's account id buys nothing. A guest has no auth.uid() at all; a "
+            "reviewer gets the identity-free `ai_usage_daily_totals` view instead, covered "
+            "in tests/db/test_ai_usage.py, not here (the guard reads pg_tables, which "
+            "excludes views)."
+        ),
+    ),
+    *_row(
+        "ai_usage",
+        INSERT,
+        guest=ERROR,
+        student_a=ERROR,
+        student_b=ERROR,
+        reviewer=ERROR,
+        why=(
+            "0011 grants SELECT and only SELECT to anon/authenticated (`revoke all ... ; "
+            "grant select ...`). A reservation may only be created by the SECURITY DEFINER "
+            "`ai_reserve()`, which checks the caps in the same transaction — so even student "
+            "A cannot write their OWN row here (42501). An insert that worked would be an "
+            "uncapped call."
+        ),
+    ),
+    *_row(
+        "ai_usage",
+        UPDATE,
+        guest=ERROR,
+        student_a=ERROR,
+        student_b=ERROR,
+        reviewer=ERROR,
+        why=(
+            "Same missing grant, UPDATE side: settlement happens through `ai_settle()`, which "
+            "refuses to report more calls than were reserved and refuses to settle a row "
+            "twice. A caller who could UPDATE directly could rewrite their own recorded "
+            "spend to zero. PRIVILEGE denial, so an error rather than an empty result."
+        ),
+    ),
+    *_row(
+        "ai_usage",
+        DELETE,
+        guest=ERROR,
+        student_a=ERROR,
+        student_b=ERROR,
+        reviewer=ERROR,
+        why=(
+            "Same missing grant, DELETE side. A spend record that its own subject can delete "
+            "is not a record; deleting rows is also how a cap would be reset, since every cap "
+            "is computed from the rows that exist."
+        ),
+    ),
+    *_no_api_access(
+        "ai_usage_caps",
+        why=(
+            "0011: RLS enabled with NO policy, AND `revoke all on table ai_usage_caps from "
+            "anon, authenticated` — the same sealed shape as 0007's `app_settings`. The caps "
+            "are the AI spend kill switch: a client that can read them learns exactly how "
+            "much is left to burn, and one that can write them has no cap at all. Only the "
+            "definer functions (running as owner) and the service role read this row."
+        ),
+    ),
+)
+
+
+# =====================================================================
 # Not built in this pilot — placeholders that fail loudly when built
 # =====================================================================
 # docs/SECURITY.md's matrix names five operations: read/write/delete/
@@ -832,6 +937,7 @@ MATRIX: tuple[Cell, ...] = (
     *_STUDENT_VAULT,
     *_CONSENT_GATE,
     *_SEALED,
+    *_AI_USAGE,
     *_UNBUILT,
 )
 
