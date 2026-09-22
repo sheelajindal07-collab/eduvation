@@ -35,6 +35,28 @@ against the exact CI-reported line, then pushed and watched fully green
 used for verification again** — see `docs/TESTING.md`. A separate peer
 session is fixing the underlying local numpy/mypy environment issue so
 a plain `mypy app` works locally without that flag at all.
+**Addendum — a second, independent fix collided with this one.** A peer
+session ("AI in lite version") separately found and fixed the same
+break with a different approach (`cast()` at the `add_exception_handler`
+call site rather than widening the handler's own parameter type), and
+it landed in `main`'s history as an unrelated-looking commit (`bd44177`,
+"STATUS: ux-qa findings...") — a pathspec-scoped `git commit STATUS.md`
+that, per this session's own established trap (see the "no cap"
+concurrency entry below), still captured `app/web/errors.py`'s full
+current working-tree content, including that peer's uncommitted cast
+fix sitting in the same shared checkout. My own fix (`7fea5e2`) was then
+built on top of that already-cast-fixed file — its diff only touched
+`_handle_http_exception`'s own definition, so it composed cleanly rather
+than conflicting — leaving both fixes present at once (harmless but
+redundant). The peer caught this on their own next `git fetch`, compared
+both, kept the assert-based one (cleaner, matches Starlette's actual
+contravariant handler type more directly), and dropped their now-unused
+`cast`/`Callable`/`Coroutine` imports — pushed as `777254a`, confirmed
+green. No action was needed from this session beyond fast-forwarding to
+match. Net lesson, same as the earlier one: a pathspec-scoped commit in
+this shared checkout still needs a `git diff <file>` glance before
+committing, even for a file that looks unrelated to what you meant to
+touch.
 
 ---
 
