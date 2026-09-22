@@ -24,10 +24,14 @@
 {% from "_states.html" import alert %}
 
 {% macro not_verified(place, class_names=none) %}
+  {# ux-qa-reviewer finding, 2026-09-22: "check back soon" read as a
+     timeline promise with no stated basis -- coverage is opportunistic
+     (whenever a reviewer next publishes a claim for this place), not
+     scheduled, so the copy no longer implies one. #}
   {{ alert(
        "Not verified yet for " ~ place ~ ". We don't yet have published, "
-       ~ "source-checked information for this place -- check back soon, "
-       ~ "or explore a covered pathway instead.",
+       ~ "source-checked information for this place -- explore a covered "
+       ~ "pathway instead.",
        variant="neutral",
        class_names=class_names
   ) }}

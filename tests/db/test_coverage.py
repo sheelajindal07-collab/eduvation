@@ -22,6 +22,7 @@ from supabase import Client
 
 from app.planning.coverage import covered_jurisdictions
 from tests.db.conftest import run_name
+from tests.db.test_demo_mode import demo_mode_on  # noqa: F401 -- reused as a fixture below
 
 
 def _fake_jurisdiction() -> str:
@@ -269,6 +270,40 @@ class TestCoveredJurisdictions:
             assert claim_jurisdiction not in covered, (
                 "the claim's own (different) jurisdiction value must not itself become 'covered'"
             )
+        finally:
+            admin_client.table("claims").delete().eq("id", claim_id).execute()
+
+    def test_demo_mode_widening_a_guests_view_still_does_not_cover(
+        self,
+        admin_client: Client,
+        guest_client: Client,
+        synthetic_source: str,
+        demo_mode_on: None,  # noqa: F811 -- pytest fixture injection, not a real redefinition
+        coverage_pathway: dict[str, Any],
+    ) -> None:
+        """data-security-reviewer finding, 2026-09-22: `covered_jurisdictions`'s
+        own docstring names TWO RLS-widening cases its defensive status/
+        source_type re-check exists for -- a reviewer's own wider view
+        (covered above) and demo mode widening what a GUEST's client can
+        see (`claims_select_demo_synthetic`, db/migrations/0007_demo_mode.sql).
+        Only the first had a live test. This proves the second live: with
+        demo mode on, an in_review synthetic claim really does become
+        raw-visible to guest_client (the widening actually fires), yet
+        `covered_jurisdictions` still correctly excludes its jurisdiction."""
+        jurisdiction = coverage_pathway["jurisdiction"]
+        claim_id = _insert_claim(
+            admin_client,
+            coverage_pathway["pathway"]["id"],
+            synthetic_source,
+            status="in_review",
+            jurisdiction=jurisdiction,
+        )
+        try:
+            raw = guest_client.table("claims").select("id, status").eq("id", claim_id).execute()
+            assert raw.data and raw.data[0]["status"] == "in_review", (
+                "premise of this test: demo mode really does widen the guest's raw view"
+            )
+            assert jurisdiction not in covered_jurisdictions(guest_client)
         finally:
             admin_client.table("claims").delete().eq("id", claim_id).execute()
 

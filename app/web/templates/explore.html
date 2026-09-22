@@ -88,13 +88,13 @@
        India or just Abroad (app/web/explore_pages.py's `_is_india`). #}
     <nav class="flex flex-wrap items-center gap-3 mb-6 text-sm" aria-label="Filter by region">
       <span class="text-neutral">Show:</span>
-      <a href="/explore" class="{% if not region %}font-semibold text-charcoal underline{% else %}text-accent underline{% endif %}">
+      <a href="/explore" {% if not region %}aria-current="page"{% endif %} class="inline-flex items-center min-h-11 px-1 {% if not region %}font-semibold text-charcoal underline{% else %}text-accent underline{% endif %}">
         All
       </a>
-      <a href="/explore?region=india" class="{% if region == 'india' %}font-semibold text-charcoal underline{% else %}text-accent underline{% endif %}">
+      <a href="/explore?region=india" {% if region == 'india' %}aria-current="page"{% endif %} class="inline-flex items-center min-h-11 px-1 {% if region == 'india' %}font-semibold text-charcoal underline{% else %}text-accent underline{% endif %}">
         India
       </a>
-      <a href="/explore?region=abroad" class="{% if region == 'abroad' %}font-semibold text-charcoal underline{% else %}text-accent underline{% endif %}">
+      <a href="/explore?region=abroad" {% if region == 'abroad' %}aria-current="page"{% endif %} class="inline-flex items-center min-h-11 px-1 {% if region == 'abroad' %}font-semibold text-charcoal underline{% else %}text-accent underline{% endif %}">
         Abroad
       </a>
     </nav>
