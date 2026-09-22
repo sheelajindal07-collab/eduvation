@@ -1,0 +1,34 @@
+{# SCOPE-6 -- "not verified yet for <place>" panel.
+
+   Shown on Explore and Requirements instead of a screen that just looks
+   empty when a guest picks a jurisdiction with no published,
+   non-synthetic claim yet (app/planning/coverage.py's
+   `covered_jurisdictions` decides "yet"; this template only renders the
+   notice). Reuses `_states.html`'s one `alert()` primitive -- no new
+   markup, per this card's own instruction to read that file's frozen
+   macros before writing anything new.
+
+   variant="neutral" (role="status"): nothing has gone wrong here -- there
+   is simply nothing published for this place yet, same as every other
+   "informational, not a failure" state in `_states.html`
+   (docs/CONTRACTS.md "Settled -- coverage": "absence of a published claim
+   reads 'not verified yet' -- never 'no', never zero, never blank").
+
+   Plain, hardcoded English (no `t()` call) -- this is not one of A11Y-1's
+   eight frozen `global.difficult_state.*` catalogue keys any more than
+   `_states.html`'s own `session_expired` is, and for the same reason:
+   adding a new catalogue key/translation is I18N-3's job, not this
+   card's, so this stays the same "not yet extracted" state every other
+   template's text is in before that task reaches it -- not a new
+   mechanism. #}
+{% from "_states.html" import alert %}
+
+{% macro not_verified(place, class_names=none) %}
+  {{ alert(
+       "Not verified yet for " ~ place ~ ". We don't yet have published, "
+       ~ "source-checked information for this place -- check back soon, "
+       ~ "or explore a covered pathway instead.",
+       variant="neutral",
+       class_names=class_names
+  ) }}
+{% endmacro %}

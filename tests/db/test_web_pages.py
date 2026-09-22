@@ -182,6 +182,12 @@ class TestExplorePage:
             data: list[Any] = []
 
         class _EmptyQuery:
+            def eq(self, *args: Any, **kwargs: Any) -> _EmptyQuery:
+                return self
+
+            def in_(self, *args: Any, **kwargs: Any) -> _EmptyQuery:
+                return self
+
             def execute(self) -> _EmptyResult:
                 return _EmptyResult()
 
@@ -1294,6 +1300,425 @@ class TestRequirementsPageDateOfBirth:
         assert response.status_code == 200
         assert "may be out of date" in response.text
         assert "overdue for a recheck" in response.text
+
+
+def _fake_jurisdiction() -> str:
+    """A syntactically valid but deliberately FAKE jurisdiction code
+    (see tests/db/test_coverage.py's identical helper for the full
+    reasoning) -- "ZZ" is reserved/unassigned in real ISO 3166-1, so a
+    fresh "ZZ-XXX" per call can never collide with a real jurisdiction
+    another concurrently-running lane -- or another xdist worker running
+    THIS file's own tests -- might be publishing claims for on this same
+    shared local stack. Kept file-local rather than imported from
+    tests/db/test_coverage.py, matching this file's own established
+    "not coupling otherwise-unrelated test files over a few lines"
+    convention (see `_NEET_UG_CASE_TABLE`'s comment near the top of this
+    file)."""
+    import random
+    import string
+
+    suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=3))
+    return f"ZZ-{suffix}"
+
+
+class TestExploreJurisdictionFilter:
+    """SCOPE-6: the zero-JS `?region=` filter and the "not verified yet"
+    panel on /explore.
+
+    Uses a fully-controlled fake DB client (same dependency-override
+    technique as `TestExplorePage.
+    test_no_careers_shows_the_empty_state_with_role_status` above) rather
+    than seeding into the shared live stack's real content:
+    `covered_jurisdictions` answers across EVERY pathway of a given
+    jurisdiction in the WHOLE database, so a live assertion like "Abroad
+    is not verified yet" would be flaky the moment any other,
+    concurrently-running lane on this shared stack (docs/TESTING.md's
+    parallel-lane contract) publishes a real claim for a real abroad
+    pathway. Each scenario below seeds exactly the pathway(s) it needs --
+    never more than the fake `.in_()`/`.eq()` (both no-op passthroughs,
+    since the seeded lists are already curated to be exactly what a real
+    filtered query would return) can correctly answer for.
+    """
+
+    @staticmethod
+    def _fake_db(tables: dict[str, list[dict[str, Any]]]) -> Any:
+        class _FakeResult:
+            def __init__(self, data: list[dict[str, Any]]) -> None:
+                self.data = data
+
+        class _FakeQuery:
+            def __init__(self, data: list[dict[str, Any]]) -> None:
+                self._data = data
+
+            def select(self, *args: Any, **kwargs: Any) -> _FakeQuery:
+                return self
+
+            def eq(self, *args: Any, **kwargs: Any) -> _FakeQuery:
+                return self
+
+            def in_(self, *args: Any, **kwargs: Any) -> _FakeQuery:
+                return self
+
+            def execute(self) -> _FakeResult:
+                return _FakeResult(self._data)
+
+        class _FakeDbClient:
+            def table(self, name: str) -> _FakeQuery:
+                return _FakeQuery(tables.get(name, []))
+
+        return _FakeDbClient()
+
+    def _get(
+        self, tables: dict[str, list[dict[str, Any]]], region: str | None = None
+    ) -> Any:
+        from app.api.deps import get_db_client
+
+        def _override() -> Iterator[Any]:
+            yield self._fake_db(tables)
+
+        app.dependency_overrides[get_db_client] = _override
+        try:
+            params = {"region": region} if region else {}
+            return client.get("/explore", params=params)
+        finally:
+            app.dependency_overrides.pop(get_db_client, None)
+
+    def test_region_abroad_hides_india_pathways_and_vice_versa(self) -> None:
+        tables = {
+            "careers": [
+                {"id": "career-in", "name": "Fake India Career"},
+                {"id": "career-gb", "name": "Fake Abroad Career"},
+            ],
+            "pathways": [
+                {
+                    "id": "pathway-in",
+                    "career_id": "career-in",
+                    "name": "Fake India Pathway",
+                    "description": "Seeded by tests/db/test_web_pages.py",
+                    "jurisdiction": "IN",
+                },
+                {
+                    "id": "pathway-gb",
+                    "career_id": "career-gb",
+                    "name": "Fake Abroad Pathway",
+                    "description": "Seeded by tests/db/test_web_pages.py",
+                    "jurisdiction": "GB",
+                },
+            ],
+            "claims": [],
+        }
+        india_only = self._get(tables, region="india")
+        assert india_only.status_code == 200
+        assert "Fake India Pathway" in india_only.text
+        assert "Fake Abroad Pathway" not in india_only.text
+
+        abroad_only = self._get(tables, region="abroad")
+        assert abroad_only.status_code == 200
+        assert "Fake Abroad Pathway" in abroad_only.text
+        assert "Fake India Pathway" not in abroad_only.text
+
+    def test_no_region_param_shows_both_group_headings(self) -> None:
+        tables = {
+            "careers": [{"id": "career-in", "name": "Fake India Career"}],
+            "pathways": [
+                {
+                    "id": "pathway-in",
+                    "career_id": "career-in",
+                    "name": "Fake India Pathway",
+                    "description": "Seeded by tests/db/test_web_pages.py",
+                    "jurisdiction": "IN",
+                }
+            ],
+            "claims": [],
+        }
+        response = self._get(tables)
+        assert response.status_code == 200
+        assert re.search(r"<h2[^>]*>\s*India\s*</h2>", response.text)
+        assert re.search(r"<h2[^>]*>\s*Abroad\s*</h2>", response.text)
+
+    def test_region_india_omits_the_abroad_heading(self) -> None:
+        tables = {
+            "careers": [{"id": "career-in", "name": "Fake India Career"}],
+            "pathways": [
+                {
+                    "id": "pathway-in",
+                    "career_id": "career-in",
+                    "name": "Fake India Pathway",
+                    "description": "Seeded by tests/db/test_web_pages.py",
+                    "jurisdiction": "IN",
+                }
+            ],
+            "claims": [],
+        }
+        response = self._get(tables, region="india")
+        assert response.status_code == 200
+        assert re.search(r"<h2[^>]*>\s*India\s*</h2>", response.text)
+        assert not re.search(r"<h2[^>]*>\s*Abroad\s*</h2>", response.text)
+
+    def test_uncovered_abroad_pathway_shows_not_verified_but_still_lists_it(self) -> None:
+        """No published claim anywhere -> the "not verified yet" panel
+        shows, ADDITIVE to (not concealing) the pathway/career listing --
+        pathway/career names were already world-readable before this
+        card (no claim-status gate on either table), so there is nothing
+        this panel needs to hide."""
+        tables = {
+            "careers": [{"id": "career-gb", "name": "Fake Abroad Career"}],
+            "pathways": [
+                {
+                    "id": "pathway-gb",
+                    "career_id": "career-gb",
+                    "name": "Fake Abroad Pathway",
+                    "description": "Seeded by tests/db/test_web_pages.py",
+                    "jurisdiction": "GB",
+                }
+            ],
+            "claims": [],
+        }
+        response = self._get(tables, region="abroad")
+        assert response.status_code == 200
+        assert "Not verified yet for Abroad" in response.text
+        assert "Fake Abroad Pathway" in response.text
+
+    def test_covered_abroad_pathway_shows_no_not_verified_panel(self) -> None:
+        """The mirror image of the test above: a published, non-synthetic
+        claim on the ONE pathway in this scenario (so the fake `.in_()`
+        no-op can't accidentally over- or under-count) makes its
+        jurisdiction covered, and the panel must not appear."""
+        tables = {
+            "careers": [{"id": "career-gb", "name": "Fake Abroad Career"}],
+            "pathways": [
+                {
+                    "id": "pathway-gb",
+                    "career_id": "career-gb",
+                    "name": "Fake Abroad Pathway",
+                    "description": "Seeded by tests/db/test_web_pages.py",
+                    "jurisdiction": "GB",
+                }
+            ],
+            "claims": [
+                {"entity_id": "pathway-gb", "source_id": "source-gb", "status": "published"}
+            ],
+            "sources": [{"id": "source-gb", "source_type": "official"}],
+        }
+        response = self._get(tables, region="abroad")
+        assert response.status_code == 200
+        assert "Not verified yet" not in response.text
+        assert "Fake Abroad Pathway" in response.text
+
+
+class TestRequirementsCoveragePanel:
+    """SCOPE-6: the "not verified yet" panel on /requirements/view, live
+    against the real stack -- unlike Explore's page-level filter/grouping
+    above, coverage here is scoped to exactly ONE pathway_id at a time,
+    so (unlike a system-wide "is Abroad covered" question) it cannot be
+    made flaky by some other, concurrently-running lane's own claims: a
+    fresh fake jurisdiction (`_fake_jurisdiction`) used by no other
+    pathway anywhere can only ever be affected by THIS test's own
+    inserts."""
+
+    @pytest.fixture
+    def uncovered_pathway(self, admin_client: Client) -> Iterator[dict[str, Any]]:
+        jurisdiction = _fake_jurisdiction()
+        source = (
+            admin_client.table("sources")
+            .insert(
+                {
+                    "authority_name": run_name("SCOPE-6 COVERAGE TEST SOURCE"),
+                    "official_url": "https://example.invalid/scope-6-coverage-source",
+                    "source_type": "official",
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        career = (
+            admin_client.table("careers")
+            .insert({"name": run_name("SCOPE-6 coverage test career")})
+            .execute()
+            .data[0]
+        )
+        pathway = (
+            admin_client.table("pathways")
+            .insert(
+                {
+                    "career_id": career["id"],
+                    "name": run_name("SCOPE-6 coverage test pathway"),
+                    "description": "Seeded by tests/db/test_web_pages.py",
+                    "jurisdiction": jurisdiction,
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        yield {
+            "career": career,
+            "pathway": pathway,
+            "source": source,
+            "jurisdiction": jurisdiction,
+        }
+        admin_client.table("claims").delete().eq("entity_id", pathway["id"]).execute()
+        admin_client.table("pathways").delete().eq("id", pathway["id"]).execute()
+        admin_client.table("careers").delete().eq("id", career["id"]).execute()
+        admin_client.table("sources").delete().eq("id", source["id"]).execute()
+
+    def test_no_claim_at_all_shows_the_not_verified_panel(
+        self, uncovered_pathway: dict[str, Any]
+    ) -> None:
+        response = client.get(
+            "/requirements/view",
+            params={"pathway_id": uncovered_pathway["pathway"]["id"]},
+        )
+        assert response.status_code == 200
+        assert "Not verified yet for" in response.text
+
+    def test_draft_claim_still_shows_the_panel_and_leaks_nothing(
+        self, admin_client: Client, uncovered_pathway: dict[str, Any]
+    ) -> None:
+        """The acceptance scenario, verbatim: "seed a draft claim for an
+        otherwise-uncovered jurisdiction, confirm it changes nothing
+        about what's shown"."""
+        claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": uncovered_pathway["pathway"]["id"],
+                    "field": "minimum_age",
+                    "value": "17",
+                    "source_id": uncovered_pathway["source"]["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": run_name("scope-6-test-fixture"),
+                    "status": "draft",
+                    "review_due_date": "2099-01-01",
+                    "jurisdiction": uncovered_pathway["jurisdiction"],
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get(
+                "/requirements/view",
+                params={"pathway_id": uncovered_pathway["pathway"]["id"]},
+            )
+            assert response.status_code == 200
+            assert "Not verified yet for" in response.text
+            # The draft's own value never reaches the page in any form --
+            # no criterion for it (check_eligibility's own publication
+            # gate, unmodified by this card) and no trust badge claiming
+            # otherwise.
+            assert "Minimum age" not in response.text
+            assert "Checked against official source" not in response.text
+            assert "Institution reported" not in response.text
+        finally:
+            admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+
+    def test_reviewer_sees_no_draft_content_either(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        uncovered_pathway: dict[str, Any],
+    ) -> None:
+        """The acceptance criterion, live: a signed-in reviewer's own
+        RLS-scoped client CAN see this draft claim directly (RLS alone
+        would not hide it) -- but the PUBLIC-FACING requirements page
+        must still show no draft content and still show the "not
+        verified yet" panel, regardless of who is signed in."""
+        _reviewer_id, reviewer_client = reviewer
+        claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": uncovered_pathway["pathway"]["id"],
+                    "field": "minimum_age",
+                    "value": "17",
+                    "source_id": uncovered_pathway["source"]["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": run_name("scope-6-test-fixture"),
+                    "status": "draft",
+                    "review_due_date": "2099-01-01",
+                    "jurisdiction": uncovered_pathway["jurisdiction"],
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            raw = (
+                reviewer_client.table("claims")
+                .select("id, status")
+                .eq("id", claim["id"])
+                .execute()
+            )
+            assert raw.data and raw.data[0]["status"] == "draft", (
+                "premise of this test: a reviewer's own client really does see the draft row"
+            )
+
+            token = reviewer_client.auth.get_session().access_token
+            response = client.get(
+                "/requirements/view",
+                params={"pathway_id": uncovered_pathway["pathway"]["id"]},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert response.status_code == 200
+            assert "Not verified yet for" in response.text
+            assert "Minimum age" not in response.text
+        finally:
+            admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+
+    def test_publishing_the_claim_removes_the_panel(
+        self, admin_client: Client, uncovered_pathway: dict[str, Any]
+    ) -> None:
+        """The covered-jurisdictions list changes ONLY when something is
+        actually published, live via the page itself: draft -> panel
+        shows; published -> panel is gone."""
+        claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": uncovered_pathway["pathway"]["id"],
+                    "field": "minimum_age",
+                    "value": "17",
+                    "source_id": uncovered_pathway["source"]["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": run_name("scope-6-test-fixture"),
+                    "status": "draft",
+                    "review_due_date": "2099-01-01",
+                    "jurisdiction": uncovered_pathway["jurisdiction"],
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            before = client.get(
+                "/requirements/view",
+                params={"pathway_id": uncovered_pathway["pathway"]["id"]},
+            )
+            assert "Not verified yet for" in before.text
+
+            admin_client.table("claims").update({"status": "in_review"}).eq(
+                "id", claim["id"]
+            ).execute()
+            still_in_review = client.get(
+                "/requirements/view",
+                params={"pathway_id": uncovered_pathway["pathway"]["id"]},
+            )
+            assert "Not verified yet for" in still_in_review.text
+
+            admin_client.table("claims").update({"status": "published"}).eq(
+                "id", claim["id"]
+            ).execute()
+            after = client.get(
+                "/requirements/view",
+                params={"pathway_id": uncovered_pathway["pathway"]["id"]},
+            )
+            assert "Not verified yet for" not in after.text
+            assert "Minimum age" in after.text
+        finally:
+            admin_client.table("claims").delete().eq("id", claim["id"]).execute()
 
 
 class TestDbUnavailableDegradesGracefully:

@@ -30,6 +30,15 @@ implausibly old one) degrades to a friendly in-page message via
 `_parse_date_of_birth` below, the same "never a raw 422" convention
 `_int_or_none`/`_float_or_none` already established for `age`/
 `marks_percentage` on this exact screen.
+
+SCOPE-6: a "not verified yet for <place>" panel is shown whenever this
+pathway's OWN `jurisdiction` has no published, non-synthetic claim at all
+(`app/planning/coverage.py`'s `covered_jurisdictions`) — purely additive
+to whatever `check_eligibility` already renders, never a replacement for
+it: that engine already gates every criterion on claim status by itself
+(`app/rules/ruleset.py`), so this panel adds context for WHY a fresh
+pathway's criteria list is short, rather than concealing anything that
+was otherwise going to show.
 """
 
 from __future__ import annotations
@@ -47,6 +56,8 @@ from app.api.eligibility import (
     today_ist,
 )
 from app.data.jurisdictions import ALL_JURISDICTIONS
+from app.data.models import DEFAULT_JURISDICTION
+from app.planning.coverage import covered_jurisdictions_or_none
 from app.web.common import (
     _DB_UNAVAILABLE_MESSAGE,
     _db_client_or_none,
@@ -58,6 +69,21 @@ from app.web.common import (
 from app.web.templating import templates
 
 router = APIRouter(include_in_schema=False)  # HTML pages, not the JSON API surface
+
+_JURISDICTION_NAMES: dict[str, str] = {j.code: j.name for j in ALL_JURISDICTIONS}
+"""Code -> canonical display name for the "not verified yet for <place>"
+panel — the same exhaustive, already-settled reference table this module
+already imports for the domicile `<select>` (SCOPE-5), never a second
+list. See `_place_name` for the fallback when a code isn't in it."""
+
+
+def _place_name(code: str) -> str:
+    """A jurisdiction code's canonical display name, or the code itself
+    when it isn't in the reference table — defensive only: a pathway's
+    own `jurisdiction` is shape-checked at the database
+    (db/migrations/0008_jurisdiction_currency.sql) but not restricted to
+    this module's necessarily-partial name list."""
+    return _JURISDICTION_NAMES.get(code, code)
 
 
 def _none_if_blank(raw: str) -> str | None:
@@ -142,6 +168,7 @@ def _render_requirements(
                 "date_of_birth": date_of_birth,
                 "dob_error": dob_error,
                 "jurisdictions": ALL_JURISDICTIONS,
+                "not_verified_place": None,
             },
         )
 
@@ -161,6 +188,7 @@ def _render_requirements(
                 "date_of_birth": date_of_birth,
                 "dob_error": dob_error,
                 "jurisdictions": ALL_JURISDICTIONS,
+                "not_verified_place": None,
             },
         )
 
@@ -174,9 +202,29 @@ def _render_requirements(
         date_of_birth=date_of_birth,
     )
 
-    name_result = db.table("pathways").select("id, name").eq("id", pathway_id).execute()
+    # `*` rather than a column list, same reasoning as app/api/explore.py's
+    # `GET /careers` and app/web/explore_pages.py's own pathways select:
+    # naming `jurisdiction` explicitly would 400 in the deploy window
+    # where this code is live but db/migrations/
+    # 0008_jurisdiction_currency.sql has not been applied yet.
+    name_result = db.table("pathways").select("*").eq("id", pathway_id).execute()
     name_rows = cast("list[dict[str, Any]]", name_result.data)
     pathway_name = name_rows[0]["name"] if name_rows else None
+
+    # SCOPE-6: this pathway's OWN jurisdiction (not the rule set's, which
+    # `result.jurisdiction` below is about) against the derived covered
+    # set -- see this module's own docstring for why this is additive,
+    # never a gate on what `check_eligibility` already decided to show.
+    not_verified_place: str | None = None
+    if name_rows:
+        pathway_jurisdiction = name_rows[0].get("jurisdiction") or DEFAULT_JURISDICTION
+        # `_or_none`: never 500 this page just because the coverage
+        # derivation's own query failed -- see its own docstring.
+        # `None` means "could not tell", handled by not showing the
+        # panel rather than guessing.
+        covered = covered_jurisdictions_or_none(db)
+        if covered is not None and pathway_jurisdiction not in covered:
+            not_verified_place = _place_name(pathway_jurisdiction)
 
     return templates.TemplateResponse(
         request,
@@ -186,6 +234,7 @@ def _render_requirements(
             "pathway_id": pathway_id,
             "pathway_name": pathway_name,
             "result": result,
+            "not_verified_place": not_verified_place,
             "age": age,
             "marks_percentage": marks_percentage,
             "subjects_studied": subjects_studied,
