@@ -1380,17 +1380,25 @@ class TestExploreJurisdictionFilter:
     def _get(
         self, tables: dict[str, list[dict[str, Any]]], region: str | None = None
     ) -> Any:
-        from app.api.deps import get_db_client
+        # A11Y-3 moved /explore from Depends(get_db_client) to
+        # Depends(_db_client_or_none) (app/web/common.py) -- that helper
+        # calls get_db_client as a plain function, not through FastAPI's
+        # dependency tree, so overriding get_db_client no longer reaches
+        # it (confirmed red before this fix: the DB-down branch fired
+        # instead, rendering none of this class's fixture content).
+        # Override the actual resolved dependency instead, same object
+        # explore_pages.py imports.
+        from app.web.explore_pages import _db_client_or_none
 
         def _override() -> Iterator[Any]:
             yield self._fake_db(tables)
 
-        app.dependency_overrides[get_db_client] = _override
+        app.dependency_overrides[_db_client_or_none] = _override
         try:
             params = {"region": region} if region else {}
             return client.get("/explore", params=params)
         finally:
-            app.dependency_overrides.pop(get_db_client, None)
+            app.dependency_overrides.pop(_db_client_or_none, None)
 
     def test_region_abroad_hides_india_pathways_and_vice_versa(self) -> None:
         tables = {
