@@ -555,6 +555,65 @@ class _Seeds:
         # credential.
         return {"student_id": self.student_a_id(), "guardian_email": _GUARDIAN_EMAIL}
 
+    # -- CONSENT-4: admission + safeguarding ---------------------------
+    def admitted_account_id(self) -> str:
+        """Student A, made ADMITTED (0012's is_admitted() gate):  an
+        ACTIVE `student_accounts` row with `admitted_at` stamped,
+        inserted directly by the service role (bypasses RLS, same as
+        every other seed here). Deliberately a SEPARATE memo key from
+        `account_id()` above: that one backs the `student_accounts`
+        table's OWN probe, whose INSERT cell needs the row to NOT exist
+        yet — reusing it here would make that cell see a duplicate-key
+        error instead of the ALLOW/DENY it is actually testing. Every
+        probe below that needs student A's OWN write to ALLOW on
+        saved_plans/student_profiles must call this first — without it,
+        `is_admitted(auth.uid())` defaults to false (0012's own
+        docstring: fail-closed, unlike account_active()'s fail-open
+        default) and every one of those cells would flip from ALLOW to
+        DENY the moment 0012 is applied.
+        """
+        return self._once(
+            "admitted_account",
+            lambda: self._insert(
+                "student_accounts",
+                {
+                    "id": self.student_a_id(),
+                    "date_of_birth": _ADULT_DOB,
+                    "account_status": "active",
+                    "admitted_at": "2026-01-01T00:00:00+00:00",
+                },
+            ),
+        )
+
+    def withdrawal_consent_id(self) -> str:
+        return self._once(
+            "withdrawal_consent",
+            lambda: self._insert("consents", self.withdrawal_consent_payload()),
+        )
+
+    def withdrawal_consent_payload(self) -> dict[str, Any]:
+        return {
+            "student_id": self.student_a_id(),
+            "kind": "account",
+            "action": "withdrawn",
+            "wording_version": "v1",
+        }
+
+    def safeguarding_staff_row_id(self) -> str:
+        return self._once(
+            "safeguarding_staff_row",
+            lambda: self._insert("safeguarding_staff", {"user_id": self.maker_id()}, pk="user_id"),
+        )
+
+    def safeguarding_flag_id(self) -> str:
+        return self._once(
+            "safeguarding_flag",
+            lambda: self._insert("safeguarding_flags", self.safeguarding_flag_payload()),
+        )
+
+    def safeguarding_flag_payload(self) -> dict[str, Any]:
+        return {"student_id": self.student_a_id(), "category": "qa6-matrix-probe"}
+
 
 @pytest.fixture
 def seeds(clients: _ClientPool, admin_client: Client) -> Iterator[_Seeds]:
@@ -676,6 +735,13 @@ def _probe_reviewers(operation: Operation, seeds: _Seeds) -> _Probe:
 
 
 def _probe_student_profiles(operation: Operation, seeds: _Seeds) -> _Probe:
+    # CONSENT-4 (0012): writes now require is_admitted(auth.uid()) too,
+    # ANDed into the INSERT/UPDATE/DELETE policies. Seeded unconditionally
+    # (cheap, memoised) so student A's ALLOW cells keep passing under the
+    # new gate — see `_Seeds.admitted_account_id()`'s own docstring. Guest/
+    # student B/reviewer's DENY expectations are unaffected: they are
+    # refused on ownership, not admission.
+    seeds.admitted_account_id()
     return _Probe(
         pk="id",
         target=None if operation is Operation.INSERT else seeds.profile_id(),
@@ -686,6 +752,8 @@ def _probe_student_profiles(operation: Operation, seeds: _Seeds) -> _Probe:
 
 
 def _probe_saved_plans(operation: Operation, seeds: _Seeds) -> _Probe:
+    # Same CONSENT-4 (0012) reasoning as _probe_student_profiles above.
+    seeds.admitted_account_id()
     return _Probe(
         pk="id",
         target=None if operation is Operation.INSERT else seeds.plan_id(),
@@ -725,6 +793,62 @@ def _probe_guardian_consents(operation: Operation, seeds: _Seeds) -> _Probe:
         insert_payload=seeds.consent_payload(),
         update_payload={"guardian_email": "qa6-matrix-elsewhere@example.invalid"},
         insert_filter={"student_id": seeds.student_a_id()},
+    )
+
+
+# --- CONSENT-4 (0012/0013) ------------------------------------------
+def _probe_consents(operation: Operation, seeds: _Seeds) -> _Probe:
+    kind = _unique("qa6 matrix consents insert probe kind")
+    return _Probe(
+        pk="id",
+        target=None if operation is Operation.INSERT else seeds.withdrawal_consent_id(),
+        insert_payload={
+            "student_id": seeds.student_a_id(),
+            "kind": kind,
+            "action": "withdrawn",
+            "wording_version": "v1",
+        },
+        update_payload={"wording_version": "v2"},
+        insert_filter={"student_id": seeds.student_a_id(), "kind": kind},
+    )
+
+
+def _probe_pilot_invites(operation: Operation, seeds: _Seeds) -> _Probe:
+    # Deliberately not seeded: no API role holds any privilege on this
+    # table (0012's `revoke all`), so the refusal happens before any row
+    # is considered — same shape as guest_sessions/guest_plans/app_settings.
+    code_hash = f"qa6-matrix-{uuid.uuid4().hex}"
+    return _Probe(
+        pk="id",
+        target=None if operation is Operation.INSERT else str(uuid.uuid4()),
+        insert_payload={"code_hash": code_hash, "expires_at": "2099-01-01T00:00:00+00:00"},
+        update_payload={"expires_at": "2099-06-01T00:00:00+00:00"},
+        insert_filter={"code_hash": code_hash},
+    )
+
+
+def _probe_safeguarding_staff(operation: Operation, seeds: _Seeds) -> _Probe:
+    # A REAL user id, not a random uuid — same reasoning as
+    # _probe_reviewers: this must fail because no policy allows the
+    # write, not because a foreign key was broken.
+    maker = seeds.maker_id()
+    return _Probe(
+        pk="user_id",
+        target=None if operation is Operation.INSERT else seeds.safeguarding_staff_row_id(),
+        insert_payload={"user_id": maker},
+        update_payload={"added_at": "2026-01-01T00:00:00+00:00"},
+        insert_filter={"user_id": maker},
+    )
+
+
+def _probe_safeguarding_flags(operation: Operation, seeds: _Seeds) -> _Probe:
+    category = _unique("qa6-matrix-safeguarding-flag")
+    return _Probe(
+        pk="id",
+        target=None if operation is Operation.INSERT else seeds.safeguarding_flag_id(),
+        insert_payload={"student_id": seeds.student_a_id(), "category": category},
+        update_payload={"category": _unique("qa6-matrix-safeguarding-flag-updated")},
+        insert_filter={"student_id": seeds.student_a_id(), "category": category},
     )
 
 
@@ -866,6 +990,10 @@ _PROBE_BUILDERS: dict[str, Callable[[Operation, _Seeds], _Probe]] = {
     "plan_actions": _probe_plan_actions,
     "student_accounts": _probe_student_accounts,
     "guardian_consents": _probe_guardian_consents,
+    "consents": _probe_consents,
+    "pilot_invites": _probe_pilot_invites,
+    "safeguarding_staff": _probe_safeguarding_staff,
+    "safeguarding_flags": _probe_safeguarding_flags,
     "app_settings": _probe_app_settings,
     "guest_sessions": _probe_guest_sessions,
     "guest_plans": _probe_guest_plans,

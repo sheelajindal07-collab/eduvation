@@ -13,7 +13,9 @@ under-18/guardian-consent-specific tests live in
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -21,7 +23,7 @@ from fastapi.testclient import TestClient
 from supabase import Client
 
 from app.main import app
-from tests.db.conftest import run_email, run_name, target_is_localhost
+from tests.db.conftest import admit_student, run_email, run_name, target_is_localhost
 
 client = TestClient(app)
 
@@ -127,6 +129,13 @@ class TestSignIn:
         token = response.json()["access_token"]
 
         from app.db import get_user_scoped_client
+
+        # CONSENT-4 (0012): student_profiles' own-row INSERT policy now
+        # also requires is_admitted(auth.uid()). This test's actual point
+        # is "the token genuinely authenticates for RLS", not admission,
+        # so admit the user first rather than letting an unrelated gate
+        # fail this test for the wrong reason.
+        admit_student(admin_client, registered_user["user_id"])
 
         scoped_client = get_user_scoped_client(token)
         try:
@@ -314,6 +323,14 @@ class TestGuestToAccountPlanMigration:
         assert sign_in.status_code == 200
         access_token = sign_in.json()["access_token"]
 
+        # CONSENT-4 (0012): saved_plans' own-row INSERT policy now also
+        # requires is_admitted(auth.uid()). This test's actual point is
+        # "_migrate_pending_plan writes the right row", not admission, so
+        # admit the user first — see TestSignUpWithPendingPlan below for
+        # the test that instead proves what happens through the REAL
+        # sign-up route today, where nothing admits the user yet.
+        admit_student(admin_client, registered_user["user_id"])
+
         fresh_client = get_anon_client()
         try:
             plan_id = _migrate_pending_plan(
@@ -337,14 +354,20 @@ class TestGuestToAccountPlanMigration:
         admin_client.table("saved_plans").delete().eq("id", plan_id).execute()
 
     def test_migrate_pending_plan_for_nonexistent_pathway_returns_none_not_an_exception(
-        self, registered_user: dict[str, str]
+        self, admin_client: Client, registered_user: dict[str, str]
     ) -> None:
         """The core resilience property: a bad pending_plan must never
-        raise up through sign-up and fail account creation."""
+        raise up through sign-up and fail account creation.
+
+        Admitted first (CONSENT-4, 0012) so the None this asserts is
+        genuinely attributable to the bad pathway_id, not to the
+        is_admitted() gate this test isn't about."""
         import uuid as uuid_module
 
         from app.api.auth import PendingPlan, _migrate_pending_plan
         from app.db import get_anon_client
+
+        admit_student(admin_client, registered_user["user_id"])
 
         sign_in = client.post(
             "/auth/sign-in",
@@ -370,9 +393,27 @@ class TestSignUpWithPendingPlan:
     pending_plan. Tolerant of the same email-sending rate limit as
     TestSignUp — this test's job is proving the wiring, and
     TestGuestToAccountPlanMigration above already proves the migration
-    logic itself reliably without that dependency."""
+    logic itself reliably without that dependency.
 
-    def test_sign_up_with_pending_plan_migrates_it_in_one_request(
+    CONSENT-4 (0012) REGRESSION, deliberately asserted rather than hidden:
+    a brand-new adult sign-up now DOES get a `student_accounts` row
+    (`account_status='active'`, `admitted_at` still null —
+    `app.api.guardian_consent.ensure_active_student_account`, added by
+    the adversarial-review fix that closed the "every adult permanently
+    inadmissible" finding — see 0012's own header), but that row alone
+    does not admit anyone: `is_admitted()` still correctly fails closed
+    until a real invite code is redeemed via `POST /auth/redeem-invite`.
+    `saved_plans`' INSERT policy therefore still refuses this migration,
+    and `_migrate_pending_plan`'s own by-design resilience (log a
+    warning, return None, never fail the sign-up itself) is exactly what
+    fires — same observable outcome as before this fix, for a different,
+    now-fixable reason. Before 0012 this assertion was `is not None`;
+    today a real sign-up's pending plan is silently NOT carried over
+    until the account actually redeems an invite — this test pins that
+    down as a known, intentional gap rather than letting it regress
+    further unnoticed."""
+
+    def test_sign_up_with_pending_plan_does_not_migrate_before_admission(
         self, admin_client: Client, seeded_pathway_for_migration: dict[str, Any]
     ) -> None:
         email = run_email("migrationtest", domain="example.com")
@@ -402,6 +443,184 @@ class TestSignUpWithPendingPlan:
 
         assert response.status_code == 201
         body = response.json()
-        assert body["migrated_plan_id"] is not None
-        admin_client.table("saved_plans").delete().eq("id", body["migrated_plan_id"]).execute()
+        assert body["migrated_plan_id"] is None, (
+            "a brand-new, not-yet-admitted adult's pending plan must NOT be migrated "
+            "(CONSENT-4's is_admitted() gate) — see this class's own docstring"
+        )
+        no_plan = (
+            admin_client.table("saved_plans")
+            .select("id")
+            .eq("student_id", body["user_id"])
+            .execute()
+        )
+        assert not no_plan.data, "no saved_plans row should exist for this brand-new user"
         admin_client.auth.admin.delete_user(body["user_id"])
+
+
+class TestSignUpCreatesAdmissionAxisRow:
+    """HIGH, adversarial-review finding (this session): before this fix,
+    NOTHING in this codebase ever created a `student_accounts` row for an
+    adult, which meant `redeem_invite()` (db/migrations/
+    0012_admission_axis.sql) had no row to check/stamp for ANY adult,
+    ever — every real adult account was permanently inadmissible no
+    matter how valid an invite code they held. `app.api.guardian_consent.
+    ensure_active_student_account`, called from `sign_up()`'s adult
+    branch, closes this. Proven end-to-end through the real route, not
+    just the helper function directly."""
+
+    def test_adult_sign_up_creates_an_active_not_yet_admitted_row(
+        self, admin_client: Client
+    ) -> None:
+        email = run_email("admissionrowtest", domain="example.com")
+        response = client.post(
+            "/auth/sign-up",
+            json={
+                "email": email,
+                "password": "correct-horse-battery-staple-4",
+                "date_of_birth": _ADULT_DOB,
+            },
+        )
+        if _tolerate_rate_limit(response):
+            return
+        if response.status_code == 202:
+            # No session at sign-up — the row is created on first sign-in
+            # instead (enforce_guardian_consent_gate's own bootstrap);
+            # covered separately by TestSignIn-adjacent live behaviour,
+            # not re-proven here without a confirmed email to sign in
+            # with.
+            users = admin_client.auth.admin.list_users()
+            match = next((u for u in users if u.email == email), None)
+            if match:
+                admin_client.auth.admin.delete_user(match.id)
+            return
+
+        assert response.status_code == 201
+        user_id = response.json()["user_id"]
+        try:
+            row = (
+                admin_client.table("student_accounts")
+                .select("account_status, admitted_at")
+                .eq("id", user_id)
+                .execute()
+                .data
+            )
+            assert row, "sign_up() must create a student_accounts row for a real adult"
+            assert row[0]["account_status"] == "active"
+            assert row[0]["admitted_at"] is None, (
+                "creating the row must never itself admit anyone — only redeem_invite() "
+                "may ever set admitted_at"
+            )
+        finally:
+            admin_client.table("student_accounts").delete().eq("id", user_id).execute()
+            admin_client.auth.admin.delete_user(user_id)
+
+
+class TestRedeemInviteRoute:
+    """`POST /auth/redeem-invite` — the app-layer half of docs/CONSENT.md
+    section 3 step 4, added by the same adversarial-review fix as
+    `TestSignUpCreatesAdmissionAxisRow` above: without a route calling
+    `redeem_invite()` (db/migrations/0012_admission_axis.sql), no caller
+    could EVER become admitted, however valid their invite code."""
+
+    def test_requires_sign_in(self) -> None:
+        response = client.post("/auth/redeem-invite", json={"code": "anything"})
+        assert response.status_code == 401
+
+    def test_happy_path_admits_a_real_signed_up_adult(self, admin_client: Client) -> None:
+        email = run_email("redeemroutetest", domain="example.com")
+        signup = client.post(
+            "/auth/sign-up",
+            json={
+                "email": email,
+                "password": "correct-horse-battery-staple-5",
+                "date_of_birth": _ADULT_DOB,
+            },
+        )
+        if _tolerate_rate_limit(signup):
+            return
+        if signup.status_code == 202:
+            users = admin_client.auth.admin.list_users()
+            match = next((u for u in users if u.email == email), None)
+            if match:
+                admin_client.auth.admin.delete_user(match.id)
+            pytest.skip(
+                "email confirmation required by this project's Auth settings — no "
+                "session available to redeem an invite with in this test run"
+            )
+
+        assert signup.status_code == 201
+        body = signup.json()
+        user_id = body["user_id"]
+        access_token = body["access_token"]
+        code = f"redeem-route-{user_id[:8]}"
+        code_hash = hashlib.sha256(code.encode()).hexdigest()
+        expires_at = (datetime.now(tz=UTC) + timedelta(hours=1)).isoformat()
+        admin_client.table("pilot_invites").insert(
+            {"code_hash": code_hash, "expires_at": expires_at}
+        ).execute()
+        try:
+            response = client.post(
+                "/auth/redeem-invite",
+                json={"code": code},
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            assert response.status_code == 200
+            assert response.json()["admitted"] is True
+
+            row = (
+                admin_client.table("student_accounts")
+                .select("admitted_at")
+                .eq("id", user_id)
+                .execute()
+                .data[0]
+            )
+            assert row["admitted_at"] is not None
+
+            # A second redemption attempt (same code, same caller) must
+            # fail cleanly rather than 500 — redeem_invite()'s own
+            # single-use guard (0012) returns false, not an error.
+            again = client.post(
+                "/auth/redeem-invite",
+                json={"code": code},
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            assert again.status_code == 200
+            assert again.json()["admitted"] is False
+        finally:
+            admin_client.table("pilot_invites").delete().eq("code_hash", code_hash).execute()
+            admin_client.table("student_accounts").delete().eq("id", user_id).execute()
+            admin_client.auth.admin.delete_user(user_id)
+
+    def test_wrong_code_returns_false_not_an_error(self, admin_client: Client) -> None:
+        email = run_email("redeemroutewrong", domain="example.com")
+        signup = client.post(
+            "/auth/sign-up",
+            json={
+                "email": email,
+                "password": "correct-horse-battery-staple-6",
+                "date_of_birth": _ADULT_DOB,
+            },
+        )
+        if _tolerate_rate_limit(signup):
+            return
+        if signup.status_code == 202:
+            users = admin_client.auth.admin.list_users()
+            match = next((u for u in users if u.email == email), None)
+            if match:
+                admin_client.auth.admin.delete_user(match.id)
+            pytest.skip("email confirmation required — no session available")
+
+        assert signup.status_code == 201
+        body = signup.json()
+        user_id = body["user_id"]
+        try:
+            response = client.post(
+                "/auth/redeem-invite",
+                json={"code": "definitely-not-a-real-code"},
+                headers={"Authorization": f"Bearer {body['access_token']}"},
+            )
+            assert response.status_code == 200
+            assert response.json()["admitted"] is False
+        finally:
+            admin_client.table("student_accounts").delete().eq("id", user_id).execute()
+            admin_client.auth.admin.delete_user(user_id)

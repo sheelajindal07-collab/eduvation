@@ -22,7 +22,7 @@ import pytest
 from postgrest.exceptions import APIError
 from supabase import Client
 
-from tests.db.conftest import run_name
+from tests.db.conftest import admit_student, run_name
 
 
 @pytest.fixture
@@ -441,16 +441,38 @@ class TestCrossGuestIsolation:
         assert _list(client, "0" * 64) == []
 
     def test_a_guest_cannot_reach_a_students_saved_plans(
-        self, guest_client: Client, student_a: tuple[str, Client], pathway: str
+        self,
+        admin_client: Client,
+        guest_client: Client,
+        student_a: tuple[str, Client],
+        pathway: str,
     ) -> None:
         """The two stores are separate: `saved_plans` is own-row by
         `auth.uid()` (0002/0004), `guest_plans` is token-scoped. A guest
-        has no `auth.uid()`, so it sees no saved_plans row at all."""
+        has no `auth.uid()`, so it sees no saved_plans row at all.
+
+        Admitted first (CONSENT-4, 0012: saved_plans' own-row INSERT now
+        also requires is_admitted()) so student A's own insert succeeds
+        and this test still exercises what it is actually about.
+
+        Migration-owner fix round, 0014_account_active_grant_fix.sql: a
+        guest's SELECT on `saved_plans` is now refused at the GRANT level
+        (42501 'permission denied for function account_active'), not
+        merely filtered to an empty result — `saved_plans_select_own`'s
+        USING clause references `account_active(auth.uid())`, and `anon`
+        lost EXECUTE on that function entirely (see that migration's own
+        header for the live-verified cross-user-oracle finding this
+        closes; tests/db/access_matrix.py's `saved_plans`/SELECT/`guest`
+        cell documents the same shape). A stronger 'zero rows visible'
+        than before, not a weaker one."""
         student_id, student_client = student_a
+        admit_student(admin_client, student_id)
         student_client.table("saved_plans").insert(
             {"student_id": student_id, "pathway_id": pathway}
         ).execute()
-        assert guest_client.table("saved_plans").select("*").execute().data == []
+        with pytest.raises(APIError) as exc_info:
+            guest_client.table("saved_plans").select("*").execute()
+        assert exc_info.value.code == "42501"
 
 
 # --------------------------------------------------------------------

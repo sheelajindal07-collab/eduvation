@@ -11,7 +11,7 @@ from typing import Any
 
 from supabase import Client
 
-from tests.db.conftest import run_name
+from tests.db.conftest import admit_student, run_name
 
 
 def _career_row(admin: Client) -> dict[str, Any]:
@@ -99,10 +99,19 @@ class TestWriteAccess:
 
 
 class TestStudentProfileIsolation:
-    """student_profiles: strictly own-row, no cross-student access."""
+    """student_profiles: strictly own-row, no cross-student access.
 
-    def test_student_can_create_own_profile(self, student_a: tuple[str, Client]) -> None:
+    CONSENT-4 (0012): writing a profile now also requires
+    `is_admitted(auth.uid())`, so every student whose OWN write must
+    succeed here is admitted first via `admit_student()` — see that
+    helper's own docstring in conftest.py.
+    """
+
+    def test_student_can_create_own_profile(
+        self, admin_client: Client, student_a: tuple[str, Client]
+    ) -> None:
         user_id, client = student_a
+        admit_student(admin_client, user_id)
         result = (
             client.table("student_profiles")
             .insert({"id": user_id, "current_class": "Class 10", "language": "en"})
@@ -112,11 +121,13 @@ class TestStudentProfileIsolation:
 
     def test_student_b_cannot_read_student_a_profile(
         self,
+        admin_client: Client,
         student_a: tuple[str, Client],
         student_b: tuple[str, Client],
     ) -> None:
         user_a_id, client_a = student_a
         _user_b_id, client_b = student_b
+        admit_student(admin_client, user_a_id)
         client_a.table("student_profiles").insert(
             {"id": user_a_id, "current_class": "Class 10", "language": "en"}
         ).execute()
@@ -126,11 +137,13 @@ class TestStudentProfileIsolation:
 
     def test_student_b_cannot_update_student_a_profile(
         self,
+        admin_client: Client,
         student_a: tuple[str, Client],
         student_b: tuple[str, Client],
     ) -> None:
         user_a_id, client_a = student_a
         _user_b_id, client_b = student_b
+        admit_student(admin_client, user_a_id)
         client_a.table("student_profiles").insert(
             {"id": user_a_id, "current_class": "Class 10", "language": "en"}
         ).execute()
@@ -145,6 +158,7 @@ class TestStudentProfileIsolation:
 
     def test_reviewer_has_no_override_on_student_profiles(
         self,
+        admin_client: Client,
         reviewer: tuple[str, Client],
         student_a: tuple[str, Client],
     ) -> None:
@@ -153,6 +167,7 @@ class TestStudentProfileIsolation:
         reviewer account."""
         user_a_id, client_a = student_a
         _reviewer_id, reviewer_client = reviewer
+        admit_student(admin_client, user_a_id)
         client_a.table("student_profiles").insert(
             {"id": user_a_id, "current_class": "Class 10", "language": "en"}
         ).execute()

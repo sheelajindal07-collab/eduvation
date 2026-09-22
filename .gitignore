@@ -26,6 +26,11 @@ dist/
 # Node (if Playwright/e2e tooling adds a package.json later)
 node_modules/
 
+# Migration owner's own second local Supabase stack (supabase/config.toml
+# "SECOND STACK FOR THE MIGRATION LANE"; CONSENT-4 is the first to open
+# it) — scratch, per-worktree, never shared/tracked.
+.supabase-migration/
+
 # OS / editor
 .DS_Store
 Thumbs.db

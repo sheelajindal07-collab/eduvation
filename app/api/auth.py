@@ -45,16 +45,19 @@ import logging
 from datetime import UTC, date, datetime
 from typing import Any, cast
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from postgrest.exceptions import APIError
 from pydantic import BaseModel, EmailStr, field_validator
 from supabase import Client
 from supabase_auth.errors import AuthApiError
 from supabase_auth.types import Session
 
+from app.api.deps import AuthedSession, require_auth
 from app.api.guardian_consent import (
     MINOR_AGE_THRESHOLD_YEARS,
     create_guardian_consent_request,
     enforce_guardian_consent_gate,
+    ensure_active_student_account,
     guardian_consent_schema_is_live,
     is_minor,
 )
@@ -101,6 +104,21 @@ class SignUpRequest(BaseModel):
 class SignInRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class RedeemInviteRequest(BaseModel):
+    code: str
+
+
+class RedeemInviteResponse(BaseModel):
+    admitted: bool
+    """The `redeem_invite()` RPC's own return value (db/migrations/
+    0012_admission_axis.sql) — `true` only for a genuine, not-yet-used,
+    unexpired code redeemed by a caller whose own account is currently
+    'active'. `false` covers every failure shape identically (wrong code,
+    expired, already used, or the caller isn't eligible yet) — the RPC
+    itself deliberately never distinguishes them (docs/CONSENT.md section
+    4), and this route does not invent a distinction it doesn't have."""
 
 
 class AuthResponse(BaseModel):
@@ -388,6 +406,19 @@ def sign_up(request: SignUpRequest) -> AuthResponse:
                 ),
             )
 
+        # CONSENT-4 admission-axis fix (adversarial review finding, this
+        # session, HIGH): an adult sign-up never created a
+        # `student_accounts` row at all until now — `is_admitted()`/
+        # `redeem_invite()` (db/migrations/0012_admission_axis.sql) both
+        # need that row to exist for this account to ever become
+        # admitted, no matter how valid an invite code they later hold.
+        # Best-effort, mirrors `_migrate_pending_plan`'s own
+        # never-fail-the-sign-up convention — see
+        # `ensure_active_student_account`'s own docstring.
+        ensure_active_student_account(
+            client, student_id=user_id, date_of_birth=request.date_of_birth
+        )
+
         migrated_plan_id = None
         if request.pending_plan is not None:
             migrated_plan_id = _migrate_pending_plan(
@@ -493,3 +524,37 @@ def sign_in(request: SignInRequest) -> AuthResponse:
         )
     finally:
         client.postgrest.aclose()
+
+
+# ============================================================
+# POST /auth/redeem-invite — docs/CONSENT.md section 3, step 4
+# ============================================================
+# CONSENT-4 admission-axis fix (adversarial review finding, this session,
+# HIGH): db/migrations/0012_admission_axis.sql built `redeem_invite()`
+# (the ONLY way to become admitted) but nothing in app/api anywhere ever
+# called it — that migration was explicitly database-layer-only scope.
+# Without this route there was no way for ANY caller, however valid their
+# invite code, to ever redeem it. This is the "enter your invite code"
+# screen's server side (docs/CONSENT.md section 3, step 4: "re-asking
+# costs one screen and stores nothing") — the screen itself (a template)
+# is a UI task, not built here; this route is what it will call.
+#
+# `require_auth`, not the anon client: docs/CONSENT.md section 3 requires
+# "the real session" — `redeem_invite()` itself also raises without one
+# (`auth.uid() is null`), but failing here with a clean 401 is friendlier
+# than propagating that as a raw RPC error.
+@router.post("/redeem-invite", response_model=RedeemInviteResponse)
+def redeem_invite(
+    request: RedeemInviteRequest, auth: AuthedSession = Depends(require_auth)
+) -> RedeemInviteResponse:
+    try:
+        result = auth.client.rpc("redeem_invite", {"p_code": request.code}).execute()
+    except APIError as exc:
+        # `redeem_invite()` is granted to `authenticated` only (0011) —
+        # reaching this branch at all would mean `require_auth`'s own
+        # bearer-token check somehow let through a token Postgres itself
+        # doesn't consider authenticated. Surfaced as 401 rather than a
+        # bare 500, same "clean response over an unhandled exception"
+        # convention as sign_up()'s FIX 3.
+        raise HTTPException(status_code=401, detail="Sign in required.") from exc
+    return RedeemInviteResponse(admitted=bool(result.data))

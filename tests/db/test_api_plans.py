@@ -19,9 +19,32 @@ from fastapi.testclient import TestClient
 from supabase import Client
 
 from app.main import app
-from tests.db.conftest import run_name
+from tests.db.conftest import admit_student, run_name
 
 client = TestClient(app)
+
+
+# CONSENT-4 (0012): POST/PATCH/DELETE /plans now require is_admitted()
+# (ANDed into saved_plans' write policies) — see conftest.py's
+# `admit_student()`. Overriding conftest.py's `student_a`/`student_b`
+# fixtures here (pytest's documented same-name-override pattern) admits
+# both once, centrally, for every test in this module.
+@pytest.fixture
+def student_a(
+    student_a: tuple[str, Client], admin_client: Client
+) -> tuple[str, Client]:
+    user_id, scoped_client = student_a
+    admit_student(admin_client, user_id)
+    return user_id, scoped_client
+
+
+@pytest.fixture
+def student_b(
+    student_b: tuple[str, Client], admin_client: Client
+) -> tuple[str, Client]:
+    user_id, scoped_client = student_b
+    admit_student(admin_client, user_id)
+    return user_id, scoped_client
 
 
 @pytest.fixture

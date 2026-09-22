@@ -3,6 +3,55 @@
 Plain, numbered, append-only SQL files. Never edit a migration once it's
 been applied anywhere — write a new one (`0002_...sql`, etc.).
 
+## Two gotchas worth knowing before writing a new one
+
+**`grant execute ... to authenticated` alone does NOT stop `anon` from
+calling a function too** — live-verified, CONSENT-4 (0012/0013, renumbered
+from 0011/0012 mid-review after `0011_ai_usage.sql`, AI-4, took the 0011
+slot on `main`). This
+Supabase stack grants EXECUTE on every new `public`-schema function
+through TWO independent paths that a bare `grant ... to authenticated`
+never touches: the SQL-standard default (EXECUTE to the pseudo-role
+`PUBLIC`, which every role implicitly holds through) and this stack's own
+`alter default privileges` setup (a DIRECT grant to `anon`/`authenticated`
+/`service_role`). If a function must NOT be `anon`-callable, revoke from
+**both** `public` and `anon` by name before granting to `authenticated` —
+either revoke alone silently leaves the other grant in place. See
+`0012_admission_axis.sql`'s `redeem_invite()` grant block for the full
+live-verified reasoning and the exact statements.
+
+**pgcrypto's functions (`gen_random_bytes`, `digest`, ...) live in the
+`extensions` schema, not `public`**, on this stack — a bare, unqualified
+call inside a `set search_path = public` function fails with "function
+... does not exist". Schema-qualify (`extensions.digest(...)`), the same
+fix `0006_guardian_consent_token_pgcrypto_schema.sql` already applied for
+`gen_random_bytes`.
+
+**A `security definer` predicate function that takes `p_uid uuid default
+auth.uid()` is an identity oracle unless BOTH grants are revoked AND the
+body is pinned to the caller** — live-verified, CONSENT-4 (0012/0013),
+found by adversarial review AFTER the first merge, not before. The same
+class of bug, pre-existing on already-merged `main`, was later found in
+`account_active(uid)` (0004_guardian_consent.sql) too — see
+`0014_account_active_grant_fix.sql`'s own header. The grant
+mistake above (bare `grant ... to authenticated` not stopping `anon`) is
+about WHO can call the function at all; this is a second, independent
+mistake about WHAT it will answer once someone can: `is_admitted(p_uid)`/
+`is_safeguarding_staff(p_uid)` were written to be called from inside RLS
+policies as `is_admitted(auth.uid())` — always the caller's own id — but
+nothing stopped a DIRECT RPC call from passing a DIFFERENT uid, turning
+an internal RLS predicate into a per-uid probe of another account's
+admission/staff status. The default parameter alone does not protect
+this — a caller can always override a default. Two fixes, together, same
+as redeem_invite()'s: revoke `public`/`anon` (grant to `authenticated`
+only, as above) AND add `and p_uid = auth.uid()` to the function body's
+own `where` clause, so even an `authenticated` caller passing someone
+else's uid gets `false`, never the real answer. Test this by calling the
+RPC with an explicit `p_uid` that is NOT the caller's own id, from BOTH
+an anon client and a different authenticated client — a bare "call it
+with no arguments as yourself" test cannot catch this class of bug at
+all.
+
 ## Applying (on your own Supabase project — see `docs/DECISIONS.md`)
 1. Create a project at [supabase.com](https://supabase.com) (Mumbai /
    `ap-south-1` region recommended — see `docs/SECURITY.md`'s residency

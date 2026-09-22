@@ -175,7 +175,28 @@ will not call that".
 - **Gap CONSENT-4 must close.** Today an un-admitted account with a
   confirmed email can still write `saved_plans`. `is_admitted()` must be
   added to those write policies, and `admitted_at` must never be
-  client-writable.
+  client-writable. **Closed, both directions** (adversarial review, this
+  session): (1) own-row INSERT — not just UPDATE — is also blocked from
+  setting `admitted_at`/`deletion_due_at` (`enforce_student_accounts_
+  insert_not_admitted()`, a BEFORE INSERT trigger, service-role exempt).
+  (2) `is_admitted()`/`is_safeguarding_staff()` themselves must never
+  answer for a uid other than the caller's own, and must not be callable
+  by an unauthenticated `anon`-key holder at all — both were, as first
+  written, missing the same `revoke ... from public, anon` treatment
+  `redeem_invite()`/`withdraw_account()` already got, making them an
+  unauthenticated, per-uid admission/staff oracle. Fixed with the
+  identical revoke-then-grant block plus an added `p_uid = auth.uid()`
+  check in each function body (defense in depth, same pattern as
+  `redeem_invite()`'s internal `auth.uid() is null` check).
+- **Adult admission actually reachable.** The database-only cut of
+  CONSENT-4 left every real adult account permanently inadmissible: no
+  code anywhere created the `student_accounts` row `redeem_invite()`
+  needs, and no route ever called `redeem_invite()` at all. Closed in
+  the same session, as the minimum companion: `app.api.guardian_consent.
+  ensure_active_student_account` (called from `sign_up()`'s adult branch
+  and from the first-sign-in bootstrap) creates the row as `active`,
+  never `admitted`; `POST /auth/redeem-invite` (session-scoped) is the
+  server side of step 4 below.
 - **Accepted Phase 1 residual.** The guardian address is self-declared.
   The self-check blocks only the same-address case (with Gmail dot and
   plus normalisation); a determined minor could use a second address they

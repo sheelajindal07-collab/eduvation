@@ -29,6 +29,7 @@ import os
 import re
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -176,6 +177,46 @@ def run_name(label: str) -> str:
     claims.verifier, ...) — same purpose as `run_email` above, for rows
     that aren't a Supabase Auth user."""
     return f"{label} {_RUN_TAG}"
+
+
+# --------------------------------------------------------------------
+# CONSENT-4 (0012/0013) — admission helper for every OTHER test file
+# --------------------------------------------------------------------
+# `student_a`/`student_b` below are deliberately left WITHOUT an
+# auto-created `student_accounts` row: tests/db/test_access_matrix.py's
+# own `_Seeds.account_id()` needs that table's INSERT cell to see student
+# A with NO existing row (the whole point of an insert probe), and this
+# fixture is shared by that file too — auto-creating one here would turn
+# that cell into a duplicate-key error instead of the ALLOW/DENY it
+# actually tests. Call this explicitly instead, from any OTHER test that
+# needs a real RLS-scoped write to `saved_plans`/`student_profiles` to
+# succeed as an ordinary student.
+def admit_student(admin_client: Client, user_id: str, *, status: str = "active") -> None:
+    """Give a throwaway test student a real, ADMITTED `student_accounts`
+    row (0012's `is_admitted()` gate — renumbered from 0011 mid-review;
+    see `db/migrations/0012_admission_axis.sql`'s own header for why):
+    the given `account_status` plus `admitted_at` stamped, inserted
+    directly by the service role (bypasses RLS, same as every other seed
+    in this suite).
+
+    Needed by every test that exercises an ordinary student's OWN write
+    to `saved_plans`/`student_profiles` through their real RLS-scoped
+    client: `is_admitted()` fails CLOSED when a user has no
+    `student_accounts` row at all — the opposite default from
+    `account_active()`, which fails OPEN for that same 'no row' case (see
+    `db/migrations/0012_admission_axis.sql`'s own docstring for why the
+    two defaults deliberately differ). Before 0012, an ordinary
+    `student_a`/`student_b` with no `student_accounts` row could already
+    write both tables; after 0012, the SAME write needs this call first.
+    """
+    admin_client.table("student_accounts").insert(
+        {
+            "id": user_id,
+            "date_of_birth": "1990-01-01",
+            "account_status": status,
+            "admitted_at": datetime.now(tz=UTC).isoformat(),
+        }
+    ).execute()
 
 
 def _build_admin_client() -> Client | None:
@@ -642,6 +683,72 @@ _PLAN_ACTIONS_SKIP_REASON = (
 )
 
 
+def _admission_axis_migration_applied() -> bool:
+    """Same marker-function pattern as 0003-0011, for
+    0012_admission_axis.sql (CONSENT-4; renumbered from 0011 mid-review
+    after 0011_ai_usage.sql, AI-4, took the 0011 slot on main)."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("admission_axis_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_ADMISSION_AXIS_SKIP_REASON = (
+    "db/migrations/0012_admission_axis.sql not yet applied to this stack. "
+    "Run `make test-db-up` against a stack with 0012 applied; see "
+    "db/migrations/README.md. A stale PostgREST schema cache looks "
+    "identical — `make test-db-migrate` reloads it."
+)
+
+
+def _safeguarding_schema_migration_applied() -> bool:
+    """Same marker-function pattern as 0003-0012, for
+    0013_safeguarding_schema.sql (CONSENT-4; renumbered from 0012 mid-
+    review, same reason as 0012_admission_axis.sql above)."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("safeguarding_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_SAFEGUARDING_SCHEMA_SKIP_REASON = (
+    "db/migrations/0013_safeguarding_schema.sql not yet applied to this "
+    "stack. Run `make test-db-up` against a stack with 0013 applied; see "
+    "db/migrations/README.md. A stale PostgREST schema cache looks "
+    "identical — `make test-db-migrate` reloads it."
+)
+
+
+def _account_active_grant_fix_migration_applied() -> bool:
+    """Same marker-function pattern as 0003-0013, for
+    0014_account_active_grant_fix.sql — the migration-owner fix round's
+    closure of account_active()'s pre-existing (0004, already-merged)
+    cross-user identity-oracle gap. See that file's own header for the
+    live-verified finding and db/migrations/README.md's "identity oracle"
+    gotcha entry for the shape this fix mirrors."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("account_active_grant_fix_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_ACCOUNT_ACTIVE_GRANT_FIX_SKIP_REASON = (
+    "db/migrations/0014_account_active_grant_fix.sql not yet applied to "
+    "this stack. Run `make test-db-up` against a stack with 0014 applied; "
+    "see db/migrations/README.md. A stale PostgREST schema cache looks "
+    "identical — `make test-db-migrate` reloads it."
+)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Enforce the target guard before anything is collected or run.
 
@@ -745,6 +852,25 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     # 0002-era tests for a migration they do not actually need.
     if not _plan_actions_migration_applied():
         _mark_unavailable(_in(("test_plan_actions.py",)), _PLAN_ACTIONS_SKIP_REASON)
+
+    # Same pattern, for 0012_admission_axis.sql / 0013_safeguarding_schema.sql
+    # (CONSENT-4; renumbered from 0011/0012, see both files' own headers).
+    # Both are checked for test_admission.py, which exercises
+    # functions/tables from both files; test_access_matrix.py needs no
+    # separate gate here — its own guard (missing_coverage /
+    # tables_not_in_database) already reports an unapplied migration as a
+    # skip/failure without a per-file marker.
+    if not _admission_axis_migration_applied():
+        _mark_unavailable(_in(("test_admission.py",)), _ADMISSION_AXIS_SKIP_REASON)
+    elif not _safeguarding_schema_migration_applied():
+        _mark_unavailable(_in(("test_admission.py",)), _SAFEGUARDING_SCHEMA_SKIP_REASON)
+
+    # Same pattern, for 0014_account_active_grant_fix.sql (migration-owner
+    # fix round on this branch, closing a pre-existing 0004 finding).
+    if not _account_active_grant_fix_migration_applied():
+        _mark_unavailable(
+            _in(("test_account_active_oracle.py",)), _ACCOUNT_ACTIVE_GRANT_FIX_SKIP_REASON
+        )
 
 
 @pytest.fixture(scope="module")
