@@ -1,13 +1,29 @@
-"""GET /ask/view — the "Ask BCION" answer page, zero-JS (UI-11 / BCI-014).
+"""GET /ask/view — the "Ask BCION" answer page, zero-JS (UI-11 / BCI-014,
+AI-7 wiring).
 
 Distinct path from the JSON API (`/ask/view` vs. `/ask`), same convention
 `app/api/compare.py`/`app/web/compare_pages.py` already use — the already
 -tested JSON contract stays untouched, and this module's only job is
 "render what `app.api.ask` already computes", never a second copy of the
 fetch-and-assemble logic (`app.api.ask.assemble_ask_answer` is the one
-place that logic lives; both this module and the JSON route call it — see
-that module's own docstring for the deterministic-only rule this whole
+place the deterministic fact-card logic lives, and `app.api.ask.
+_pipeline_answer` is the one place the additive AI-pipeline call lives;
+this module calls both, never reimplementing either — see
+`app/api/ask.py`'s own module docstring for the full "deterministic
+baseline never goes away, AI is an additive layer" rule this whole
 feature follows).
+
+`ai_sentences`/`ai_citations` are threaded into this page's template
+context below on the same "answered-only, never in place of the fact
+cards" terms as the JSON route's own `AskResponse` fields — but
+`app/web/templates/ask.html` is a forbidden file for this card (AI-7's
+own "Forbidden files" list) and, as of this card, has no markup that
+reads either key: passing them through here keeps the two routes'
+wiring identical and ready for a future template change, but today
+neither key is visually rendered on `/ask/view`. The page's own
+never-blank/never-error/never-a-second-message guarantee holds regardless
+-- `show_fallback` and `fact_cards` below are completely unaffected by
+this and render exactly as UI-11 left them.
 
 ## Router registration
 Registered as its OWN standalone top-level `RouterSlot` ("ask_pages"),
@@ -29,7 +45,8 @@ from typing import Any, cast
 from fastapi import APIRouter, Depends, Query, Request
 from supabase import Client
 
-from app.api.ask import ASK_TEMPLATES, assemble_ask_answer, entity_kind_and_id
+from app.ai.schemas import AIAnswerStatus
+from app.api.ask import ASK_TEMPLATES, _pipeline_answer, assemble_ask_answer, entity_kind_and_id
 from app.core.config import get_settings
 from app.web.common import _DB_UNAVAILABLE_MESSAGE, _db_client_or_none
 from app.web.templating import templates
@@ -98,6 +115,19 @@ def ask_page(
     answer = assemble_ask_answer(
         db, ask_template, entity_kind=entity_kind, entity_id=entity_id, as_of=as_of
     )
+    ai_answer = _pipeline_answer(
+        db, ask_template, entity_kind=entity_kind, entity_id=entity_id, as_of=as_of
+    )
+    if ai_answer is not None and ai_answer.status == AIAnswerStatus.answered:
+        ai_sentences = list(ai_answer.sentences)
+        ai_citations = list(ai_answer.citations)
+    else:
+        # Every other status, including "the pipeline was never called at
+        # all" (ai_answer is None) -- render nothing extra. See this
+        # module's own docstring for why neither key is visually rendered
+        # by ask.html today regardless.
+        ai_sentences = []
+        ai_citations = []
 
     entity_table = "pathways" if entity_kind == "pathway" else "careers"
     name_result = db.table(entity_table).select("id, name").eq("id", entity_id).execute()
@@ -118,5 +148,7 @@ def ask_page(
             "show_fallback": show_fallback,
             "fact_cards": answer.fact_cards,
             "missing_information": answer.missing_field_labels,
+            "ai_sentences": ai_sentences,
+            "ai_citations": ai_citations,
         },
     )
