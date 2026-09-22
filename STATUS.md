@@ -397,6 +397,28 @@ missing `cast(...)` in `app/web/guest_session.py` (migration lane),
 fixed immediately, matching this codebase's own established pattern
 used at five other call sites. Trust CI's `mypy` result, not a local run,
 on this machine, until someone cleans up its global Python install.
+**Fixed for real, not just diagnosed (2026-09-22)**: `mk/dev.mk` now
+creates and PATH-prepends a project-local `.venv` (`.venv/Scripts` on
+Windows, `.venv/bin` elsewhere) for every `make` target in this repo, so
+`make typecheck`/`make lint`/`make test-unit` etc. resolve `mypy`/
+`ruff`/`pytest` from the project's own isolated install, never a dev
+machine's global site-packages. Verified this was the real, complete
+root cause, not a guess: a from-scratch `.venv` with only this project's
+actual pinned dependencies (no `numpy`/`onnxruntime`/`protobuf` anywhere
+in `requirements.lock` or `requirements-dev.lock`) runs `mypy app` clean
+("Success: no issues found in 69 source files") on the very machine that
+was producing the "errors prevented further checking" abort. **Did not**
+touch `[tool.mypy] python_version` in `pyproject.toml` — bumping it to
+3.12 to dodge this would have made local and CI's mypy *disagree* (CI
+pins Python 3.11 to match `requires-python = ">=3.11"`) instead of
+agreeing, for a problem the interpreter version was never actually
+causing. **Known, separate, pre-existing gap, not touched by this fix**:
+`make install`'s `pip install --require-hashes -r requirements-dev.lock`
+still can't complete on Windows/macOS (`requirements-dev.lock` is
+`uv`-compiled `--python-platform linux`; `uvicorn[standard]`'s `uvloop`
+pin has no Windows wheel and refuses to build from source there) — this
+was already true and already disclosed before this session, unrelated to
+the mypy fix.
 **Shell lane merged** (`I18N-1, I18N-2, UI-1, DESIGN-18`), plus two
 disclosed follow-ups closed same day: `consent_pages.py` now shares the
 one Jinja environment (no more test exemption), and `docs/CONTRACTS.md`'s
