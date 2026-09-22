@@ -5,6 +5,42 @@ never deleted.
 
 ---
 
+## 2026-09-22 — Migration numbers must be checked against the migration-owner stack's own ledger, not just `ls`
+**Event:** The AI-4 migration-owner agent (BCI-010, Phase 1a) and an
+independent peer session both found the same real collision within
+minutes of each other: `db/migrations/0011` and `0012` are uncommitted
+on `main` (`ls db/migrations/` shows only 0001-0010), but a `consent-4`
+lane (peer session, CONSENT-4 split into two migrations) had already
+written `0011_admission_axis.sql` and `0012_safeguarding_schema.sql` in
+its own worktree **and applied both to the one shared migration-owner
+local stack** `supabase/config.toml` reserves. AI-4's card had reserved
+"0011" against `ls` alone, which cannot see an uncommitted migration
+already live on that shared stack from a different worktree.
+**Decision:** A migration number is not free until confirmed against
+BOTH `ls db/migrations/` on `main` AND the migration-owner stack's own
+`_schema_migrations` ledger (`supabase status`, or query it directly).
+`tasks/TEMPLATE.md`'s existing "reserve at session open, not from an old
+draft" rule stands; this adds the second check. AI-4 stopped correctly
+before writing any file, applying anything, or touching the stack
+(`.claude/agents/migration-owner.md`'s "never more than one open
+migration" rule fired as designed) - no rework, nothing to revert.
+**What this changes:** `tasks/BCI-010.md` (AI-4) is corrected: blocked
+until the `consent-4` lane merges to main (frees the stack and settles
+the real numbers) or a second migration-owner project/port pair is
+reserved in `supabase/config.toml` (lead-only file, not a card to
+self-serve); expected next-free number **0013**, to be confirmed fresh,
+not assumed. Two design gaps the first attempt also surfaced, folded
+into the card: the cross-user access-matrix guard couples
+`tests/db/access_matrix.py` to `tests/db/test_access_matrix.py` (the
+`_PROBE_BUILDERS` list), so a migration that adds matrix rows must own
+both files, additively; and a view (`ai_usage_daily_totals`) cannot be a
+`MATRIX` row at all, since the matrix's `catalogue` fixture reads
+`pg_tables` and a view there hard-fails under `BCION_REQUIRE_LIVE=1` -
+its cross-user coverage belongs in the migration's own test file instead.
+**Status:** Recorded. AI-4 re-launches once `consent-4` merges.
+
+---
+
 ## 2026-09-22 — Phase 1a inserted: an AI-only build phase, with three rules on every AI card
 **Decision (owner, in chat, 2026-09-22):** "Phase 1a should only AI
 implementation"; "fast reliable quality, more work in less time"; "AI has

@@ -47,6 +47,22 @@ shifts by one. Waiting on the owner's "go" and five explicit yeses (plan
 section 8a) plus AI-10 (key, free-tier terms and limits) before any live
 call. `tasks/INDEX.md` Step 11 retagged `[P1a]`; four cards added
 (AI-14 un-dropped, AI-18, AI-19, AI-20). No code changed.
+**Day 1 launched, AI-4 self-stopped correctly (2026-09-22):** BCI-009
+(AI-1), BCI-010 (AI-4) and BCI-011 (AI-9) dispatched as three parallel
+worktree agents. AI-4 found a live collision with a peer session's
+`consent-4` lane (CONSENT-4, split into two migrations) before writing
+anything: `consent-4` already holds uncommitted `0011_admission_axis.sql`
+and `0012_safeguarding_schema.sql`, already applied to the one shared
+migration-owner local stack this repo's `supabase/config.toml` reserves.
+AI-4 stopped per `.claude/agents/migration-owner.md`'s "never more than
+one open migration" rule, applied nothing, touched no cloud project, and
+its worktree was auto-removed (zero commits). `tasks/BCI-010.md` is
+corrected: blocked until `consent-4` merges (or a second migration-owner
+stack is reserved), next-free number expected **0013** (confirm fresh at
+restart, not just via `ls` - see the card), plus two design gaps the
+first attempt surfaced (the access-matrix guard needs
+`tests/db/test_access_matrix.py` in Owned files; the `ai_usage_daily_totals`
+view cannot be a matrix row). AI-1 and AI-9 still running.
 
 ## Development plan — Wave 1 done, Wave 2's migration/eligibility lanes done (2026-09-21)
 `docs/DEVELOPMENT-PLAN.md` is being executed for real. `tasks/INDEX.md`
