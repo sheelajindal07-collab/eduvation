@@ -5,6 +5,139 @@ never deleted.
 
 ---
 
+## 2026-09-22 — AI-4 merged: a third definer function accepted; a settlement-race risk accepted and documented, not fixed
+**Event:** Migration `0011_ai_usage.sql` (AI-4) shipped a third
+`SECURITY DEFINER` function, `ai_budget_remaining()`, beyond the two
+(`ai_reserve`, `ai_settle`) the task card named. Flagged by the
+migration owner for an explicit yes rather than assumed.
+**Decision:** Accepted. Two of `ai_usage_caps`' three caps (global
+daily, global monthly) are installation-wide, so `remaining()` - part
+of the call shape `app/ai/budget_db.py` must match to be a drop-in for
+`app/ai/budget.py`'s `AIRequestBudget` - cannot be answered from one
+caller's own RLS-scoped row slice. The function is read-only, `stable`,
+pinned `search_path`, returns a single integer, and discloses only "how
+much headroom is left" - information the planned AI-unavailable banner
+already shows every visitor regardless of identity.
+**Separately accepted, not fixed**: anyone who can call `ai_settle` and
+can correctly guess a reservation's UUID (122 bits of entropy) could
+settle it early as `failed, 0 calls`, freeing its reserved headroom -
+a narrow window that closes the moment the real settlement lands. The
+migration's own comment documents this. The proper fix - a settlement
+secret returned by `ai_reserve` and required by `ai_settle` - is a
+design decision beyond this card's scope, not attempted here.
+**What this changes:** Nothing yet. Both are named, accepted risks at
+this pilot's scale (CLAUDE.md: "Ranges and named assumptions only" for
+uncertainty; the spirit extends to a named, bounded operational risk).
+Revisit the settlement-secret fix before any deployment where a
+malicious guess of a UUID is a realistic threat model, not assumed here.
+**Status:** Accepted as documented. Migration merged to `main`, not yet
+applied to the shared test stack (see `tasks/INDEX.md` lockboard).
+
+---
+
+## 2026-09-22 — A11Y-3 merged; briefly broke main's mypy, fixed same session
+**Decision.** Merged A11Y-3 to `main`: `app/web/errors.py`
+(`register_error_handlers`) adds global styled 404/403/500 HTML pages,
+gated on BOTH a closed JSON-API route deny-list AND `Accept: text/html`
+(never Accept alone — a browser navigating directly to a JSON API URL
+also sends `Accept: text/html`, so Accept alone would silently turn a
+JSON error into HTML for that case) so every existing JSON API error
+shape is byte-for-byte unchanged. `/explore` now degrades to the same
+friendly "temporarily unavailable" alert `/compare/view` and
+`/requirements/view` already show when the DB is down, via
+`_db_client_or_none`, instead of a raw 500.
+**A real CI break, caught and fixed within the same session, not
+carried forward.** The merge's own local verification used `mypy app
+--follow-imports=skip` (this session's copied habit from the
+2026-09-21 numpy-stub workaround — see `docs/TESTING.md`'s new
+warning), which reported clean. CI's plain `mypy app` (Python 3.11,
+hash-checked lockfile — the actually-authoritative environment) failed:
+`app/web/errors.py:202` registered a handler typed to accept
+`StarletteHTTPException` where Starlette's own `ExceptionHandler` alias
+is `Callable[[Request, Exception], ...]` (contravariant — a handler
+that only accepts the narrower subtype is not a valid substitute).
+Main was CI-red for ~5 minutes (12:41-12:46) while two peers' unrelated
+pushes (AI-7, AI-11) landed in the same window and inherited the same
+red status. Fixed by widening the parameter to `Exception` and narrowing
+with `assert isinstance(exc, StarletteHTTPException)` inside — confirmed
+against the exact CI-reported line, then pushed and watched fully green
+(run 35729179715, all 3 jobs). **`--follow-imports=skip` must not be
+used for verification again** — see `docs/TESTING.md`. A separate peer
+session is fixing the underlying local numpy/mypy environment issue so
+a plain `mypy app` works locally without that flag at all.
+**Addendum — a second, independent fix collided with this one.** A peer
+session ("AI in lite version") separately found and fixed the same
+break with a different approach (`cast()` at the `add_exception_handler`
+call site rather than widening the handler's own parameter type), and
+it landed in `main`'s history as an unrelated-looking commit (`bd44177`,
+"STATUS: ux-qa findings...") — a pathspec-scoped `git commit STATUS.md`
+that, per this session's own established trap (see the "no cap"
+concurrency entry below), still captured `app/web/errors.py`'s full
+current working-tree content, including that peer's uncommitted cast
+fix sitting in the same shared checkout. My own fix (`7fea5e2`) was then
+built on top of that already-cast-fixed file — its diff only touched
+`_handle_http_exception`'s own definition, so it composed cleanly rather
+than conflicting — leaving both fixes present at once (harmless but
+redundant). The peer caught this on their own next `git fetch`, compared
+both, kept the assert-based one (cleaner, matches Starlette's actual
+contravariant handler type more directly), and dropped their now-unused
+`cast`/`Callable`/`Coroutine` imports — pushed as `777254a`, confirmed
+green. No action was needed from this session beyond fast-forwarding to
+match. Net lesson, same as the earlier one: a pathspec-scoped commit in
+this shared checkout still needs a `git diff <file>` glance before
+committing, even for a file that looks unrelated to what you meant to
+touch.
+
+---
+
+## 2026-09-22 — SEC-3 merged: nginx per-IP rate limiting, documented not yet wired in
+**Decision.** Merged SEC-3 to `main`: `deploy/nginx/ratelimit.conf` (four
+zones — `bcion_auth` 30r/m burst 20, `bcion_plans_write` 60r/m burst 30 via a
+`map`-based GET/HEAD exclusion rather than `limit_except` (which nginx
+rejects `limit_req` inside), `bcion_ask` 30r/m burst 15, a shared
+`bcion_perip_conn` 20-connection cap) plus `app/static/429.html` and a new
+`docs/SECURITY.md` "Rate limiting (SEC-3)" section documenting this as Layer
+1 alongside Supabase Auth's own independent Layer 2 limiting. This is a
+config snippet only — no nginx deployment exists yet; DEPLOY-4/7 wires it
+into a real site file. Live-tested (not just `nginx -t`) against a local
+`nginx:stable` Docker container: confirmed the GET/HEAD exclusion passes
+unlimited, a `POST /plans` burst passes exactly 31 requests before 429s, `GET
+/ask` passes exactly 16.
+**Open question for the owner:** the task card named POST/PATCH/DELETE for
+`/plans`; the config excludes GET/HEAD instead (covering the card's list
+plus `PUT /plans/{id}/actions/{action_key}`, a write the card didn't name).
+Flagging for confirmation that's the intended scope.
+**Verified before merge/push:** ruff clean, mypy clean (81 files), `pytest
+tests/unit -q` 1251 passed, CI green on `main` post-push (run 35727986184 —
+build-image, lint-typecheck-test including DB/RLS tests, secret-scan all
+passed).
+
+---
+
+## 2026-09-22 — Owner names Mahesh for every open people role (CONSENT-2, PUB-13a, CONTENT-1 checker, I18N-6, TRIAL-1 second moderator)
+**Decision.** The owner named one person, Mahesh ("all rounder"), for: the
+non-author consent and safeguarding reviewer (CONSENT-2 — also the human
+read of `docs/CONSENT.md` that CONSENT-4 needs before it can merge, and
+the sign-off `docs/SECURITY.md` requires before any real minor account);
+the publishing checker (PUB-13a, and CONTENT-1's checker seat; the owner
+creates the reviewer account in PUB-13b); the Hindi reviewer (I18N-6 —
+that Mahesh reads Hindi comfortably is the owner's assumption, not
+verified here); and the second moderator for usability round 1
+(TRIAL-1). Contact details stay with the owner only — never in this
+repo, the same rule CONTENT-18 enforced for the owner's own address.
+**What stays separated, because the rules need it:** maker ≠ checker —
+Mahesh checks, so he never drafts the claims he approves (the owner and
+the AI-extracted drafts are the makers; the database refuses
+self-approval regardless). Consent reviewer ≠ author — holds; the
+workflow was written by agents and the owner. Round-1 **tester** ≠
+Mahesh — a moderator who knows the product is fine, a tester who does is
+not, so TRIAL-1's five tester profiles are still to be recruited.
+CONTENT-1's editor and corrections-owner seats default to the owner
+until someone else is named.
+**Risk, named:** one person on every human gate is a single point of
+failure for the schedule. Acceptable for a 10-100 user pilot; split the
+roles before the expansion cohort (Step 16) starts.
+
 ## 2026-09-22 — Owner lifts the wave concurrency cap: "launch everything that's unblocked"
 **Decision.** `docs/DEVELOPMENT-PLAN.md` section 8.8's wave table caps concurrent
 writing lanes at 6 (3 of them DB-touching), specifically so the lead session's

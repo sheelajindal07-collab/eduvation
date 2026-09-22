@@ -1,9 +1,14 @@
 {% extends "base.html" %}
-{# UI-3 -- the /start chain's end. Matching these answers to real
-   pathway suggestions is UI-4's job, not this one (see
-   app/web/start_pages.py's docstring) -- this screen only confirms what
-   was told, or skipped, in plain language. #}
+{# UI-3 built the plain "here's what you told us" summary below. UI-4
+   adds the "Suggested pathways" section: up to three tag-matched
+   pathways from app.planning.suggest.suggest_pathways
+   (app/web/start_pages.py), each with its own "why am I seeing this"
+   block (_why.html), or -- when there is genuinely no published tag
+   data to match against yet -- an honest `alert` saying so, never a
+   fabricated or empty-looking match (this screen's own frozen
+   `alert`/`empty_state` vocabulary, app/web/templates/_states.html). #}
 {% from "_states.html" import alert %}
+{% from "_why.html" import why_am_i_seeing_this %}
 {% block title %}Thanks &mdash; BCION Lite{% endblock %}
 {% block content %}
   <h1 class="text-2xl font-semibold text-charcoal mb-2">Thanks &mdash; here's what you told us</h1>
@@ -27,6 +32,35 @@
         </li>
       {% endfor %}
     </ul>
+  </section>
+
+  <section class="card mb-6">
+    <h2 class="text-lg font-semibold text-charcoal mb-3">Suggested pathways</h2>
+    {% if suggestions %}
+      <ul class="space-y-4">
+        {% for suggestion in suggestions %}
+          <li class="border-b border-neutral pb-4 last:border-0 last:pb-0">
+            <a href="/pathways/{{ suggestion.pathway_id }}/view" class="text-accent underline font-medium">
+              {{ suggestion.name }}
+            </a>
+            {{ why_am_i_seeing_this(reasons=suggestion.reasons, preferences=suggestion.preferences,
+                                    unknowns=suggestion.unknowns, change_preferences_url=change_answers_url,
+                                    heading="Why this pathway") }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      {#- suggestions_has_data is always False here (see
+          app.planning.suggest.SuggestionResult: has_data=True never
+          pairs with an empty suggestions tuple) -- the caller genuinely
+          has no published pathway tag data to match against yet
+          (app/web/start_pages.py's `_candidates_for_suggestions`). A
+          plain, honest notice and a link to Explore, never a fabricated
+          or empty-looking "match". -#}
+      {% call alert("Suggestions are not available yet -- there is not enough published pathway data to match against.", variant="neutral") %}
+        <a href="/explore" class="underline">Browse Explore instead</a>
+      {% endcall %}
+    {% endif %}
   </section>
 
   <div class="flex items-center gap-4">

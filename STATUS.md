@@ -160,7 +160,7 @@ links.
   concurrently on the shared stack, not a Phase 1a change). Wave 2 is
   fully verified end to end.
 
-**Wave 3, AI-6 and AI-20 merged (2026-09-22), AI-14 still running.**
+**Wave 3, AI-6, AI-14 and AI-20 all merged (2026-09-22).**
 BCI-015 (AI-6, AI-14, AI-20) dispatched as three parallel worktree
 agents; two finished and were merged as soon as they were ready,
 without waiting for the third - **AI-6**: `app/ai/pipeline.py`'s
@@ -177,12 +177,201 @@ model-authored text - 30 passed, full unit suite 1203 at merge time.
 - translation pass, then a *separate* back-translation-check pass,
 token-overlap agreement scored and flagged (never silently accepted),
 writes a CSV for a human Hindi reviewer, hash-proven to never write
-`en.json`/`hi.json` or touch the database - 25 passed. Both merged
-clean, no file conflicts; full unit suite re-run after both: **1228
-passed**. **BCI-016 (AI-14, reviewer claim extraction) still running.**
+`en.json`/`hi.json` or touch the database - 25 passed. **AI-14**:
+`app/ai/extraction.py` - a pasted-document extraction pass proposing
+`field/value/quoted_span` triples, then a separate adversarial
+verification pass, then a mechanical verbatim-substring re-check in
+code that never trusts the model's own verification answer alone.
+Correctly found two of its card's assumptions were stale (`claims_forms.py`
+and `sources.py`, named as reusable, are actually empty stubs) and
+adapted using the closest already-established pattern instead of
+guessing - the new `/reviewer/extract` page calls `app/api/claims.py`'s
+existing `create_claim()` directly (the same pattern `queue.py` already
+uses for its own actions, since the real `POST /claims` route is
+Bearer-only and a plain form can't attach that header), so no new
+database write path exists; every write still goes through the
+existing, already-tested claims API and its maker-checker enforcement.
+Wired into the running app as the lead's own one-line fix (`app/web/
+reviewer/__init__.py` now includes the new router under the existing
+`reviewer_pages` slot - `app/main.py` itself needed no change, since
+that file only ever imports one combined router per console package).
+23 unit + 16 live db tests pass through the actually-wired app, not
+just its own standalone test harness. **All three merged clean, no
+file conflicts. Full unit suite: 1251 passed.**
 
-Next: merge AI-14 when it finishes; relaunch AI-4 once `consent-4`
-merges.
+**Wave 4, AI-7 and AI-11 both merged (2026-09-22).** **AI-7**: `app.ai.
+pipeline.answer()` wired into `GET /ask` (JSON) and `GET /ask/view`
+(HTML) as an additive layer over UI-11's deterministic baseline -
+`AskResponse.ai_sentences`/`ai_citations` render only when the pipeline
+returns `answered`; every other status (including AI off, which the
+pipeline never even attempts) falls back to exactly the pre-existing
+fact-card page. **Real gap found and left as a documented follow-up,
+not silently closed**: `ask.html`/`_ask.html` are forbidden files for
+this card and have no markup reading the new fields yet - the AI data
+reaches the HTML template context but isn't visually rendered on
+`/ask/view` until a future template-only card adds that markup; the
+JSON route is where this is observable today. **AI-11**: the capped
+evaluation runner, `scripts/run_ai_eval.py` + `scripts/
+seed_ai_eval_fixtures.py`, maps every one of the 36 eval questions to a
+real `AskRequest` (the question's own text becomes a report label only,
+never sent to the pipeline - Rule 3) and runs the real two-pass
+pipeline with a hard call ceiling.
+
+**Owner-visible flag, not silently accepted**: to get real data through
+to the `answered` path at all, the eval seed script had to mark its rows
+`source_type='official'` rather than `'synthetic'` - `db/migrations/
+0001_init.sql`'s trigger refuses a **published** claim on a synthetic
+source for every role including service_role, and `app/ai/retrieval.py`
+separately excludes synthetic-sourced claims regardless of status, so a
+synthetic-sourced row can structurally never reach `answered` through
+the real pipeline. Scoped tightly - local test stack only (reuses
+`scripts/seed_synthetic.py`'s own production/environment guard,
+verbatim, unweakened), every row name still carries `[SAMPLE DATA - NOT
+VERIFIED]` - but this sits close enough to CLAUDE.md's "synthetic
+fixtures ... never published as verified facts" that it deserves your
+own read, not just mine. **Also found**: two of the 7 eval categories
+(`ambiguous`, `source_mismatch` - 10 of 36 questions) have no path to
+real coverage under the current one-id-per-template `AskRequest`
+design - a structural pipeline gap, not a seeding problem, needing
+either a design change or accepting it as permanent Phase 1a scope.
+**Also found**: a published claim's entire value renders verbatim into
+an answered sentence - the two-pass validation holds (the model invents
+nothing), but text already embedded in a published claim's own value
+does reach the student; a maker-checker/content-review concern, not an
+AI-adapter bug.
+
+**Verified live in this session, not just from the agents' own
+reports**: `tests/db/test_ask_view.py` 11 passed against the real
+wired-in app; the eval fixtures actually seeded onto the local stack
+(1 source, 1 career, 10 pathways, 15 claims) and a full mock-provider
+run against that real data completed end to end - **36/36 questions
+reached, 0 cap hits, 15 answered / 9 insufficient_information / 8
+unsupported_template / 4 ai_unavailable** (the last four are exactly
+the `api_failure` category correctly demonstrating the pipeline's own
+fallback), report at `evals/reports/2026-09-22.json`. A separate real
+mypy break was also found and fixed this session in `app/web/
+errors.py` (A11Y-3's exception handlers, not a Phase 1a file - a
+narrower-than-declared handler type passed to `add_exception_handler`;
+same `cast()` pattern already used elsewhere in this codebase). Full
+unit suite: **1352 passed**, mypy clean (83 files), ruff clean.
+
+**AI-4 unblocked, no longer waiting on `consent-4`** - a third,
+separate migration-owner local stack was reserved (`supabase/
+config.toml`, documentation-only, additive) so it runs in parallel
+instead of queuing behind the peer session's migration lane. Relaunched
+and running as of this note.
+
+**AI-4 merged (2026-09-22 evening).** `db/migrations/0011_ai_usage.sql`:
+`ai_usage` + `ai_usage_caps`, `ai_reserve()`/`ai_settle()` (SECURITY
+DEFINER, pinned `search_path`, `select ... for update` on the caps row
+as the serialisation point). **Six separate protections revert-to-proved
+on the migration-owner's own third stack, all restored and re-verified**:
+the concurrent-reservation cap check, the account-scoped SELECT policy,
+the reviewer-only aggregate-view gate, the no-API-role-write grants,
+`ai_settle`'s two guards, and `ai_budget_remaining`'s own cap math. Full
+`tests/db` on that stack, after a reset and clean re-apply of 0001-0011
+from committed files: **691 passed, 8 xfailed, 0 failed.**
+
+**Two items accepted on my own read, recorded here for your visibility
+rather than silently settled:**
+- **A third `SECURITY DEFINER` function beyond the card's named two** -
+  `ai_budget_remaining()`, read-only, because two of the three caps are
+  installation-wide and cannot be answered from one caller's own
+  RLS-scoped row slice. It leaks only "how much headroom is left",
+  which the AI-unavailable banner already shows every visitor. Accepted;
+  say so if you'd rather it raised instead of answered.
+- **A known, documented residual risk**: anyone who can call
+  `ai_settle` and can guess a reservation's UUID (122-bit guess space)
+  could settle it early and free its headroom - a narrow window only
+  until the real settlement lands. The proper fix (a settlement secret
+  returned by `ai_reserve`) is a design decision beyond this card's
+  scope; flagging, not fixing, for now.
+
+Cap values (per-identity daily 5, global daily 50, global monthly 500)
+are placeholders, labelled as such in the migration's own comment -
+real figures are an owner `UPDATE`, not a new migration, whenever you
+have them (`docs/plan/phase-1a-ai.md` section 8b, which no agent reads).
+
+**Not yet applied to the shared test stack.** The access-matrix guard
+will hard-fail `tests/db` for every lane on that stack the moment it
+sees the new matrix rows without the table existing - holding for a
+"no run in flight" signal per the lockboard (`tasks/INDEX.md`), since
+several lanes (mine and at least one Phase 1 lane) are running live
+db tests against it right now. **Renumbering note**: `consent-4`'s own
+uncommitted `0011_admission_axis.sql`/`0012_safeguarding_schema.sql`
+shift to `0012`/`0013` now that this merged first, per the existing
+first-to-merge rule - a pure rename, nothing from either worktree has
+touched a cloud project.
+
+Next: apply `0011` to the shared stack once clear; open wave 5 (AI-8
+the AI-off regression; AI-18 the next-steps template) - both launched,
+running now; AI-19 (what-changed) queued behind AI-18 to avoid a
+shared-file collision on `app/api/ask.py`. The two eval findings from
+AI-11 (official-vs-synthetic seeding, the two uncoverable categories)
+still need an explicit owner yes before AI-12's fix round treats either
+as settled.
+
+## Lead session, 2026-09-22 evening — merge-queue drain, cleanup, one process rule
+Owner asked for a speed analysis, then "do the treatment". What the
+analysis found and acted on: with the lane cap lifted (`docs/DECISIONS.md`
+2026-09-22), the throughput limit is the lead's **serial verify-and-merge**,
+not lane count — 8 lanes were writing across two lead sessions while
+finished branches sat unmerged, and the plan's own cut-back ("more than 4
+green branches waiting → no new lane") was about to trip; implementers
+were leaving every `tests/db` run to the lead because a worktree has no
+`.env.test`; and the owner's ~15 open W0 tasks (AI-10, DEPLOY-1, SEC-16,
+CONSENT-2/PUB-13a/CONTENT-1, I18N-6, TRIAL-1, DATA-10a) are the actual
+critical path — nothing an agent builds yields a measurable pilot result
+without content, a checker and testers. Done, every claim verified in
+this session: **UI-4 merged** (`9414085`; ruff + mypy clean, 1266 unit,
+`tests/db/test_web_pages.py` 46 passed live with `BCION_REQUIRE_LIVE=1`;
+`_why.html` content-only, per 6.4). **E2E locator fix merged** (`3f6d75b`,
+from `claude/vibrant-northcutt`; its red CI was main's own `extract.py`
+mypy break, since fixed — the test re-run here: 1 passed in 8 s, no
+hang). **Implementer DB-test rule** (`052b838`): `tasks/TEMPLATE.md` and
+`.claude/agents/implementer.md` now require copying `.env.test` into the
+worktree and running the card's DB tests with `BCION_REQUIRE_LIVE=1`; a
+report without its own live run is sent back, not merged. `tasks/INDEX.md`:
+I18N-1, I18N-2, UI-1, DESIGN-18 (merged in `f66d95a`) and UI-4 ticked.
+**20 merged, clean, unlocked worktrees removed** (40 → 20); every dirty,
+locked or `claude/*` session worktree left alone. CI on `3f6d75b`: all
+three jobs green. Left behind: an empty `.claude/worktrees/ui-4/` folder
+git has already unregistered — some process holds it as its cwd, delete
+when free; `.claude/worktrees/agent-ae56e118d8993f401` (sec-3) is merged
+and clean, left for the Phase 1 lead. **Coordination miss, disclosed:** the
+Phase 1 lead's "hold ui-4, my reviewer pass is still in flight" reply
+arrived after the merge had landed (this session's stated 10-minute
+silence window had passed). The merge is green and verified as above,
+so it was not reverted unasked; the lead was given the full facts, the
+revert offer, and the review below as its fix-round input, and its
+`ui-4` worktree — which the removal emptied — is recoverable from
+`3beb763`/`9414085`. **Read-only ux-qa pass on the merged `/start`
+screen (TestClient + Playwright 360 px, JS off):** PASS on the
+non-negotiables — no rank/"suited"/personality/guarantee/hedge language
+in any new string; the all-skipped state is honest ("not enough
+published pathway data") with Explore/Start-again links; zero-JS forms
+work, no cookie, `no-store`; no overflow at 360 px. Open findings for
+the lane owner: MEDIUM `app/planning/suggest.py:186` "Matches what
+matters most to you: Affordable" asserts a pathway property with no
+claim reference (latent — candidates are empty today — but `Suggestion`
+carries no source, so `_why.html`'s "traceable to a published record"
+is unenforced once tags exist); MEDIUM "Change what matters most to
+you" (`_components.html:236`) sends the student back to Q1 with all four
+answers cleared; MEDIUM ~10 new strings have no `en.json`/`hi.json` key
+(I18N-3 backlog grew); LOW `start_results.html:22` "Nothing here is
+scored or ranked" while `suggest.py:264` sorts by score — say "Nothing
+here scores you"; LOW tap targets under 44 px (skip/start-again 24 px,
+pathway links 21 px, change 19 px); LOW "You didn't tell us enough yet"
+mildly blames the student. Both peer lead sessions were messaged before
+and after; the AI lead confirmed and pushed its own pending commit
+first. **People gates resolved by the owner later this session:**
+Mahesh named for CONSENT-2 (both seats), PUB-13a, CONTENT-1's checker
+seat, I18N-6 and TRIAL-1's second-moderator seat — see
+`docs/DECISIONS.md`'s 2026-09-22 entry, including what must stay
+separated (maker ≠ checker; moderator, not tester). Contact details are
+the owner's, never the repo's. Still open on the people side: the five
+round-1 testers, and Mahesh's actual read of `docs/CONSENT.md`, which
+is what gates CONSENT-4's merge.
 
 ## Development plan — Wave 1 done, Wave 2's migration/eligibility lanes done (2026-09-21)
 `docs/DEVELOPMENT-PLAN.md` is being executed for real. `tasks/INDEX.md`
@@ -250,6 +439,28 @@ missing `cast(...)` in `app/web/guest_session.py` (migration lane),
 fixed immediately, matching this codebase's own established pattern
 used at five other call sites. Trust CI's `mypy` result, not a local run,
 on this machine, until someone cleans up its global Python install.
+**Fixed for real, not just diagnosed (2026-09-22)**: `mk/dev.mk` now
+creates and PATH-prepends a project-local `.venv` (`.venv/Scripts` on
+Windows, `.venv/bin` elsewhere) for every `make` target in this repo, so
+`make typecheck`/`make lint`/`make test-unit` etc. resolve `mypy`/
+`ruff`/`pytest` from the project's own isolated install, never a dev
+machine's global site-packages. Verified this was the real, complete
+root cause, not a guess: a from-scratch `.venv` with only this project's
+actual pinned dependencies (no `numpy`/`onnxruntime`/`protobuf` anywhere
+in `requirements.lock` or `requirements-dev.lock`) runs `mypy app` clean
+("Success: no issues found in 69 source files") on the very machine that
+was producing the "errors prevented further checking" abort. **Did not**
+touch `[tool.mypy] python_version` in `pyproject.toml` — bumping it to
+3.12 to dodge this would have made local and CI's mypy *disagree* (CI
+pins Python 3.11 to match `requires-python = ">=3.11"`) instead of
+agreeing, for a problem the interpreter version was never actually
+causing. **Known, separate, pre-existing gap, not touched by this fix**:
+`make install`'s `pip install --require-hashes -r requirements-dev.lock`
+still can't complete on Windows/macOS (`requirements-dev.lock` is
+`uv`-compiled `--python-platform linux`; `uvicorn[standard]`'s `uvloop`
+pin has no Windows wheel and refuses to build from source there) — this
+was already true and already disclosed before this session, unrelated to
+the mypy fix.
 **Shell lane merged** (`I18N-1, I18N-2, UI-1, DESIGN-18`), plus two
 disclosed follow-ups closed same day: `consent_pages.py` now shares the
 one Jinja environment (no more test exemption), and `docs/CONTRACTS.md`'s
@@ -400,6 +611,59 @@ skipped, 0 failed, run live before the unrelated WIP above existed.
 Docker is confirmed healthy again as of this session (the owner
 restarted it) — full `tests/db` also independently re-confirmed clean
 at 592 passed after the fix, on the real local stack.
+
+**`SEC-3` merged** — nginx per-IP rate limiting, `deploy/nginx/
+ratelimit.conf`: four zones (`bcion_auth` 30r/m burst 20 for
+`/auth/*`+`/reviewer/sign-in`; `bcion_plans_write` 60r/m burst 30 for
+`/plans` writes, via a `map $request_method` empty-key exclusion for
+GET/HEAD rather than `limit_except` — nginx rejects `limit_req` inside
+`limit_except`, found live against a local `nginx:stable` Docker
+container, not assumed; `bcion_ask` 30r/m burst 15 for `GET /ask`; a
+shared `bcion_perip_conn` 20-connection cap) plus `app/static/429.html`
+and a new `docs/SECURITY.md` section documenting this as Layer 1
+alongside Supabase Auth's own independent Layer 2 rate limiting. **This
+is a documented config snippet only — no nginx deployment exists yet**
+(this app has no public domain/reverse proxy in front of it — see
+"Needs your input" below); DEPLOY-4/7 wires it into a real site file
+when that work starts. Live-tested with real request bursts against a
+local Docker nginx (not just `nginx -t` syntax check): confirmed the
+GET/HEAD exclusion passes unlimited, a `POST /plans` burst passes
+exactly 31 requests before 429s, `GET /ask` passes exactly 16 — and one
+real bug in the *test stub itself* was caught this way (a `return 200`
+stand-in finalizes in nginx's REWRITE phase, before PREACCESS-phase
+rate limiters ever run; switching to a content-phase `try_files` stub
+fixed it — the production `proxy_pass` directives were never at risk).
+**Open question for the owner**: the task card named POST/PATCH/DELETE
+for `/plans`; the merged config excludes GET/HEAD instead, which also
+covers `PUT /plans/{id}/actions/{action_key}`, a write the card didn't
+name — flagging for confirmation that's the intended scope. Purely
+additive (`3 files changed, 370 insertions(+)`, no existing file logic
+changed except the `docs/SECURITY.md` addition). Verified before merge:
+ruff clean, mypy clean (81 files), `pytest tests/unit -q` 1251 passed;
+CI green on `main` post-push (build-image, lint-typecheck-test
+including live DB/RLS tests against the real staging project,
+secret-scan).
+
+**`A11Y-3` merged** — global styled 404/403/500 pages
+(`app/web/errors.py`, `register_error_handlers`), gated on both a closed
+JSON-API route deny-list and `Accept: text/html` (never Accept alone),
+so every existing JSON API error shape is unchanged; `/explore` now
+degrades to the same friendly DB-down alert `/compare/view` and
+`/requirements/view` already show, via `_db_client_or_none`. **This
+merge broke main's CI for ~5 minutes** (12:41-12:46) — my own local
+verification used `mypy app --follow-imports=skip` (copied from a
+2026-09-21 workaround for an unrelated local numpy-stub crash), which
+missed a real `arg-type` error CI's plain `mypy app` caught: a handler
+typed to `StarletteHTTPException` registered against Starlette's
+`Callable[[Request, Exception], ...]` handler type. Fixed in the same
+session (widened the param to `Exception`, narrowed with `assert
+isinstance` inside), verified against the exact CI-reported line, pushed,
+confirmed fully green (run 35729179715). Two peers' unrelated pushes
+(AI-7, AI-11) landed on main during the red window and inherited the
+same red status through no fault of their own — flagged to them
+directly. **`--follow-imports=skip` must not be used for mypy
+verification again** — see `docs/TESTING.md`'s new warning; a separate
+peer session is fixing the underlying numpy/mypy environment issue.
 
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
@@ -1121,6 +1385,32 @@ the M5 safety layer exists but nothing calls a real provider yet, and
 content exists — every test uses clearly-labelled synthetic fixtures;
 nothing has been published as a verified fact for an actual student to
 see.
+
+## E2E strict-mode locator fix (2026-09-22)
+`tests/e2e/test_smoke.py::TestRequirementsAndTimelineJourney::
+test_timeline_view_computes_a_total_from_one_filled_stage` was failing
+with a Playwright strict-mode violation: `page.get_by_text("52 weeks")`
+matched both the total (`<p class="text-2xl font-semibold
+text-charcoal">` in `app/web/templates/timeline_calculator.html`) and a
+second echo of the same number in the per-stage breakdown `<span
+class="text-neutral">` that UI-7/RULES-9 added. Test-only fix: narrowed
+the locator to `page.locator("p.text-2xl.font-semibold.text-charcoal")`
+(`tests/e2e/test_smoke.py:292`), which is unambiguous — the breakdown
+list uses a `<span>`, not a `<p>`, with different classes. No app
+behaviour changed. Verified against the already-running local Supabase
+stack (`bcion-lite-test`, up from earlier work this session) with
+migrations already applied: the target test passes cleanly on repeated
+isolated runs.
+Also ran the full `tests/e2e/test_smoke.py` file once: 1 passed
+(this one), 5 failed, all with unrelated `Page.goto: Timeout 30000ms
+exceeded` errors (reviewer sign-in, requirements view, compare view, and
+— on that run only — this same timeline test) rather than any
+locator/content mismatch. Re-running the timeline test alone immediately
+after passed clean again, so this looks like environment resource
+contention (two full local Supabase stacks — `bcion-lite-test` and
+`bcion-lite-migration` — were both up for over an hour from concurrent
+work) rather than a real regression. Not investigated further — out of
+scope for this task; worth a look if it recurs.
 
 ## Concurrent sessions — multiple sessions worked this repo today
 This session shared the repo with at least one other active Claude

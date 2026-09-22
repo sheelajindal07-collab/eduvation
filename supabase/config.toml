@@ -59,6 +59,39 @@
 # `.supabase-migration/` is deliberately not created or tracked here —
 # it is scratch, belongs in .gitignore when that lane opens, and the
 # reserved ports above are all this task owes it.
+#
+# ---------------------------------------------------------------------
+# THIRD STACK, FOR A SECOND, SIMULTANEOUS MIGRATION LANE (Phase 1a AI-4,
+# added 2026-09-22 — the single migration-stack reservation above became
+# a real bottleneck once two migration cards (CONSENT-4 and AI-4) needed
+# to run at once; the owner's same-day "speed up, launch everything
+# unblocked" decision is the reason this was worth reserving rather than
+# just waiting). Same rules as the second stack above: a different
+# `project_id` and every port below it, own `--workdir`, never edit this
+# tracked file's live config to point at it.
+# ---------------------------------------------------------------------
+#
+#     service      | test stack   | migration stack | migration stack 2
+#     -------------|--------------|------------------|-------------------
+#     project_id   | bcion-lite-test | bcion-lite-migration | bcion-lite-migration-2
+#     api          | 54321        | 54421            | 54521
+#     db           | 54322        | 54422            | 54522
+#     db shadow    | 54320        | 54420            | 54520
+#     db pooler    | 54329 (disabled) | 54429 (disabled) | 54529 (disabled)
+#     local_smtp   | 54324        | 54424            | 54524
+#     analytics    | 54327 (disabled) | 54427 (disabled) | 54527 (disabled)
+#
+#     mkdir -p .supabase-migration-2/supabase
+#     cp supabase/config.toml .supabase-migration-2/supabase/config.toml
+#     # then, in THAT copy only, change project_id to
+#     # "bcion-lite-migration-2" and each port to its reserved value above
+#     supabase start --workdir .supabase-migration-2
+#     supabase status --workdir .supabase-migration-2 -o env
+#
+# `.supabase-migration-2/` is likewise scratch, not created or tracked
+# here. A fourth simultaneous migration lane is unlikely enough for this
+# pilot's scale that it is not pre-reserved — add a fourth block the same
+# way, +100 on every port, if it is ever genuinely needed.
 
 # A string used to distinguish different Supabase projects on the same host.
 # Deliberately NOT the default (the working-directory name): every agent

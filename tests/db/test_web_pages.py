@@ -175,8 +175,17 @@ class TestExplorePage:
         a dependency override rather than relying on the shared local
         stack actually having zero careers -- never guaranteed, since
         STATUS.md notes this repo is sometimes run by more than one
-        concurrent session."""
-        from app.api.deps import get_db_client
+        concurrent session.
+
+        A11Y-3: `/explore` now resolves its DB client through
+        `_db_client_or_none` (app/web/common.py), not a direct
+        `Depends(get_db_client)` -- that function calls `get_db_client`
+        itself as a plain generator, not through FastAPI's own dependency
+        tree, so overriding `get_db_client` no longer reaches it. This
+        override now targets `_db_client_or_none` directly, same object
+        `TestDbUnavailableDegradesGracefully` below imports from
+        `app.web.pages`."""
+        from app.web.pages import _db_client_or_none
 
         class _EmptyResult:
             data: list[Any] = []
@@ -202,11 +211,11 @@ class TestExplorePage:
         def _override() -> Iterator[Any]:
             yield _EmptyDbClient()
 
-        app.dependency_overrides[get_db_client] = _override
+        app.dependency_overrides[_db_client_or_none] = _override
         try:
             response = client.get("/explore")
         finally:
-            app.dependency_overrides.pop(get_db_client, None)
+            app.dependency_overrides.pop(_db_client_or_none, None)
         assert response.status_code == 200
         assert "No careers published yet" in response.text
         assert 'role="status"' in response.text
@@ -1769,3 +1778,25 @@ class TestDbUnavailableDegradesGracefully:
         assert response.status_code == 200
         assert "trouble reaching our data" in response.text
         assert "try again shortly" in response.text
+
+    def test_explore_page_shows_a_friendly_message_not_a_500(self) -> None:
+        """A11Y-3: `/explore` used to use `Depends(get_db_client)`
+        directly, which raised hard (`SupabaseNotConfiguredError`
+        propagating straight out of dependency resolution) instead of
+        degrading gracefully -- the same class of bug FIX 6 already fixed
+        for `/compare/view` and `/requirements/view` above. Same
+        dependency-override simulation those two tests already use."""
+        from app.web.pages import _db_client_or_none
+
+        def _unavailable() -> Iterator[Client | None]:
+            yield None
+
+        app.dependency_overrides[_db_client_or_none] = _unavailable
+        try:
+            response = client.get("/explore")
+        finally:
+            app.dependency_overrides.pop(_db_client_or_none, None)
+        assert response.status_code == 200
+        assert "trouble reaching our data" in response.text
+        assert "try again shortly" in response.text
+        assert 'role="alert"' in response.text

@@ -20,7 +20,7 @@ How to read it:
 
 Migration ledger (Phase 1 order): 0007 DATA-12, 0008 SCOPE-3, 0009 AUTH-4, 0010 AUTH-5, 0011 PUB-2, 0012 PUB-3, 0013 SEC-6, 0014 CONSENT-4. Phase 2: AUTH-7, AUTH-10, DATA-4, I18N-7, I18N-8, AUTH-15, OPS-6, TRIAL-5, AI-4. Owner apply batches: DATA-10a (through 0008), DATA-10b (through 0010), PUB-4 (through 0012), DATA-10c (through 0014). **PROVISIONAL — re-verify against `ls db/migrations/` before the migration lane opens**: 0004 and 0005 are already real, taken by another session's guardian-consent gate, not this plan's — that is why the ledger starts at 0007, not 0004 (see docs/DEVELOPMENT-PLAN.md section 16 for the two collisions that moved this).
 
-Lockboard (lead only): `RESET` line goes here before the shared local stack is reset. Currently: none.
+Lockboard (lead only): `RESET` line goes here before the shared local stack is reset. Currently: **APPLY PENDING (Phase 1a lead, 2026-09-22)** - migration `0011_ai_usage.sql` merged to `main`, not yet applied to the shared `bcion-lite-test` stack (additive, `scripts/apply_migrations.py`, no reset). Holding for "no run in flight" from whoever's running tests/db against that stack right now (own AI-8/AI-18 lanes plus at least one Phase 1 lane per cross-session coordination) - will post here again once applied.
 
 ---
 
@@ -63,18 +63,18 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] DESIGN-2 - Copy rules, microcopy deck, key convention (docs/COPY.md) [W1]
 - [x] DESIGN-1 - Component and state contract v1 in docs/UI.md [W1]
 - [x] DESIGN-3 - Banned-phrase lint test [W1]
-- [ ] I18N-1 - i18n mechanism, shared Jinja env, frozen key contract [W2]
-- [ ] UI-1 - App shell, nav, stub partials, macros, sample-data ribbon (2 sessions; does **not** edit the journey templates — A11Y-2 adds the `_save.html` include lines) [W2]
-- [ ] DESIGN-18 - Content component macros; fills `_ask` and `_why` stubs [W2]
+- [x] I18N-1 - i18n mechanism, shared Jinja env, frozen key contract [W2]
+- [x] UI-1 - App shell, nav, stub partials, macros, sample-data ribbon (2 sessions; does **not** edit the journey templates — A11Y-2 adds the `_save.html` include lines) [W2]
+- [x] DESIGN-18 - Content component macros; fills `_ask` and `_why` stubs [W2]
 - [ ] I18N-3 - Extract strings from existing templates, split by file; string-lint merges last [W3a]
 - [x] UI-3 - Landing page and stateless quick start [W3a]
-- [ ] UI-4 - Suggestion rule and "why am I seeing this" [W3a]
+- [x] UI-4 - Suggestion rule and "why am I seeing this" [W3a]
 - [ ] SCOPE-6 - Derived coverage and "not verified yet" states [W3b]
 - [ ] I18N-4 - Language switch with a prod flag [P2]
 
 ## Step 7 Compare and calculators (M2) + usability round 1 - PARTIAL (screens exist; no exam modules)
 - [x] RULES-1 - Rules contract v2 [W1, contract burst]
-- [ ] I18N-6 - Name the Hindi reviewer, fix the critical-key list [W0, owner, day 3]
+- [~] I18N-6 - Name the Hindi reviewer, fix the critical-key list [W0, owner, day 3] — **reviewer named: Mahesh** (2026-09-22, docs/DECISIONS.md); critical-key list fix still open
 - [ ] DESIGN-6 - Owner picks the round-1 vehicle [W0, owner, day 4]
 - [x] RULES-2 - Date-based age criteria (input fields only; before SEC-5) [W2]
 - [x] RULES-3 - Any-of subject groups, thresholds, qualification criteria [W2]
@@ -88,7 +88,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] RULES-8 - Wire RuleSets into the eligibility API [W3a] -- invented the "rule_key" claim-field convention (no prior one existed; see docs/DECISIONS.md 2026-09-22); non-IN pathway display-only gate still not implemented on the fallback path
 - [x] RULES-9 - Timeline seeding from stage claims (session 1 W3a, session 2 W3b) -- invented the "stage:<order>:*" claim convention (no prior one existed; see docs/DECISIONS.md 2026-09-22)
 - [ ] UI-6 - Cost-assumption editing on Compare [W3b]
-- [x] SCOPE-4 - Currency-safe cost display [W3b] -- known follow-up: itemised fee_component:* claims with no legacy verified_charges claim show "Not available" on the display line while the total (correctly) uses the components; not carded yet
+- [x] SCOPE-4 - Currency-safe cost display [W3b] -- its disclosed follow-up (itemised fee_component:* claims with no legacy verified_charges claim showed "Not available" on the display line while the total used the components) is now closed: merged b75f939 (2026-09-22)
 - [x] UI-7 - Timeline stage kinds and "Revise this scenario" [W3b] -- pathway_id/pathway_name are display-only context, not yet wired from any linking screen
 - [x] RULES-16 - Requirements screen: DOB input, cycle label, "not checked here" list [W3b]
 - [ ] QA-7 - Mobile and desktop viewport e2e, full guest journey [W3b]
@@ -105,7 +105,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 
 ## Step 8 Sign-in, plans, consent (M3) - PARTIAL and BLOCKED (no age or consent gate)
 - ~~CONSENT-1~~ - **SUPERSEDED, not built.** Another session merged a real age + guardian-email consent gate (`db/migrations/0004_guardian_consent.sql`, `0005_guardian_consent_request_rpc.sql`, confirmed live in production) while this plan was being written — it does the actual job this stopgap was a cheap stand-in for, more completely. No checkbox; not counted in the 260 total's checklist.
-- [ ] CONSENT-2 - Owner names safeguarding people and the non-author reviewer [W0, owner, day 3]
+- [x] CONSENT-2 - Owner names safeguarding people and the non-author reviewer [W0, owner, day 3] — **Mahesh, both seats** (2026-09-22, docs/DECISIONS.md); his actual read of docs/CONSENT.md is still the gate on CONSENT-4's merge
 - [x] AUTH-1 - Session, guest and plan-store contract (owner explicit yes) [W1, contract burst]
 - [x] CONSENT-3 - Consent and safeguarding design doc (placeholders; human read follows) [W1, contract burst]
 - [x] SEC-2 - CSRF contract for cookie sessions [W2]
@@ -136,7 +136,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - DESIGN-11, DESIGN-12 - shrunk to one consent-screen sentence inside CONSENT-3 (no separate card)
 
 ## Step 9 Publishing console (M4) - PARTIAL (console exists; self-approval bypass open)
-- [ ] PUB-13a - Owner names reviewers [W0, owner, day 3]
+- [x] PUB-13a - Owner names reviewers [W0, owner, day 3] — **Mahesh** (2026-09-22, docs/DECISIONS.md); account creation is PUB-13b
 - [x] PUB-1 - Publishing contract incl. content hash (owner explicit yes) [W1, contract burst]
 - [x] PUB-5 - Split reviewer_pages.py into a package [W1]
 - [ ] PUB-2 - Migration 0011: identity enforcement, source versions, claim columns [W3]
@@ -154,7 +154,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] PUB-14 - Two-reviewer dry run on five real records [P2]
 
 ## Step 10 Real pilot dataset (M4) - OPEN (drafts only)
-- [ ] CONTENT-1 - Owner names editor, checker, corrections owner [W0, owner, day 3]
+- [~] CONTENT-1 - Owner names editor, checker, corrections owner [W0, owner, day 3] — **checker: Mahesh**; editor and corrections owner default to the owner until named (maker ≠ checker must hold) (2026-09-22, docs/DECISIONS.md)
 - [ ] TRIAL-7 - Open the editor-hours log [W0, owner, day 4]
 - [~] CONTENT-2 - Import contract: CSV templates, closed vocabulary, hash rule — **contract half done** (the content-hash field list and source_version rule are frozen in `docs/CONTRACTS.md` "Publishing evidence in Phase 1"); **artefacts still open**: `docs/CONTENT-IMPORT.md`, `content/templates/claims_import.csv`, `content/templates/sources_register.csv`, the closed `field` vocabulary — deliberately left outside the contract-burst agent's owned files, needs its own small session before CONTENT-3 [W1, contract burst]
 - [x] CONTENT-3 - Offline draft extractor and inventory [W1]
@@ -184,26 +184,26 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 - [x] AI-5 - Retrieval of approved records, import guard [P1a L5, DONE, merged; live fixture bug found+fixed at merge, see docs/DECISIONS.md]
 - [x] AI-9 - AI evaluator agent (proposed file) and 36-question evaluation set [P1a L3, day 1, DONE, merged; .claude/agents/ai-evaluator.md applied]
 - [x] UI-11 - Ask BCION shell, deterministic first, no input element [P1a L6, DONE, merged; router registered, i18n reconciled to askbcion.* at merge]
-- [ ] AI-4 - Migration 0013 (was 0011, renumbered - see docs/DECISIONS.md 2026-09-22): ai_usage, atomic two-call reservation, per-identity and global caps, RLS [P1a L2, migration-owner, BLOCKED on consent-4 merging]
+- [x] AI-4 - Migration 0011: ai_usage, atomic two-call reservation, per-identity and global caps, RLS [P1a L2, migration-owner, DONE, merged on its own third stack; not yet applied to the shared test stack - see lockboard]
 - [x] AI-6 - Two-pass pipeline (selection + verification), prompts, guards, outbound allow-list [P1a L4, DONE, merged]
-- [ ] AI-7 - Ask BCION route wired to the pipeline; identity = account or guest session [P1a L6]
+- [x] AI-7 - Ask BCION route wired to the pipeline; identity = account or guest session [P1a L6, DONE, merged; JSON route renders sentences/citations, HTML template markup still needed - follow-up]
 - [ ] AI-8 - AI-off journey regression (flag off; mock failing) [P1a L6]
-- [ ] AI-11 - Capped evaluation runner; first run synthetic on the local stack, second on staging [P1a L3 script, owner-run]
+- [x] AI-11 - Capped evaluation runner; first run synthetic on the local stack, second on staging [P1a L3 script, DONE, merged; first live-data run complete on the local stack, see STATUS.md]
 - [ ] AI-16 - Hindi-preferring person reviews Hindi answers and AI-20 drafts [P1a, human; needs I18N-6]
 - [ ] AI-12 - Fix round, enable on staging (or dev, recorded), kill-switch drill [P1a L4 + owner]
 - [ ] AI-17 - Owner sign-off to enable AI on production (after AI-13) [P2, owner - unchanged]
-- [ ] AI-14 - AI-assisted claim extraction drafts: paste text, extraction + verification pass, verbatim-span check, draft only [P1a L8, x2, un-dropped]
+- [x] AI-14 - AI-assisted claim extraction drafts: paste text, extraction + verification pass, verbatim-span check, draft only [P1a L8, x2, un-dropped, DONE, merged]
 - [ ] AI-18 - Next-steps template over a server-owned, claim-bound action catalogue [P1a L10, x2, new]
 - [ ] AI-19 - What-changed summary over the superseded_by diff [P1a L10, new]
 - [x] AI-20 - Hindi content drafts, offline batch with back-translation check, CSV for the reviewer [P1a L9, DONE, merged]
 
 ## Step 12 Hindi, accessibility, difficult states (M6) - OPEN
 - [x] A11Y-1 - Difficult-states and cache-class contract [W1, contract burst]
-- [ ] I18N-2 - Locale-aware formatting helpers [W2]
+- [x] I18N-2 - Locale-aware formatting helpers [W2]
 - [x] A11Y-4 - Cache-Control middleware, shared-device hygiene [W2] -- e2e shared-device test written but not passing in CI/local pytest yet, blocked on a pytest-playwright environment hang tracked separately
 - [x] A11Y-5 - Guard test: no service worker or client persistence [W2]
 - [x] A11Y-2 - State macros and base.html landmarks [W3a]
-- [ ] A11Y-3 - Global HTML error pages [P2]
+- [x] A11Y-3 - Global HTML error pages [P2, DONE, merged]
 - [ ] I18N-7 - Hindi label columns [P2]
 - [ ] I18N-8 - Search schema [P2]
 - [ ] I18N-9 - Search route and Explore search box [P2]
@@ -227,7 +227,7 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 - [ ] OPS-1 - Owner: vendors, backup tier, VM region, n8n status [W0, owner]
 - [ ] OPS-2 - PII-free structured logging and request id [W2]
 - [x] RULES-11 - "Critical rule cases" gate command [W2]
-- [ ] SEC-3 - Proxy rate limiting [P2]
+- [x] SEC-3 - Proxy rate limiting [P2] (nginx config, not yet wired into a live deploy — DEPLOY-4/7 to wire in)
 - [ ] TRIAL-5 - usage_events table and metric views [P2]
 - [ ] TRIAL-16 - Usage event write hook [P2]
 - [ ] OPS-4 - Error tracking with scrubbed payloads [P2]
@@ -285,7 +285,7 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 - [x] DOCS-1 - Commit pending memory edits, one CLAUDE.md line, clean stale worktrees [W0] — **done**: `.claude/settings.json` deny rules and the CLAUDE.md line are committed and pushed (`2a9d6d2`); main is clean; the one existing worktree (`wf_9b7797a4-e76-1`) has real uncommitted work (the "Held, not merged" student sign-up UI, `STATUS.md`) and is deliberately left alone, not removed
 - [x] SEC-15 - Owner: move live Supabase keys out of the repo folder (blocks any fan-out) [W0, owner, new] — **done, owner-confirmed 2026-09-21**
 - [ ] SEC-16 - Owner: rotate the staging service-role key, JWT secret and DB password once QA-2 is merged (earlier agent sessions could read the pre-SEC-15 values) — hard precondition of DEPLOY-7 and PUB-13b [W1-W2, owner, new]
-- [ ] TRIAL-1 - Owner kickoff: name people, recruit adult round-1 testers, name a second moderator [W0, owner]
+- [~] TRIAL-1 - Owner kickoff: name people, recruit adult round-1 testers, name a second moderator [W0, owner] — **second moderator: Mahesh** (2026-09-22); the five adult tester profiles are still to be recruited — 2-3 week lead time, start now
 - [ ] SCOPE-1 - Owner confirms phasing and the trial coverage set (explicit yes) [W0, owner]
 - [ ] RULES-17 - Owner answers the six rules decisions [W0, owner]
 - [ ] CONSENT-17 - Record the DigiLocker route as deferred [W0, owner]

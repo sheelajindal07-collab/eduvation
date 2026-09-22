@@ -224,7 +224,7 @@ def _current_reviewer_id(session: AuthedSession) -> str | None:
         return None
     if user_response is None or user_response.user is None:
         return None
-    return cast("str", user_response.user.id)
+    return user_response.user.id
 
 
 # ---------------------------------------------------------------------
@@ -350,12 +350,13 @@ def reviewer_extract_run(
     see module docstring."""
     reviewer_session = _require_reviewer(session)
 
-    common_kwargs = {
-        "pasted_text": pasted_text,
-        "selected_source_id": source_id,
-        "selected_entity_type": entity_type,
-        "selected_entity_id": entity_id,
-    }
+    # mypy note: these four fields used to travel as a **common_kwargs
+    # dict[str, str] splat into _render_extract_page below. That dict's
+    # value type (str) doesn't match every OTHER keyword parameter on
+    # that function (result_status/proposals/status_code), so mypy can't
+    # prove a **dict[str, str] splat could never supply one of those --
+    # spelled out explicitly at each call site instead, which is both
+    # the type-safe form and no more verbose in practice.
 
     settings = get_settings()
     if not (settings.ai_enabled and settings.ai_configured):
@@ -363,7 +364,10 @@ def reviewer_extract_run(
             request,
             reviewer_session.client,
             error=EXTRACT_ERROR_MESSAGES[_AI_UNAVAILABLE_CODE],
-            **common_kwargs,
+            pasted_text=pasted_text,
+            selected_source_id=source_id,
+            selected_entity_type=entity_type,
+            selected_entity_id=entity_id,
         )
 
     try:
@@ -373,7 +377,10 @@ def reviewer_extract_run(
             request,
             reviewer_session.client,
             error=EXTRACT_ERROR_MESSAGES[_AI_UNAVAILABLE_CODE],
-            **common_kwargs,
+            pasted_text=pasted_text,
+            selected_source_id=source_id,
+            selected_entity_type=entity_type,
+            selected_entity_id=entity_id,
         )
 
     reviewer_id = _current_reviewer_id(reviewer_session) or reviewer_session.access_token
@@ -385,7 +392,10 @@ def reviewer_extract_run(
             request,
             reviewer_session.client,
             error=EXTRACT_ERROR_MESSAGES[_BUDGET_EXHAUSTED_CODE],
-            **common_kwargs,
+            pasted_text=pasted_text,
+            selected_source_id=source_id,
+            selected_entity_type=entity_type,
+            selected_entity_id=entity_id,
         )
     except AIProviderError:
         logger.warning("AI extraction provider call failed", exc_info=True)
@@ -393,7 +403,10 @@ def reviewer_extract_run(
             request,
             reviewer_session.client,
             error=EXTRACT_ERROR_MESSAGES[_AI_UNAVAILABLE_CODE],
-            **common_kwargs,
+            pasted_text=pasted_text,
+            selected_source_id=source_id,
+            selected_entity_type=entity_type,
+            selected_entity_id=entity_id,
         )
 
     return _render_extract_page(
@@ -402,7 +415,10 @@ def reviewer_extract_run(
         error=None,
         result_status=result.status,
         proposals=result.proposals,
-        **common_kwargs,
+        pasted_text=pasted_text,
+        selected_source_id=source_id,
+        selected_entity_type=entity_type,
+        selected_entity_id=entity_id,
     )
 
 

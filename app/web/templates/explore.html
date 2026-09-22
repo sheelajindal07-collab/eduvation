@@ -6,7 +6,7 @@
 {% from "_why.html" import why_am_i_seeing_this %}
 {% from "_save.html" import save_action %}
 {% from "_components.html" import pathway_detail_link %}
-{% from "_states.html" import empty_state %}
+{% from "_states.html" import empty_state, alert %}
 {% from "_not_verified.html" import not_verified %}
 {% block title %}Explore careers &mdash; BCION Lite{% endblock %}
 
@@ -71,6 +71,13 @@
 
 {% block content %}
   <h1 class="text-2xl font-semibold text-charcoal mb-2">Explore</h1>
+
+  {# A11Y-3: a DB that's down or unconfigured degrades to the same
+     friendly in-page message /compare/view and /requirements/view
+     already show, rather than a raw 500 -- see app/web/explore_pages.py. #}
+  {% if error %}
+    {{ alert(error, variant="caution", class_names="mb-6") }}
+  {% else %}
   <p class="text-neutral mb-6">
     Pick 2 or 3 pathways below, then compare them side by side.
   </p>
@@ -151,5 +158,6 @@
        tightening that policy is app/main.py's own follow-up, not owned
        by this task. #}
     <script src="/static/js/explore-select.js"></script>
+  {% endif %}
   {% endif %}
 {% endblock %}

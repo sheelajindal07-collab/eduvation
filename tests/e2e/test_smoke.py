@@ -289,7 +289,12 @@ class TestRequirementsAndTimelineJourney:
         page.locator("#stage_duration_weeks_1").fill("52")
         page.get_by_role("button", name="Calculate timeline").click()
 
-        expect(page.get_by_text("52 weeks")).to_be_visible()
+        # Scoped to the total's own paragraph (app/web/templates/timeline_calculator.html)
+        # -- a bare get_by_text("52 weeks") also matches the per-stage
+        # breakdown list, which echoes each stage's own duration.
+        expect(page.locator("p.text-2xl.font-semibold.text-charcoal")).to_have_text(
+            "52 weeks"
+        )
         # The form re-renders pre-filled with what was submitted, not
         # blank -- the whole point of this screen's "edit and resubmit"
         # loop (docs/UI.md "assumptions editable without re-entering").

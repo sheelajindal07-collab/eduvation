@@ -24,11 +24,11 @@ text -- `_valid_or_none` below drops anything outside each question's
 fixed option list rather than carrying an arbitrary string forward.
 
 `/start/results` (the chain's end) renders a plain, non-judgemental
-summary of whatever was answered or skipped. The actual suggestion
-engine that would turn these answers into pathway matches is UI-4's job,
-not this task's -- docs/UI.md's `why_am_i_seeing_this` slot
-(`_why.html`) stays empty until that task exists, same as every other
-screen today.
+summary of whatever was answered or skipped, PLUS (UI-4) up to three
+suggested pathways from `app.planning.suggest.suggest_pathways` -- see
+that module's own docstring for the tag-matching shape, and
+`_candidates_for_suggestions` below for where its input comes from
+today.
 """
 
 from __future__ import annotations
@@ -38,6 +38,12 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Query, Request
 
+from app.planning.suggest import (
+    QuickStartAnswers,
+    SuggestionCandidate,
+    SuggestionResult,
+    suggest_pathways,
+)
 from app.web.templating import templates
 
 router = APIRouter(include_in_schema=False)  # HTML pages, not the JSON API surface
@@ -215,6 +221,29 @@ def start_priority(
     )
 
 
+def _candidates_for_suggestions() -> list[SuggestionCandidate]:
+    """The `SuggestionCandidate` list `/start/results` hands to
+    `app.planning.suggest.suggest_pathways` -- always the caller's job to
+    fetch and filter to published, non-draft, non-synthetic pathways
+    (that module's own docstring), never `suggest_pathways`'s.
+
+    Today this is always an empty list: `app.data.models.Pathway` has no
+    `tags` field yet, and no `db/migrations/*` table has one either, so
+    there is no real, published tag data anywhere in this codebase for a
+    caller to fetch -- the honest answer `suggest_pathways([], ...)`
+    itself gives (`SuggestionResult.has_data=False`) is also the honest
+    answer here. This function is the one seam a future task can replace
+    (fetch real Pathway rows plus their published tag claims via
+    `app.web.common._db_client_or_none`, the same dependency every other
+    screen module already uses) without touching `suggest_pathways`
+    itself or this route's own rendering logic below -- and the one seam
+    `tests/unit/test_suggest.py` overrides via `monkeypatch` to exercise
+    the real-tag-data branch live, since there is no other way to reach
+    it today.
+    """
+    return []
+
+
 @router.get("/start/results")
 def start_results(
     request: Request,
@@ -224,8 +253,7 @@ def start_results(
     priority: str | None = Query(default=None),
 ) -> Any:
     """The chain's end -- UI-3's own plain "thanks, here's what you told
-    us" summary. Matching real pathway suggestions to these answers is
-    UI-4's job, not this one (see this module's own docstring)."""
+    us" summary, plus (UI-4) up to three suggested pathways."""
     stage_value = _valid_or_none(stage, STAGE_OPTIONS)
     goal_value = _valid_or_none(goal, GOAL_OPTIONS)
     interest_value = _valid_or_none(interest, INTEREST_OPTIONS)
@@ -249,8 +277,26 @@ def start_results(
         },
     ]
     all_skipped = all(row["answer"] is None for row in answers)
+
+    suggestion_result: SuggestionResult = suggest_pathways(
+        QuickStartAnswers(
+            stage=stage_value,
+            goal=goal_value,
+            interest=interest_value,
+            priority=priority_value,
+        ),
+        _candidates_for_suggestions(),
+    )
+
     return templates.TemplateResponse(
         request,
         "start_results.html",
-        {"answers": answers, "all_skipped": all_skipped},
+        {
+            "answers": answers,
+            "all_skipped": all_skipped,
+            "suggestions": suggestion_result.suggestions,
+            "suggestions_has_data": suggestion_result.has_data,
+            "suggestions_broadened": suggestion_result.is_broadened,
+            "change_answers_url": "/start",
+        },
     )

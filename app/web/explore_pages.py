@@ -17,6 +17,14 @@ already world-readable before this card (no claim-status gate on those
 two tables at all, db/migrations/0001_init.sql), so filtering/grouping
 them by jurisdiction leaks nothing that was not already public; only a
 claim's own VALUE is gated, and this screen has never shown one.
+
+A11Y-3: `Depends(get_db_client)` used to raise hard (`SupabaseNotConfiguredError`
+propagating straight out of dependency resolution) whenever Supabase
+wasn't configured or reachable -- the same class of bug FIX 6 already
+fixed for `/compare/view` and `/requirements/view`. This screen now uses
+`app/web/common.py`'s `_db_client_or_none` and the same
+`_DB_UNAVAILABLE_MESSAGE` friendly alert those two screens already show,
+rather than inventing a new message.
 """
 
 from __future__ import annotations
@@ -26,9 +34,9 @@ from typing import Any, cast
 from fastapi import APIRouter, Depends, Query, Request
 from supabase import Client
 
-from app.api.deps import get_db_client
 from app.data.models import DEFAULT_JURISDICTION
 from app.planning.coverage import covered_jurisdictions_or_none
+from app.web.common import _DB_UNAVAILABLE_MESSAGE, _db_client_or_none
 from app.web.templating import templates
 
 router = APIRouter(include_in_schema=False)  # HTML pages, not the JSON API surface
@@ -63,7 +71,7 @@ def _jurisdiction_of(pathway: dict[str, Any]) -> str:
 def explore_page(
     request: Request,
     region: str | None = Query(default=None),
-    db: Client = Depends(get_db_client),
+    db: Client | None = Depends(_db_client_or_none),
 ) -> Any:
     """docs/UI.md "Career explorer" screen. Same two queries
     `GET /careers` already runs (app/api/explore.py) — kept as a direct
@@ -75,7 +83,17 @@ def explore_page(
     SCOPE-6: `region` is a plain GET query param (`"india"` / `"abroad"`,
     anything else -- including absent -- means "show both"), read by a
     zero-JS `<a href="...">` link on the page itself, never a script.
-    """
+
+    A DB that's down or unconfigured (`db is None`, from
+    `_db_client_or_none`) degrades to the same friendly template with a
+    plain "temporarily unavailable" message, rather than a raw 500."""
+    if db is None:
+        return templates.TemplateResponse(
+            request,
+            "explore.html",
+            {"error": _DB_UNAVAILABLE_MESSAGE, "careers_with_pathways": []},
+        )
+
     careers_result = db.table("careers").select("id, name, nco_anchor").execute()
     # `*` rather than a column list (matches app/api/explore.py's own
     # `GET /careers`): naming `jurisdiction` explicitly would 400 in the
@@ -146,6 +164,7 @@ def explore_page(
         request,
         "explore.html",
         {
+            "error": None,
             "region": region_normalised if region_normalised in _VALID_REGIONS else None,
             "show_india": show_india,
             "show_abroad": show_abroad,

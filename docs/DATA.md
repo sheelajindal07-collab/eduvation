@@ -98,3 +98,14 @@ state. `DEMO_MODE=true` with `APP_ENV=production` refuses to boot
 (`app/core/config.py`). See that migration's header for the full
 reasoning and `tests/db/test_demo_mode.py` for the revert-to-prove
 coverage.
+
+## AI spend accounting
+`ai_usage` and its single-row `ai_usage_caps`
+(`db/migrations/0011_ai_usage.sql`) record which prompt template ran, how
+many provider calls it reserved and actually made, and the opaque ids of
+the records that grounded the answer — never a prompt, never an answer
+(no such column exists, and none may be added), and the identity only as
+a SHA-256 digest. Reservation and settlement go through the
+`ai_reserve()` / `ai_settle()` definer functions; an account reads only
+its own rows, and a reviewer sees only the identity-free
+`ai_usage_daily_totals` view.
