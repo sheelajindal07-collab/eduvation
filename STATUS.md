@@ -266,6 +266,26 @@ its other two dependencies, `RULES-1` and `UI-2`, were already done).
 `tests/unit`: 981 passed. `tests/db`: 574 passed, 8 xfailed, 0 skipped,
 0 failed.
 
+**`UI-3` and `UI-5` merged** — `GET /` is a real "Find your next step"
+landing page (three choices) instead of a bare redirect; a new `GET
+/start` chain asks four skippable questions, zero-JS, no cookie/
+`localStorage` anywhere, ending at `/start/results` (the real
+suggestion-matching logic is `UI-4`'s job). `GET /pathways/{id}/view`
+is the new pathway/career detail page, built entirely through the same
+`field_value_for()` gate Compare already uses, and fills in
+`_components.html`'s `pathway_detail_link` stub — its first real
+caller. That surfaced a real regression (a raw pathway UUID could leak
+into Compare's page via the newly-live link for an unresolved pathway),
+found and fixed before merge, confirmed independently by two separate
+review passes, not accepted on the implementer's word. `tests/unit`:
+1029 passed (pre-dating the peer session's later AI-1/AI-9 work, which
+brought the total to 1097). `tests/db`: 592 passed for UI-5
+specifically, both live while the local stack was up. See
+`docs/DECISIONS.md`'s 2026-09-22 entry for the full detail, including
+why this session's own post-merge db re-run didn't complete locally
+(Docker Desktop's engine not responding on this machine — CI's own live
+run against the real staging project is this push's DB verification).
+
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
 - `GET /compare?pathway_id=X&pathway_id=Y` — trust-labelled fields plus

@@ -67,7 +67,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] UI-1 - App shell, nav, stub partials, macros, sample-data ribbon (2 sessions; does **not** edit the journey templates — A11Y-2 adds the `_save.html` include lines) [W2]
 - [ ] DESIGN-18 - Content component macros; fills `_ask` and `_why` stubs [W2]
 - [ ] I18N-3 - Extract strings from existing templates, split by file; string-lint merges last [W3a]
-- [ ] UI-3 - Landing page and stateless quick start [W3a]
+- [x] UI-3 - Landing page and stateless quick start [W3a]
 - [ ] UI-4 - Suggestion rule and "why am I seeing this" [W3a]
 - [ ] SCOPE-6 - Derived coverage and "not verified yet" states [W3b]
 - [ ] I18N-4 - Language switch with a prod flag [P2]
@@ -84,7 +84,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] RULES-10 - Itemised cost, Money type, public `safe_source_url` [W2] -- Money type + multi-component sums done and verified live; `safe_source_url` is still 3 separate private copies (comparison.py, eligibility.py, reviewer/queue.py), not yet consolidated to one public helper -- left for SCOPE-4, which needs it next anyway (see docs/DECISIONS.md 2026-09-22)
 - [x] SEC-5 - Move eligibility inputs out of URLs [W2]
 - [x] SCOPE-5 - State/UT and country code list, domicile select [W2]
-- [ ] UI-5 - Career card and pathway detail page [W3a]
+- [x] UI-5 - Career card and pathway detail page [W3a]
 - [x] RULES-8 - Wire RuleSets into the eligibility API [W3a] -- invented the "rule_key" claim-field convention (no prior one existed; see docs/DECISIONS.md 2026-09-22); non-IN pathway display-only gate still not implemented on the fallback path
 - [x] RULES-9 - Timeline seeding from stage claims (session 1 W3a, session 2 W3b) -- invented the "stage:<order>:*" claim convention (no prior one existed; see docs/DECISIONS.md 2026-09-22)
 - [ ] UI-6 - Cost-assumption editing on Compare [W3b]

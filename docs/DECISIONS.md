@@ -5,6 +5,42 @@ never deleted.
 
 ---
 
+## 2026-09-22 — UI-3 and UI-5: landing/quick-start and the pathway detail page
+**UI-3.** `GET /` is a real "Find your next step" landing page now (three
+choices — career in mind, not sure yet, show me everything), replacing the
+old bare redirect to `/explore`. A new `GET /start` chain asks four
+independently-skippable questions (stage, goal, interest, priority), answers
+carried forward as non-personal query params, ending at `/start/results` —
+zero JS, no cookie, no `localStorage`/`sessionStorage`/`indexedDB` (verified
+against `tests/unit/test_no_client_persistence.py`, A11Y-5's guard, and
+against two independent live Playwright scripts — the implementer's own and,
+separately, the reviewer's own re-derived one — covering real browser
+Back-button preservation). The suggestion-matching logic that turns these
+answers into real pathway recommendations is UI-4's job, not built here.
+**UI-5.** `GET /pathways/{id}/view`, the pathway/career detail page — every
+fact assembled through the exact same `field_value_for()` the Compare screen
+already uses, plus a new, additive `academic_cycle_for()` helper reusing
+that same publication gate for the cycle label. Fills in `_components.html`'s
+`pathway_detail_link` stub (UI-1) — its first real caller anywhere in the
+app. **A real regression found and fixed, not merged blind:** once that stub
+started rendering an actual link, `compare.html`'s unconditional call to it
+leaked a raw, unresolved pathway UUID into the page via the `href` for any
+pathway Compare couldn't resolve a name for — defeating the existing "This
+pathway" fallback a sibling test already pinned. Fixed with the identical
+guard already used two lines below for the "See requirements" link;
+confirmed independently by both the implementer and a separate reviewer, not
+accepted on the implementer's word alone. Live tests seeded a `draft` claim
+and an `in_review`+`synthetic`-sourced claim and proved neither renders in
+any form.
+**Verified:** `tests/unit` 1009/1020 → 1029 passed across both (before the
+peer session's later AI-1/AI-9 merges brought the total to 1097); `tests/db`
+592 passed, 8 xfailed, 0 failed for UI-5 specifically, run live by both the
+implementer and an independent reviewer while the local stack was up. This
+session's own post-merge re-run of `tests/db` hit a `WinError 10061` —
+Docker Desktop's engine not responding on this machine, unrelated to either
+task — so CI's own run against the real staging project (green) is this
+push's live DB verification instead.
+
 ## 2026-09-22 — One `AIAnswerStatus`: `app/ai/grounding.py` now imports it from `app/ai/schemas.py`
 **Event:** Merging BCI-009 (AI-1) surfaced a real duplicate: `app/ai/
 grounding.py` (M5, already on `main`) defined its own three-value
