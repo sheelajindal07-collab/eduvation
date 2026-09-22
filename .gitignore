@@ -17,6 +17,12 @@ dist/
 .env.*.local
 .env.test
 
+# Migration-owner scratch stacks (docs/DEVELOPMENT-PLAN.md wave 2,
+# supabase/config.toml's reserved second/third stack blocks) — a
+# workdir copy of config.toml with real local ports, never tracked.
+.supabase-migration/
+.supabase-migration-2/
+
 # Node (if Playwright/e2e tooling adds a package.json later)
 node_modules/
 
