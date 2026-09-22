@@ -153,13 +153,20 @@ links.
   logged as an observed flake, not chased further).
 - Full unit suite re-run after every change in this session:
   **1173 passed** (up from 1097 after wave 1), lint clean throughout,
-  including after the `compare.html` fix. Full `tests/db` regression
-  (598 tests) run twice: first run found the 2 failures above; second
-  run, after the fix, launched in this session to confirm clean.
+  including after the `compare.html` fix. Full `tests/db` regression run
+  twice: first run (598 tests) found the 2 failures above; **second run,
+  after the fix, confirmed clean: 621 passed, 8 xfailed, 0 failed**
+  (grew from 598 to 621 between runs - `consent-4`'s own merges landing
+  concurrently on the shared stack, not a Phase 1a change). Wave 2 is
+  fully verified end to end.
 
-Next: relaunch AI-4 once `consent-4` merges; open wave 3 (AI-6 pipeline,
-AI-14 extraction, AI-20 Hindi drafts) once AI-3 and AI-5's outputs are
-confirmed stable.
+**Wave 3 launched (2026-09-22):** BCI-015 (AI-6, the two-pass answer
+pipeline itself), BCI-016 (AI-14, reviewer claim extraction) and
+BCI-017 (AI-20, Hindi content drafts) dispatched as three parallel
+worktree agents, all depending only on AI-3 (AI-6 also on AI-5), both
+merged. Result pending.
+
+Next: relaunch AI-4 once `consent-4` merges.
 
 ## Development plan — Wave 1 done, Wave 2's migration/eligibility lanes done (2026-09-21)
 `docs/DEVELOPMENT-PLAN.md` is being executed for real. `tasks/INDEX.md`
