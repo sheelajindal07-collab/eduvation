@@ -272,7 +272,7 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 - [ ] TRIAL-19 - Recruit the expansion cohort [P3, owner]
 - [ ] OPS-12 - Expansion batch ops check script [P3]
 - [ ] TRIAL-6 - Pilot metrics script [P3]
-- [ ] AI-13 - Spend, fallback and two-pass disagreement metrics; threshold alert via the email sender (before AI-17) [P1a L7]
+- [x] AI-13 - Spend, fallback and two-pass disagreement metrics; threshold alert via the email sender (before AI-17) [P1a L7, DONE, merged]
 - [ ] CONSENT-12 - Under-18 school-mediated guardian consent route [P3]
 - [ ] CONSENT-14 - Human review and sign-off before real minor accounts [P3, human]
 - [ ] TRIAL-17 - Week-4 post-test [P3, human]

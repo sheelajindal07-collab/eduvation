@@ -359,10 +359,35 @@ Verified: 40 unit + 10 live db tests, full unit suite **1418 passed**,
 mypy clean, all re-run by the lead through the actually-merged app, not
 just from the agent's own report.
 
-**Phase 1a dev-agent work is now essentially complete.** Every card
-except AI-13 (unblocked now that AI-4 is merged, not yet cut) and the
-human/owner-only items (AI-10, AI-16, AI-17, the two eval sign-offs
-above) is done. Next: cut and launch AI-13.
+**AI-13 merged (2026-09-22 evening) - Phase 1a's dev-agent work is
+now complete.** `scripts/ai_spend_report.py` + `app/ai/alerts.py`:
+calls reserved vs settled, fallback rate, the two-pass disagreement
+rate (settled rows where the verification pass dropped at least one
+selected id), spend against all three caps, requests per identity-hash
+bucket - and one email per threshold (50/80/100% x daily/monthly, six
+combinations) through the existing sender, never n8n. **Real finding,
+worked out from the actual RLS rather than assumed**: both scripts must
+connect with the service-role key, not a reviewer login - `ai_usage_caps`
+has row-level security enabled with no policy at all, so no signed-in
+role, reviewer included, can read a single cap value, and the
+per-identity/disagreement figures need every identity's raw rows, which
+the reviewer-only aggregate view deliberately omits. **One open item,
+not blocking**: no configured alert-recipient setting exists yet - the
+report script takes `--alert-to` on the command line, consistent with
+this being owner-run rather than scheduled (a cron/n8n scheduler is
+already out of scope for this pilot). 18 + 10 live tests passing, full
+unit suite **1436 passed**, mypy clean, all re-run by the lead through
+the actually-merged app.
+
+**Every Phase 1a dev-agent card is now done.** What remains is entirely
+human or owner work: **AI-10** (provider terms, restricted key, spend
+cap - gates any live model call and AI-11's real evaluation run),
+**AI-16** (Mahesh reviews the Hindi eval answers and AI-20's drafts, once
+either exists), **AI-17** (production sign-off, Phase 2), and two
+findings still needing your explicit yes before AI-12's eventual fix
+round can treat them as settled: AI-11's official-vs-synthetic eval
+seeding, and the two eval categories (`ambiguous`, `source_mismatch`)
+that the current one-id-per-template design cannot represent at all.
 
 ## Lead session, 2026-09-22 evening — merge-queue drain, cleanup, one process rule
 Owner asked for a speed analysis, then "do the treatment". What the
