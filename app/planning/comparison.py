@@ -200,6 +200,44 @@ def field_value_for(
     )
 
 
+def academic_cycle_for(
+    field: str,
+    claims_by_field: dict[str, Claim],
+    sources_by_id: dict[str, Source],
+    *,
+    as_of: date,
+) -> str | None:
+    """The admission/fee cycle label (`"2026-27"`, docs/CONTRACTS.md
+    "Duration, dates, cycle, DOB") backing one field's claim, gated
+    through the exact same publication check `field_value_for` already
+    applies -- never a second, independently-written status test that
+    could drift out of sync with it.
+
+    `Claim.academic_cycle` is not itself part of `FieldValue` (adding it
+    there would change what every existing caller of `field_value_for`
+    receives, for a property only one screen needs so far: UI-5's
+    pathway-detail page, the first caller to fill `_trust_badge.html`'s
+    `evidence_line(... applicable_cycle=...)` slot with a real value
+    instead of the literal demo string `components_gallery.html` has
+    always passed it). This helper re-uses `field_value_for`'s own
+    published/stale/synthetic-source decision rather than re-deriving
+    it -- a claim `field_value_for` would hide must never leak its cycle
+    label here either, even though the cycle itself lives on the raw
+    `Claim` row this function still has to read to answer the question.
+
+    `None` whenever `field_value_for` would say `not_available` for this
+    field (no claim, draft, stale-and-sourceless, synthetic-sourced), OR
+    when the published claim itself simply has no cycle
+    (`Claim.academic_cycle` is `None` for a fact that is not
+    cycle-scoped at all -- most fields today aren't).
+    """
+    fv = field_value_for(field, claims_by_field, sources_by_id, as_of=as_of)
+    if fv.label == TrustLabel.not_available:
+        return None
+    claim = claims_by_field.get(field)
+    return claim.academic_cycle if claim is not None else None
+
+
 def _money_from_field_value(fv: FieldValue) -> Money | None:
     """Build a `Money` from one claim-backed `FieldValue`, applying
     docs/CONTRACTS.md's "Money and currency" rule that a money claim

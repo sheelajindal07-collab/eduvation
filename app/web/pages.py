@@ -28,6 +28,7 @@ from fastapi import APIRouter
 
 from app.web.common import _db_client_or_none  # noqa: F401 (re-exported for tests/db)
 from app.web.compare_pages import router as compare_pages_router
+from app.web.detail_pages import router as detail_pages_router
 from app.web.explore_pages import router as explore_pages_router
 from app.web.landing_pages import router as landing_pages_router
 from app.web.requirements_pages import router as requirements_pages_router
@@ -38,6 +39,7 @@ router = APIRouter(include_in_schema=False)  # HTML pages, not the JSON API surf
 router.include_router(landing_pages_router)
 router.include_router(explore_pages_router)
 router.include_router(compare_pages_router)
+router.include_router(detail_pages_router)
 router.include_router(requirements_pages_router)
 router.include_router(timeline_pages_router)
 router.include_router(start_pages_router)

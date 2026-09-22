@@ -371,10 +371,20 @@
 
 
 {% macro pathway_detail_link(pathway_id, label=none, class_names=none) %}
-  {#- Pre-wired slot for the pathway-detail screen (its card: "The
-      detail link on Explore/Compare is a slot pre-wired by UI-1 in
-      _components.html"). Still renders nothing: /pathways/{id}/view
-      does not exist, and a link to a route that 404s is worse than no
-      link. Its owner fills this in; the call sites on explore.html and
-      compare.html are already there. -#}
+  {#- UI-5: the pathway-detail screen (GET /pathways/{id}/view) now
+      exists, so this pre-wired slot (UI-1: "The detail link on
+      Explore/Compare is a slot pre-wired by UI-1 in _components.html")
+      finally has a real route to point at -- explore.html's and
+      compare.html's existing calls to this macro start rendering an
+      actual link with no change to either template.
+
+      Renders nothing without a `pathway_id` -- "no control that goes
+      nowhere" (this file's own header rule) applies just as much to a
+      link built from a missing id as to one with no route at all. -#}
+  {% if pathway_id %}
+    <a
+      href="/pathways/{{ pathway_id }}/view"
+      class="text-accent underline text-sm{% if class_names %} {{ class_names }}{% endif %}"
+    >{% if label %}See the full record for {{ label }}{% else %}See the full record{% endif %}</a>
+  {% endif %}
 {% endmacro %}
