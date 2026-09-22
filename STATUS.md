@@ -160,13 +160,29 @@ links.
   concurrently on the shared stack, not a Phase 1a change). Wave 2 is
   fully verified end to end.
 
-**Wave 3 launched (2026-09-22):** BCI-015 (AI-6, the two-pass answer
-pipeline itself), BCI-016 (AI-14, reviewer claim extraction) and
-BCI-017 (AI-20, Hindi content drafts) dispatched as three parallel
-worktree agents, all depending only on AI-3 (AI-6 also on AI-5), both
-merged. Result pending.
+**Wave 3, AI-6 and AI-20 merged (2026-09-22), AI-14 still running.**
+BCI-015 (AI-6, AI-14, AI-20) dispatched as three parallel worktree
+agents; two finished and were merged as soon as they were ready,
+without waiting for the third - **AI-6**: `app/ai/pipeline.py`'s
+`answer()` orchestration is the actual two-pass mechanism Rule 2
+requires: validate template -> check `AI_ENABLED` -> retrieve via
+`app.ai.retrieval` -> reserve 2 calls -> selection pass -> code-validate
+-> verification pass over only the selected ids -> code-validate ->
+intersect -> freshness check -> code-generated sentences (reusing
+`grounding.py`'s citation/sentence pattern, never duplicating it) ->
+settle usage. Every failure path returns a usable `Answer` with
+deterministic fact cards, never an unhandled exception, never
+model-authored text - 30 passed, full unit suite 1203 at merge time.
+**AI-20**: `scripts/ai_translate_drafts.py`, an offline owner-run script
+- translation pass, then a *separate* back-translation-check pass,
+token-overlap agreement scored and flagged (never silently accepted),
+writes a CSV for a human Hindi reviewer, hash-proven to never write
+`en.json`/`hi.json` or touch the database - 25 passed. Both merged
+clean, no file conflicts; full unit suite re-run after both: **1228
+passed**. **BCI-016 (AI-14, reviewer claim extraction) still running.**
 
-Next: relaunch AI-4 once `consent-4` merges.
+Next: merge AI-14 when it finishes; relaunch AI-4 once `consent-4`
+merges.
 
 ## Development plan — Wave 1 done, Wave 2's migration/eligibility lanes done (2026-09-21)
 `docs/DEVELOPMENT-PLAN.md` is being executed for real. `tasks/INDEX.md`
