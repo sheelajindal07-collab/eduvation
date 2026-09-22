@@ -953,3 +953,123 @@ class TestAssembleCostBreakdownMoneyCurrency:
         breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
         assert breakdown.verified_charges.value == "Fees not yet notified for this cycle"
         assert breakdown.verified_charges.label == TrustLabel.checked_against_official_source
+
+
+class TestAssembleCostBreakdownItemisedFeeComponents:
+    """docs/DECISIONS.md 2026-09-22 "known follow-up": a pathway published
+    with only itemised fee_component:* claims and no legacy
+    verified_charges claim used to show this display line as "Not
+    available" while net_to_arrange, right below it, correctly summed
+    the components anyway -- the total worked but its own main input
+    claimed to be missing. Mirrors
+    TestAssembleCostSummaryItemisedFeeComponents's fixtures so the two
+    paths are pinned against the exact same inputs."""
+
+    def test_itemised_components_with_no_legacy_claim_show_a_real_figure_not_unavailable(
+        self,
+    ) -> None:
+        claims_by_field = {
+            "fee_component:tuition": _field_claim("fee_component:tuition", 50000),
+            "fee_component:hostel": _field_claim("fee_component:hostel", 30000),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.verified_charges.label != TrustLabel.not_available
+        assert breakdown.verified_charges.value == 80000
+        assert breakdown.verified_charges.currency == "INR"
+        # The display line and the computed total must always agree --
+        # the whole point of this fix.
+        assert summary.verified_charges.total == Money(amount=80000)
+        assert breakdown.verified_charges.value == summary.verified_charges.total.amount
+
+    def test_itemised_components_all_official_show_checked_against_official_source(
+        self,
+    ) -> None:
+        claims_by_field = {
+            "fee_component:tuition": _field_claim("fee_component:tuition", 50000),
+            "fee_component:hostel": _field_claim("fee_component:hostel", 30000),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.verified_charges.label == TrustLabel.checked_against_official_source
+
+    def test_one_institution_reported_component_downgrades_the_whole_line(self) -> None:
+        sources = {**SOURCES_BY_ID, INSTITUTION_SOURCE.id: INSTITUTION_SOURCE}
+        claims_by_field = {
+            "fee_component:tuition": _field_claim("fee_component:tuition", 50000),
+            "fee_component:hostel": _field_claim(
+                "fee_component:hostel", 30000, source_id=INSTITUTION_SOURCE.id
+            ),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, sources, as_of=TODAY)
+        assert breakdown.verified_charges.label == TrustLabel.institution_reported
+        assert breakdown.verified_charges.value == 80000
+
+    def test_a_stale_component_shows_needs_rechecking_not_a_confident_label(self) -> None:
+        old_date = TODAY - timedelta(days=DEFAULT_FRESHNESS_SLA_DAYS + 1)
+        claims_by_field = {
+            "fee_component:tuition": _field_claim("fee_component:tuition", 50000),
+            "fee_component:hostel": _field_claim(
+                "fee_component:hostel", 30000, verification_date=old_date
+            ),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.verified_charges.label == TrustLabel.needs_rechecking
+        assert breakdown.verified_charges.value == 80000
+
+    def test_itemised_components_show_no_single_evidence_link(self) -> None:
+        """No ONE evidence link can honestly represent a sum of several
+        claims -- unlike the legacy single-claim path, this line carries
+        no source_url/verification_date/source_authority."""
+        claims_by_field = {
+            "fee_component:tuition": _field_claim("fee_component:tuition", 50000),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.verified_charges.source_url is None
+        assert breakdown.verified_charges.verification_date is None
+        assert breakdown.verified_charges.source_authority is None
+
+    def test_a_missing_itemised_component_still_gives_not_available_not_a_partial_figure(
+        self,
+    ) -> None:
+        claims_by_field = {
+            "fee_component:tuition": _field_claim("fee_component:tuition", 50000),
+            "fee_component:hostel": _field_claim(
+                "fee_component:hostel", 30000, status=ClaimStatus.draft
+            ),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        summary = assemble_cost_summary(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.verified_charges.label == TrustLabel.not_available
+        assert breakdown.verified_charges.value is None
+        assert summary.verified_charges.total is None
+
+    def test_unpublished_itemised_fields_fall_back_to_the_legacy_claim_display_too(
+        self,
+    ) -> None:
+        """Mirrors
+        test_unpublished_fee_component_claims_are_treated_as_no_components_at_all
+        -- the fallback boundary must be identical on the display path:
+        field presence decides, not publish status."""
+        claims_by_field = {
+            "verified_charges": _field_claim("verified_charges", 100000),
+            "fee_component:tuition": _field_claim(
+                "fee_component:tuition", 50000, status=ClaimStatus.draft
+            ),
+        }
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        # The itemised (but unpublished) field wins selection, so its own
+        # missing-component rule applies -- not a silent fall-through to
+        # the legacy claim's value.
+        assert breakdown.verified_charges.value is None
+        assert breakdown.verified_charges.label == TrustLabel.not_available
+
+    def test_no_itemised_fields_at_all_is_completely_unchanged(self) -> None:
+        """The pre-existing single-claim path (no fee_component:* field
+        present at all) must keep its full evidence metadata exactly as
+        before -- this fix must not touch that path."""
+        claims_by_field = {"verified_charges": _field_claim("verified_charges", 125000)}
+        breakdown = assemble_cost_breakdown(claims_by_field, SOURCES_BY_ID, as_of=TODAY)
+        assert breakdown.verified_charges.value == 125000
+        assert breakdown.verified_charges.label == TrustLabel.checked_against_official_source
+        assert breakdown.verified_charges.source_url == OFFICIAL_SOURCE.official_url
+        assert breakdown.verified_charges.source_authority == OFFICIAL_SOURCE.authority_name

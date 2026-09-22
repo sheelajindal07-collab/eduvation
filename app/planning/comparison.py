@@ -25,6 +25,7 @@ from app.rules.cost import (
     FeeComponent,
     Money,
     compute_cost_summary,
+    sum_verified_charges,
     to_whole_rupees,
 )
 
@@ -370,6 +371,82 @@ def _additional_expenses(
     return estimate, override_money
 
 
+def _verified_charges_field_value(
+    claims_by_field: dict[str, Claim],
+    sources_by_id: dict[str, Source],
+    fee_components: list[FeeComponent],
+    *,
+    as_of: date,
+) -> FieldValue:
+    """The "Verified charges" display line — must always agree with
+    whatever `sum_verified_charges(fee_components)` actually summed,
+    since that is the exact call `assemble_cost_summary` feeds
+    `net_to_arrange` from (`fee_components` here is the same list, built
+    by the same `_fee_components` call, over the same claims/sources/
+    as_of the caller passes to both functions).
+
+    Before this, this line was always read straight off the single
+    legacy "verified_charges" claim, regardless of whether the pathway
+    actually used it. A pathway published with only itemised
+    "fee_component:*" claims and no legacy claim then showed this line
+    as "Not available" while `net_to_arrange` right below it, correctly,
+    summed the components anyway — the total worked but its own main
+    input claimed to be missing (docs/DECISIONS.md 2026-09-22, "known
+    follow-up").
+
+    No itemised "fee_component:*" FIELD exists at all (regardless of
+    publish status — the same selection rule `_fee_components` itself
+    uses) -> the single legacy claim, read exactly as before via
+    `_money_field_value`: full evidence (source, date, authority), and a
+    non-numeric value passed through as text, unchanged.
+
+    One or more itemised fields exist -> the components are the more
+    current source of truth (matching `_fee_components`'s own "itemised
+    wins" rule), so this becomes a genuinely computed figure with no
+    single backing claim — same shape as `estimated_additional_expenses`
+    below: a value plus a trust label and currency, no source_url/
+    verification_date/source_authority, since no ONE evidence link can
+    honestly represent a sum of several claims that may each cite a
+    different source. `not_available` exactly when
+    `sum_verified_charges` itself gives `total=None` (a missing/
+    unpublished component, or components that don't share a currency) —
+    this line and the total below it can now never again disagree about
+    whether the charges are known.
+
+    Label: `needs_rechecking` when any included component is stale
+    (matching `VerifiedChargesResult.stale`); else
+    `checked_against_official_source` only when EVERY included
+    component is — one institution-reported component among otherwise-
+    official ones downgrades the whole sum to `institution_reported`,
+    since a combined figure cannot honestly claim a stronger trust level
+    than its weakest input.
+    """
+    has_itemised_fields = any(
+        field.startswith(_FEE_COMPONENT_FIELD_PREFIX) for field in claims_by_field
+    )
+    if not has_itemised_fields:
+        return _money_field_value(
+            "verified_charges", claims_by_field, sources_by_id, as_of=as_of
+        )
+
+    result = sum_verified_charges(fee_components)
+    if result.total is None:
+        return FieldValue(value=None, label=TrustLabel.not_available)
+
+    all_official = all(
+        component.field_value.label == TrustLabel.checked_against_official_source
+        for component in fee_components
+    )
+    label = (
+        TrustLabel.needs_rechecking
+        if result.stale
+        else TrustLabel.checked_against_official_source
+        if all_official
+        else TrustLabel.institution_reported
+    )
+    return FieldValue(value=result.total.amount, label=label, currency=result.total.currency)
+
+
 def assemble_cost_breakdown(
     claims_by_field: dict[str, Claim],
     sources_by_id: dict[str, Source],
@@ -379,11 +456,15 @@ def assemble_cost_breakdown(
 ) -> ProgrammeCostBreakdown:
     """Assemble the three-amount cost display for one programme/pathway.
 
-    Expects (when present) claims on the fields "verified_charges" and
-    "potential_assistance_not_yet_awarded" — each independently
-    provenanced, and each read through `_money_field_value`, so a money
-    claim with no stated currency shows as not_available instead of as a
-    confidently-badged number the total refuses to use (SCOPE-4).
+    "verified_charges" reflects itemised "fee_component:*" claims when
+    the pathway publishes any, falling back to the single legacy
+    "verified_charges" claim otherwise — see
+    `_verified_charges_field_value`, which guarantees this line always
+    agrees with what `assemble_cost_summary` actually totals.
+    "potential_assistance_not_yet_awarded" is read through
+    `_money_field_value` directly, so a money claim with no stated
+    currency shows as not_available instead of as a confidently-badged
+    number the total refuses to use (SCOPE-4).
     "estimated_additional_expenses" is always an estimate: it is computed
     from stated assumptions, never backed by a single Claim, so it is
     assembled directly as a TrustLabel.estimate FieldValue rather than
@@ -403,9 +484,8 @@ def assemble_cost_breakdown(
     (`FieldValue.currency`), so the display layer can format it with
     `format_money` and never has to assume rupees.
     """
-    charges_currency = _charges_currency(
-        _fee_components(claims_by_field, sources_by_id, as_of=as_of)
-    )
+    fee_components = _fee_components(claims_by_field, sources_by_id, as_of=as_of)
+    charges_currency = _charges_currency(fee_components)
     computed_estimate, override = _additional_expenses(
         claims_by_field,
         sources_by_id,
@@ -419,8 +499,8 @@ def assemble_cost_breakdown(
     estimate = override if override is not None else computed_estimate
 
     return ProgrammeCostBreakdown(
-        verified_charges=_money_field_value(
-            "verified_charges", claims_by_field, sources_by_id, as_of=as_of
+        verified_charges=_verified_charges_field_value(
+            claims_by_field, sources_by_id, fee_components, as_of=as_of
         ),
         estimated_additional_expenses=FieldValue(
             value=estimate.amount, label=TrustLabel.estimate, currency=estimate.currency
