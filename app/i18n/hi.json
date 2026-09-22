@@ -55,5 +55,14 @@
   "compare.closing_prompt.text": "आप किस विकल्प के बारे में और जानना चाहेंगे?",
 
   "askbcion.answer.not_available": "इसके लिए हमारे पास अभी कोई सत्यापित रिकॉर्ड नहीं है।",
-  "askbcion.answer.insufficient_information": "हमारे पास कुछ जानकारी है, लेकिन पक्के जवाब के लिए यहाँ पर्याप्त नहीं है।"
+  "askbcion.answer.insufficient_information": "हमारे पास कुछ जानकारी है, लेकिन पक्के जवाब के लिए यहाँ पर्याप्त नहीं है।",
+
+  "ask.entry.default_label": "इसके बारे में BCION से पूछें",
+  "ask.prompt.cost_breakdown": "इसकी लागत क्या होगी?",
+  "ask.prompt.pathway_overview": "इस रास्ते में क्या शामिल है?",
+  "ask.prompt.eligibility_gap": "पात्र होने के लिए मुझे क्या चाहिए?",
+  "ask.fact_cards.heading": "अब तक हम जो जानते हैं",
+  "ask.missing_information.heading": "अभी प्रकाशित नहीं",
+  "ask.unknown_template.message": "हम उस सवाल को पहचान नहीं पाए।",
+  "ask.invalid_request.message": "इसका जवाब देने के लिए हमें एक मान्य रास्ता या करियर चाहिए।"
 }
