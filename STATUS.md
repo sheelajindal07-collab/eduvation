@@ -1174,6 +1174,32 @@ content exists — every test uses clearly-labelled synthetic fixtures;
 nothing has been published as a verified fact for an actual student to
 see.
 
+## E2E strict-mode locator fix (2026-09-22)
+`tests/e2e/test_smoke.py::TestRequirementsAndTimelineJourney::
+test_timeline_view_computes_a_total_from_one_filled_stage` was failing
+with a Playwright strict-mode violation: `page.get_by_text("52 weeks")`
+matched both the total (`<p class="text-2xl font-semibold
+text-charcoal">` in `app/web/templates/timeline_calculator.html`) and a
+second echo of the same number in the per-stage breakdown `<span
+class="text-neutral">` that UI-7/RULES-9 added. Test-only fix: narrowed
+the locator to `page.locator("p.text-2xl.font-semibold.text-charcoal")`
+(`tests/e2e/test_smoke.py:292`), which is unambiguous — the breakdown
+list uses a `<span>`, not a `<p>`, with different classes. No app
+behaviour changed. Verified against the already-running local Supabase
+stack (`bcion-lite-test`, up from earlier work this session) with
+migrations already applied: the target test passes cleanly on repeated
+isolated runs.
+Also ran the full `tests/e2e/test_smoke.py` file once: 1 passed
+(this one), 5 failed, all with unrelated `Page.goto: Timeout 30000ms
+exceeded` errors (reviewer sign-in, requirements view, compare view, and
+— on that run only — this same timeline test) rather than any
+locator/content mismatch. Re-running the timeline test alone immediately
+after passed clean again, so this looks like environment resource
+contention (two full local Supabase stacks — `bcion-lite-test` and
+`bcion-lite-migration` — were both up for over an hour from concurrent
+work) rather than a real regression. Not investigated further — out of
+scope for this task; worth a look if it recurs.
+
 ## Concurrent sessions — multiple sessions worked this repo today
 This session shared the repo with at least one other active Claude
 session for a significant stretch (same machine, same working
