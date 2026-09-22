@@ -131,10 +131,31 @@ links.
   `askbcion.*` across both locale files, both templates and both route
   modules - verified no stray `ask.*` reference remains, JSON still
   valid, lint clean.
+- **A second real bug, also caught only by running the full regression.**
+  The first full `tests/db` run (598 tests) surfaced 2 failures in
+  `tests/db/test_web_pages.py`, a Phase 1 file no wave-2 card touched.
+  Root cause: `compare.html`'s own header comment already documented the
+  fix needed ("the detail link only renders for a pathway_id this screen
+  actually resolved to a real name... same guard already used below")
+  but the guard was only ever wired to the `pathway_detail_link` call,
+  never to the `ask_bcion(...)` call sitting right above it - a latent
+  gap invisible while `_ask.html`'s macro was an empty stub, and real
+  the moment UI-11 filled it in: a comparison request naming a
+  nonexistent pathway id now rendered a live Ask BCION link whose `href`
+  carried that raw id straight into the page, defeating the "This
+  pathway" heading fallback the same file exists to guarantee. Fixed by
+  wrapping both of `compare.html`'s `ask_bcion(...)` calls in the exact
+  `{% if c.pathway_id in pathway_names %}` guard the file's own comment
+  already named - a two-line, single-purpose fix, not a new feature; no
+  other change to the file. `TestComparePage`/`TestRequirementsPage`:
+  27 passed after the fix (the second flaky-looking failure did not
+  recur once isolated and re-run, and stayed green after this fix too -
+  logged as an observed flake, not chased further).
 - Full unit suite re-run after every change in this session:
-  **1173 passed** (up from 1097 after wave 1). Full `tests/db`
-  regression (598 tests, the one UI-11's own worktree started but
-  didn't finish) launched in this session; result pending.
+  **1173 passed** (up from 1097 after wave 1), lint clean throughout,
+  including after the `compare.html` fix. Full `tests/db` regression
+  (598 tests) run twice: first run found the 2 failures above; second
+  run, after the fix, launched in this session to confirm clean.
 
 Next: relaunch AI-4 once `consent-4` merges; open wave 3 (AI-6 pipeline,
 AI-14 extraction, AI-20 Hindi drafts) once AI-3 and AI-5's outputs are

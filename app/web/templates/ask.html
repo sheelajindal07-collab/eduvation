@@ -21,11 +21,11 @@
     {#- Friendly 404, not a 500 -- and the raw, unrecognised template id
        is never passed into this context at all (see ask_pages.py), so
        there is nothing here that could reflect it back. -#}
-    {% call alert(t("ask.unknown_template.message"), variant="caution", class_names="mb-6") %}
+    {% call alert(t("askbcion.unknown_template.message"), variant="caution", class_names="mb-6") %}
       <a href="/explore" class="underline">Back to explore</a>.
     {% endcall %}
   {% elif state == "invalid_request" %}
-    {% call alert(t("ask.invalid_request.message"), variant="caution", class_names="mb-6") %}
+    {% call alert(t("askbcion.invalid_request.message"), variant="caution", class_names="mb-6") %}
       <a href="/explore" class="underline">Back to explore</a>.
     {% endcall %}
   {% else %}
@@ -44,7 +44,7 @@
     {% endif %}
 
     {% if fact_cards %}
-      <h2 class="text-lg font-semibold text-charcoal mb-3">{{ t("ask.fact_cards.heading") }}</h2>
+      <h2 class="text-lg font-semibold text-charcoal mb-3">{{ t("askbcion.fact_cards.heading") }}</h2>
       <div class="space-y-4 mb-6">
         {% for card in fact_cards %}
           <section class="card">
@@ -63,7 +63,7 @@
     {% endif %}
 
     {% if missing_information %}
-      <h2 class="text-lg font-semibold text-charcoal mb-3">{{ t("ask.missing_information.heading") }}</h2>
+      <h2 class="text-lg font-semibold text-charcoal mb-3">{{ t("askbcion.missing_information.heading") }}</h2>
       <ul class="list-disc list-inside text-sm text-neutral mb-6">
         {% for label in missing_information %}
           <li>{{ label }}</li>

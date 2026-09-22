@@ -85,7 +85,7 @@ class AskTemplate:
 ASK_TEMPLATES: dict[str, AskTemplate] = {
     "cost_breakdown": AskTemplate(
         id="cost_breakdown",
-        prompt_key="ask.prompt.cost_breakdown",
+        prompt_key="askbcion.prompt.cost_breakdown",
         fields=(
             "verified_charges",
             "estimated_additional_expenses",
@@ -94,7 +94,7 @@ ASK_TEMPLATES: dict[str, AskTemplate] = {
     ),
     "pathway_overview": AskTemplate(
         id="pathway_overview",
-        prompt_key="ask.prompt.pathway_overview",
+        prompt_key="askbcion.prompt.pathway_overview",
         # Reuses compare.py's own field list -- the same fields shown on
         # the Compare screen, so this template answers "what does this
         # pathway involve" with exactly what Compare already shows, never
@@ -103,7 +103,7 @@ ASK_TEMPLATES: dict[str, AskTemplate] = {
     ),
     "eligibility_gap": AskTemplate(
         id="eligibility_gap",
-        prompt_key="ask.prompt.eligibility_gap",
+        prompt_key="askbcion.prompt.eligibility_gap",
         # Reuses eligibility.py's own generic-criterion field list -- the
         # same claim fields requirements.html's eligibility check reads,
         # so this template's "what's missing" list means the same thing

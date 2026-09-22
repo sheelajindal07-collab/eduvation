@@ -88,6 +88,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.api.ask import router as ask_router
 from app.api.auth import router as auth_router
 from app.api.claims import router as claims_router
 from app.api.compare import router as compare_router
@@ -98,6 +99,7 @@ from app.api.plans import router as plans_router
 from app.api.timeline import router as timeline_router
 from app.core.config import Settings, get_settings
 from app.core.logging import RequestIdLoggingMiddleware, configure_observability
+from app.web.ask_pages import router as ask_pages_router
 from app.web.cache_policy import CachePolicyMiddleware
 from app.web.consent_pages import router as consent_pages_router
 from app.web.pages import router as pages_router
@@ -307,6 +309,8 @@ EXPECTED_ROUTERS: tuple[str, ...] = (
     "pages",
     "reviewer_pages",
     "consent_pages",
+    "ask",
+    "ask_pages",
 )
 
 
@@ -346,6 +350,8 @@ def build_router_slots() -> list[RouterSlot]:
         RouterSlot("pages", pages_router),
         RouterSlot("reviewer_pages", reviewer_pages_router),
         RouterSlot("consent_pages", consent_pages_router),
+        RouterSlot("ask", ask_router),
+        RouterSlot("ask_pages", ask_pages_router),
     ]
 
 

@@ -5,6 +5,43 @@ never deleted.
 
 ---
 
+## 2026-09-22 — `compare.html`'s Ask BCION links now guarded on a resolved pathway id, closing a raw-uuid leak
+**Event:** The first full `tests/db` run after merging UI-11 (wave 2)
+found 2 failures in `tests/db/test_web_pages.py`, a Phase 1 file no
+Phase 1a card touched. `TestComparePage::
+test_nonexistent_pathway_id_gives_a_friendly_heading_not_the_raw_uuid`
+failed: a comparison request naming one real and one nonexistent
+pathway id rendered the nonexistent id's raw UUID into the page, inside
+the now-real `ask_bcion(...)` link's `href` - defeating the page's own
+"This pathway" fallback heading, whose entire purpose is to never show
+an unresolved id. `compare.html`'s own header comment (written before
+this session, at UI-1/A11Y-2) already named the exact fix: "the detail
+link only renders for a pathway_id this screen actually resolved to a
+real name... same guard already used below" - but the guard
+(`{% if c.pathway_id in pathway_names %}`) was only ever wired to the
+`pathway_detail_link` call, never to the `ask_bcion(...)` call sitting
+directly above it. Latent and invisible for as long as `_ask.html`'s
+macro was an empty stub (UI-1); real the moment UI-11 filled it in.
+**Decision:** Fixed at merge, by the lead, not by re-opening a new UI-11
+or compare.html card: wrapped both of `compare.html`'s `ask_bcion(...)`
+calls (`pathway_overview` and `cost_breakdown`) in the same guard
+already named in the file's own comment. Two lines, no other change -
+completing a fix the file already documented as owed, not a new design.
+`compare.html` is normally a single-writer file on a fixed editing
+chain (A11Y-2 -> I18N-3 -> UI-6 -> SCOPE-4, all already closed); this is
+the lead's integration-time correction of a regression the merge itself
+exposed, the same category as the `AIAnswerStatus` and `BANNED_PHRASES`
+reconciliations above.
+**What this changes:** Any future macro that starts real (a stub going
+from "renders nothing" to "renders a real link/id") needs its call
+sites re-checked for exactly this shape of latent bug - a stub hides an
+unguarded call until the day it stops being a stub.
+`TestComparePage`/`TestRequirementsPage`: 27 passed after the fix. Full
+`tests/db` (598 tests) re-run to confirm clean.
+**Status:** Done, merged to `main`, verified live in this session.
+
+---
+
 ## 2026-09-22 — RULES-16: a real date of birth on the requirements screen
 **Event:** The requirements screen gets a real `date_of_birth` field —
 POST-only like every other personal input there, never stored, never

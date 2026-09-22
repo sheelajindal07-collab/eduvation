@@ -35,13 +35,26 @@ _SYNTHETIC_SOURCE_NAME = run_name("AI-5 RETRIEVAL LIVE SYNTHETIC (fixture)")
 def retrieval_pathway(admin_client: Client) -> Iterator[dict[str, Any]]:
     """A real pathway carrying one claim of each status this module must
     tell apart: a published, official-sourced `minimum_age`; a draft
-    `maximum_age`; an in_review `required_subjects`; a `domicile_states`
-    claim that IS `published` but is backed by a synthetic source (the
-    state `forbid_publishing_synthetic_claims()` should prevent in
-    practice — seeded directly here, the same defence-in-depth case
-    `tests/unit/test_comparison.py` exercises in memory); and a published,
+    `maximum_age`; an in_review `required_subjects`; and a published,
     correctly-currencied `verified_charges` claim for the cost-engine
-    tests."""
+    tests.
+
+    Does NOT seed a published-and-synthetic-sourced claim (an earlier
+    version of this fixture tried to insert `domicile_states` that way,
+    reasoning that `forbid_publishing_synthetic_claims()` "should
+    prevent" it "in practice" — but that trigger fires on the write
+    itself, for every role including `admin_client`'s service role, so
+    the insert cannot succeed at all, not even to set up a fixture. Live
+    verification, 2026-09-22: it raises `APIError` with message "A claim
+    sourced from a synthetic Source can never be published", confirmed
+    below in `TestSyntheticSourceCanNeverBePublishedLive` as its own
+    explicit, passing assertion instead of a fixture-setup crash.
+    `app.ai.retrieval`'s own Python-level re-filter for this exact case
+    — "published alone doesn't mean trustworthy, the source matters too"
+    — is unreachable live for the same reason, so it stays covered where
+    it already was: `tests/unit/test_ai_retrieval.py`'s fake-client
+    tests, which can construct the state a real database now refuses
+    to.)"""
     official_source = (
         admin_client.table("sources")
         .insert(
@@ -115,7 +128,6 @@ def retrieval_pathway(admin_client: Client) -> Iterator[dict[str, Any]]:
         _insert_claim(
             "required_subjects", "Physics,Chemistry", "in_review", official_source["id"]
         ),
-        _insert_claim("domicile_states", "Gujarat", "published", synthetic_source["id"]),
         _insert_claim(
             "verified_charges", 50000, "published", official_source["id"], currency="INR"
         ),
@@ -147,7 +159,6 @@ class TestFetchPathwayRecordsLive:
         assert "minimum_age" in fields
         assert "maximum_age" not in fields
         assert "required_subjects" not in fields
-        assert "domicile_states" not in fields  # synthetic-backed, even though "published"
         by_field = {r.field: r for r in records}
         assert by_field["minimum_age"].value == 18
         assert by_field["minimum_age"].source_authority == _OFFICIAL_SOURCE_NAME
@@ -169,7 +180,34 @@ class TestFetchPathwayRecordsLive:
         assert "minimum_age" in fields
         assert "maximum_age" not in fields
         assert "required_subjects" not in fields
-        assert "domicile_states" not in fields
+
+
+class TestSyntheticSourceCanNeverBePublishedLive:
+    def test_inserting_a_published_claim_on_a_synthetic_source_is_refused_by_the_database(
+        self, admin_client: Client, retrieval_pathway: dict[str, Any]
+    ) -> None:
+        """The property `app.ai.retrieval`'s own defensive re-filter
+        exists as a *second* line of defence for: the database itself
+        already refuses, at the trigger level, for every role including
+        the service role, to let a claim backed by a synthetic source
+        ever carry `status = 'published'`. Proven directly here, live,
+        rather than only inferred from the fixture's own docstring."""
+        with pytest.raises(Exception) as excinfo:
+            admin_client.table("claims").insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": retrieval_pathway["pathway"]["id"],
+                    "field": "domicile_states",
+                    "value": "Gujarat",
+                    "source_id": retrieval_pathway["synthetic_source"]["id"],
+                    "verification_date": "2026-09-01",
+                    "verifier": run_name("test-fixture-reviewer"),
+                    "status": "published",
+                    "review_due_date": "2099-01-01",
+                }
+            ).execute()
+        assert "synthetic" in str(excinfo.value).lower()
+        assert "never be published" in str(excinfo.value).lower()
 
 
 class TestFetchClaimRecordLive:

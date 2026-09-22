@@ -44,8 +44,8 @@
              followable link whose href carries the raw id straight into
              the page, defeating the "This pathway" fallback the heading
              above already uses specifically to avoid that. #}
-          {{ ask_bcion("pathway_overview", pathway_id=c.pathway_id) }}
           {% if c.pathway_id in pathway_names %}
+            {{ ask_bcion("pathway_overview", pathway_id=c.pathway_id) }}
             {{ pathway_detail_link(c.pathway_id, label=pathway_names[c.pathway_id]) }}
           {% endif %}
           {{ save_action("pathway", c.pathway_id, return_to="/compare/view") }}
@@ -144,8 +144,15 @@
                       </p>
                     {% endif %}
                   {% endif %}
-                  {# UI-11's cost-card entry point, pre-wired by UI-1. #}
-                  {{ ask_bcion("cost_breakdown", pathway_id=c.pathway_id) }}
+                  {# UI-11's cost-card entry point, pre-wired by UI-1. Same
+                     "resolved pathway only" guard as the pathway-overview
+                     entry point above -- an unresolved id must never reach
+                     an ask_bcion() call, or its href carries the raw id
+                     into the page regardless of the "This pathway"
+                     heading fallback (docs/DECISIONS.md 2026-09-22). #}
+                  {% if c.pathway_id in pathway_names %}
+                    {{ ask_bcion("cost_breakdown", pathway_id=c.pathway_id) }}
+                  {% endif %}
                 </div>
               </div>
             </div>
