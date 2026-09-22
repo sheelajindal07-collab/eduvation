@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{# UI-5: GET /pathways/{id}/view -- the "see the full record" screen
+   `_components.html`'s `pathway_detail_link` macro has always linked to
+   from Explore and Compare. Every fact below is rendered ONLY from
+   `field_value_for()`'s output (via app/web/detail_pages.py, which never
+   reimplements the published/draft/synthetic-source check) -- a missing
+   or unpublished section shows the exact same "Not available"
+   trust-badge treatment every other screen already uses, never a
+   different, hand-rolled placeholder. #}
+{% from "_trust_badge.html" import evidence_line, trust_badge %}
+{% from "_components.html" import career_card %}
+{% from "_states.html" import alert %}
+{% block title %}{% if pathway %}{{ pathway.name }} &mdash; BCION Lite{% else %}Pathway details &mdash; BCION Lite{% endif %}{% endblock %}
+
+{% macro _fact(label_text, fv, cycle=none, money=false) %}
+  {#- One labelled fact on this page: the exact same value/badge/evidence
+      composition `_trust_badge.html`'s own `field_value()` macro renders
+      -- reused here rather than duplicated, EXCEPT that `field_value()`
+      does not forward `applicable_cycle` to `evidence_line()` (nothing
+      has ever had a real cycle value to pass it before this page), so
+      this macro composes the same two underlying primitives
+      (`trust_badge`, `evidence_line`) one level below that wrapper
+      instead of inventing new badge/evidence markup of its own. #}
+  <div>
+    <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
+      {{ label_text }}
+    </h3>
+    {% if fv.label != "not_available" and fv.value is not none %}
+      {% if money %}
+        <p class="text-charcoal font-medium">{{ fv.value | money(fv.currency) }}</p>
+      {% else %}
+        <p class="text-charcoal font-medium">{{ fv.value }}</p>
+      {% endif %}
+    {% endif %}
+    {{ trust_badge(fv.label) }}
+    {{ evidence_line(
+         fv.source_authority, fv.source_url, fv.verification_date, fv.label,
+         applicable_cycle=cycle) }}
+  </div>
+{% endmacro %}
+
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-2">Pathway details</h1>
+
+  {% if error %}
+    {% call alert(error, variant="caution", class_names="mb-6") %}
+      <a href="/explore" class="underline">Back to explore</a>.
+    {% endcall %}
+  {% else %}
+    {% if career %}
+      <p class="text-sm text-neutral mb-6">Part of {{ career.name }}</p>
+    {% endif %}
+
+    {# The career-card-style top section: what this pathway is, how to
+       enter it, what to investigate, why it's being shown, a reality
+       check. `pathway` (not a separate Career record) is "the record"
+       career_card renders -- its own name/description are the real
+       facts a student wants on a PATHWAY detail page, matching
+       explore.html's existing convention of showing `pathway.description`
+       directly. None of entry_routes/investigate/why/reality_check has a
+       data source yet anywhere in this codebase, so each renders the
+       macro's own honest "nothing published yet" treatment rather than
+       an invented list. #}
+    {{ career_card(career=pathway) }}
+
+    <section class="card mt-6">
+      <h2 class="text-lg font-semibold text-charcoal mb-4">Programme facts</h2>
+      {# Same four fields, same order, as the Compare screen
+         (app/api/compare.py's COMPARISON_FIELDS) -- one pathway's own
+         detail page is a drill-down on the same published facts, not a
+         second, differently-curated field set. #}
+      <div class="space-y-4">
+        {{ _fact(
+             "Entry requirements", fields["entry_requirements"],
+             cycle=academic_cycles.get("entry_requirements")) }}
+        {{ _fact(
+             "Main stages", fields["main_stages"],
+             cycle=academic_cycles.get("main_stages")) }}
+        {{ _fact("Time", fields["time_range"], cycle=academic_cycles.get("time_range")) }}
+        {{ _fact("Location", fields["location"], cycle=academic_cycles.get("location")) }}
+      </div>
+    </section>
+
+    {# docs/UI.md "Timeline & cost": three separate amounts, always --
+       never merged into one figure -- plus net_to_arrange as a fourth,
+       clearly labelled number. Same fields, same order, same
+       mixed-currency/missing-charge distinction as compare.html's own
+       cost card. #}
+    <section class="card mt-6">
+      <h2 class="text-lg font-semibold text-charcoal mb-4">Cost</h2>
+      <div class="space-y-4">
+        {{ _fact(
+             "Verified charges", cost_breakdown.verified_charges,
+             cycle=cost_academic_cycles.get("verified_charges"), money=true) }}
+        {{ _fact(
+             "Estimated additional expenses", cost_breakdown.estimated_additional_expenses,
+             money=true) }}
+        {% if cost_breakdown.estimated_additional_expenses.value == 0 %}
+          <p class="text-xs text-neutral -mt-3">
+            No estimate has been entered for this pathway yet -- this is not a claim
+            that there are no extra costs.
+          </p>
+        {% endif %}
+        {{ _fact(
+             "Potential assistance (not yet awarded)",
+             cost_breakdown.potential_assistance_not_yet_awarded,
+             cycle=cost_academic_cycles.get("potential_assistance_not_yet_awarded"),
+             money=true) }}
+        <div class="bg-neutral-bg rounded-md p-3">
+          <p class="text-xs text-neutral mb-1">What you'd need to arrange</p>
+          {% if cost_summary.net_to_arrange is not none %}
+            <p class="text-lg font-semibold text-charcoal">
+              {{ cost_summary.net_to_arrange.amount | money(cost_summary.net_to_arrange.currency) }}
+            </p>
+            <p class="text-xs text-neutral mt-1">
+              Verified charges + estimated extras, minus confirmed assistance only.
+              Potential assistance above is never subtracted here.
+            </p>
+          {% else %}
+            <span class="trust-badge trust-badge--not_available">
+              <span aria-hidden="true">&mdash;</span> Not available yet
+            </span>
+            {% if cost_summary.net_to_arrange_unavailable_reason == "mixed_currencies" %}
+              <p class="text-xs text-neutral mt-1">
+                This pathway's amounts are published in more than one currency, so they
+                are not added into a single total here. BCION does not convert between
+                currencies.
+              </p>
+            {% else %}
+              <p class="text-xs text-neutral mt-1">
+                Verified charges aren't published for this pathway yet.
+              </p>
+            {% endif %}
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="card mt-6">
+      <h2 class="text-lg font-semibold text-charcoal mb-4">Keep going</h2>
+      <ul class="space-y-2 text-sm">
+        <li>
+          <a
+            href="/requirements/view?pathway_id={{ pathway_id }}"
+            class="text-accent underline font-medium"
+          >
+            See requirements for {{ pathway.name }}
+          </a>
+        </li>
+        <li>
+          <a
+            href="/timeline/view?pathway_id={{ pathway_id }}"
+            class="text-accent underline font-medium"
+          >
+            Plan the timeline for {{ pathway.name }}
+          </a>
+        </li>
+        <li>
+          <a
+            href="/compare/view?pathway_id={{ pathway_id }}"
+            class="text-accent underline font-medium"
+          >
+            Compare {{ pathway.name }} with other pathways
+          </a>
+        </li>
+      </ul>
+    </section>
+
+    <p class="mt-8 text-center">
+      <a href="/explore" class="text-accent underline">Back to explore</a>
+    </p>
+  {% endif %}
+{% endblock %}
