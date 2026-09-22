@@ -5,6 +5,81 @@ never deleted.
 
 ---
 
+## 2026-09-22 — CONSENT-4 merged; review found and closed a live vulnerability on an already-deployed migration
+**Decision.** Merged CONSENT-4 (admission axis + safeguarding schema) to
+`main` as `db/migrations/0012_admission_axis.sql` and
+`0013_safeguarding_schema.sql` — renumbered from an original 0011/0012
+after `ls db/migrations/` showed AI-4's `0011_ai_usage.sql` had already
+taken that slot while this branch was mid-review (a third numbering
+collision this session, following the two logged 2026-09-21). Went
+through implement → 3-lens adversarial security review (anon-key
+bypass, RLS/cross-user access matrix, definer functions & grants) → one
+fix round → re-review. The fix round closed three real findings: an
+unauthenticated anon-key oracle on `is_admitted()`/`is_safeguarding_staff()`
+(missing grant restriction, missing `p_uid = auth.uid()` binding); a
+self-admission bypass via a direct own-row INSERT setting `admitted_at`
+(closed with a BEFORE INSERT trigger, service-role exempt); and the
+missing app-layer wiring that left every real adult account permanently
+inadmissible (no code ever created their `student_accounts` row, no
+route ever called `redeem_invite()`) — closed with
+`ensure_active_student_account()` and `POST /auth/redeem-invite`.
+
+**A live vulnerability, found while reviewing CONSENT-4, not caused by
+it.** The definer-functions re-review lens found `account_active(uid)`
+(`0004_guardian_consent.sql`, already merged and already applied to the
+real Mumbai project) has the identical unauthenticated cross-user oracle
+shape the fix round had just closed on its siblings — no grant
+restriction, no `uid = auth.uid()` binding — live-confirmed via a
+session-less anon-key-only RPC call returning any account's real
+active/pending/frozen/deletion-due status. Not a CONSENT-4 regression
+(0004 predates this branch), but genuinely exploitable today on the real
+project. Closed with a new, additive migration,
+`0014_account_active_grant_fix.sql` (same revoke-then-grant + self-scope
+pattern), full revert-to-prove both directions (live-reproduced the leak
+pre-fix, confirmed closed post-fix, confirmed every real call site —
+which always passes `auth.uid()`, never an arbitrary uid — is unaffected).
+
+**A real ripple effect from 0014, found and fixed before push.**
+Revoking `anon`'s EXECUTE on `account_active()` means Postgres now
+refuses to evaluate ANY policy referencing it for an anon caller,
+including `saved_plans_select_own`'s USING clause — so a guest's lookup
+in `app/api/ask.py`'s `_pathway_id_for_plan()` (intentionally designed
+to let RLS degrade a guest's query to an empty result, per that
+function's own docstring: "a guest... owns no saved_plans row at all")
+started raising `42501` instead, surfacing as an unhandled 500 instead
+of the intended 404. Fixed by catching that specific error code and
+returning the same 404 every other "not found" shape in that function
+already returns — same outcome, no behavior change from a caller's
+perspective, just no more crash. Also updated `tests/db/
+test_ask_next_steps.py`'s `student_a`/`student_b` fixtures to admit
+first (same pattern as `test_plan_actions.py`) — that file landed on
+`main` from a different lane after CONSENT-4's worktree branched, so its
+fixtures had never been updated for the `is_admitted()` gate.
+
+**Verified before push:** ruff clean, isolated mypy clean on every
+touched `.py` file (whole-project `mypy app` still blocked locally by
+the tracked numpy-stub issue), full `tests/db` suite against the
+migration-owner's own second local stack (674 passed, 8 xfailed, 0
+failed) AND against the shared `bcion-lite-test` stack after applying
+0012-0014 there (836 passed, 13 skipped, 8 xfailed, 0 failed — the
+ripple-effect fix confirmed this way, not just asserted), full
+`tests/unit` (1436 passed), CI green on `main` post-push (run
+35743674664, all 3 jobs — note CI's own `tests/db` run is against the
+real Mumbai project's CURRENT schema, which does not yet have
+0012-0014 applied, so its new tests correctly skip there rather than
+proving anything about the real project).
+
+**Owner action needed, flagged prominently in `STATUS.md`'s own ⚠️
+section:** `0012`-`0014` are merged and tested but not yet applied to
+the real Mumbai project — `0014` alone, applied independently, closes
+the live leak; `0012`/`0013` can follow on the owner's own timeline.
+Separately, `tasks/INDEX.md`'s CONSENT-2 row already names Mahesh as the
+safeguarding reviewer, but his own read of `docs/CONSENT.md` remains
+outstanding — no amount of AI review substitutes for that, per
+CLAUDE.md.
+
+---
+
 ## 2026-09-22 — SCOPE-6 and UI-6 merged: both fixed after independent NEEDS_FIXES review
 **Decision.** Both merged to `main` after a parallel implement-then-review
 workflow flagged real, concrete issues in each — fixed before merge, not

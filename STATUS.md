@@ -1054,6 +1054,56 @@ component set.
 ## Blockers
 **One real blocker remains, below — narrower than before, not gone.**
 
+## ⚠️ Read this one — a real, live vulnerability was found and fixed in code; it is NOT yet applied to your real Supabase project
+CONSENT-4 (admission axis + safeguarding schema) went through a full
+implement → 3-lens adversarial security review → fix round → re-review
+cycle and merged clean. While reviewing it, one of the three reviewers
+found something unrelated to CONSENT-4's own work but real and urgent:
+**`account_active(uid)`** (`db/migrations/0004_guardian_consent.sql` —
+already applied to your live Mumbai project, per the Infrastructure
+table below) is a `SECURITY DEFINER` function with no grant restriction
+and no binding to the caller's own identity. Concretely, right now, on
+your real project: **anyone holding only the public anon key — no
+account, no sign-in, nothing — can call `POST /rest/v1/rpc/
+account_active` with any real account's uuid and learn whether that
+account is active, pending guardian consent, frozen, or scheduled for
+deletion.** Live-reproduced against a local copy of your schema (not
+against your real project — no development agent touches that
+directly, per CLAUDE.md). Full writeup: `db/migrations/
+0014_account_active_grant_fix.sql`'s own header, and the 2026-09-22
+CONSENT-4 entry in `docs/DECISIONS.md`.
+
+**Fixed in code, verified locally and via CI (which runs `tests/db`
+against your real project's schema as it exists TODAY — the new tests
+correctly SKIP there since these migrations aren't applied yet, so CI
+green here does NOT mean this is fixed on your real project).** Three
+new migrations are sitting in `db/migrations/`, tested, reviewed,
+merged, but **not yet applied anywhere but local test stacks**:
+
+1. **`0012_admission_axis.sql`** and **`0013_safeguarding_schema.sql`**
+   — CONSENT-4's own work (admitted_at/is_admitted() gate, invite
+   redemption, safeguarding schema).
+2. **`0014_account_active_grant_fix.sql`** — closes the leak above.
+   This one is the urgent one: it fixes something exploitable on your
+   project as it stands right now, independent of whether you ever
+   apply 0012/0013.
+
+**What I need from you:** run `python scripts/apply_migrations.py`
+against your real project (same process as every prior batch — see
+`docs/DECISIONS.md`'s entries for 0004/0005/0006 above for exactly what
+that looks like) to get all three onto the real database. If you want
+to prioritise, 0014 alone is a complete, self-contained fix for the
+live leak and doesn't depend on 0012/0013 being applied first or at all.
+
+**Separately, not a code gap:** `tasks/INDEX.md`'s CONSENT-2 row records
+Mahesh as the named non-author safeguarding reviewer for both seats, but
+his own actual READ of `docs/CONSENT.md` is still outstanding — CLAUDE.md's
+"real minor accounts stay disabled until the consent and safeguarding
+workflow is reviewed by a person" isn't satisfied by any amount of AI
+review, however thorough, no matter how many adversarial passes this
+branch went through. That's on you and him, not blocked on the migration
+apply above.
+
 ## ⚠️ Read this one — guardian-consent gate is LIVE and tested; one owner action plus one owner sign-off remain
 `db/migrations/0004_guardian_consent.sql`, `0005_guardian_consent_request_rpc.sql`
 and `0006_guardian_consent_token_pgcrypto_schema.sql` are all applied to
