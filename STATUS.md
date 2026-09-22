@@ -331,11 +331,38 @@ migration disturbed nothing anyone else on the shared stack depends on:
 own throwaway stack - other lanes' work landing on the shared stack
 concurrently, not a Phase 1a change).
 
-Next: AI-19 (what-changed) launching now that AI-18 is merged and the
-shared stack is confirmed clean. The two eval findings from AI-11
-(official-vs-synthetic seeding, the two uncoverable categories) still
-need an explicit owner yes before AI-12's fix round treats either as
-settled.
+**AI-19 merged (2026-09-22 evening).** `app/planning/claim_diff.py`
+(pure) + `app/ai/what_changed.py` - the `what_changed` Ask BCION
+template. **Real finding, not a shortcut**: it could not reuse
+`app.ai.pipeline.answer()` at all, because that pipeline's retrieval
+only ever returns a `published` claim, while `what_changed`'s whole
+point is the **superseded** half of a correction - so it has its own
+independent two-pass implementation, still reusing the same guards and
+prompt builders, still code-only rendering from `claim_diff.py`'s own
+fields.
+
+**Behavioural consequence worth knowing, not a bug**: under the current
+RLS policy, a superseded claim is reviewer-only-readable, so
+`what_changed` degrades to `not_available` for every guest and ordinary
+student today - only a reviewer's own signed-in session can see a real
+`answered` result. Consistent with this card's own scope (the My-Plan
+notification hook needs `PUB-3`, explicitly deferred), but means this
+template has no real student-facing use yet on its own.
+
+**One real test bug found and properly fixed, not patched around**: a
+live test's assertion coincidentally matched a substring inside a
+random UUID rather than checking for an actual leak - replaced with an
+assertion against the fixture's own distinctive names, re-run three
+times clean.
+
+Verified: 40 unit + 10 live db tests, full unit suite **1418 passed**,
+mypy clean, all re-run by the lead through the actually-merged app, not
+just from the agent's own report.
+
+**Phase 1a dev-agent work is now essentially complete.** Every card
+except AI-13 (unblocked now that AI-4 is merged, not yet cut) and the
+human/owner-only items (AI-10, AI-16, AI-17, the two eval sign-offs
+above) is done. Next: cut and launch AI-13.
 
 ## Lead session, 2026-09-22 evening — merge-queue drain, cleanup, one process rule
 Owner asked for a speed analysis, then "do the treatment". What the

@@ -194,7 +194,7 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 - [ ] AI-17 - Owner sign-off to enable AI on production (after AI-13) [P2, owner - unchanged]
 - [x] AI-14 - AI-assisted claim extraction drafts: paste text, extraction + verification pass, verbatim-span check, draft only [P1a L8, x2, un-dropped, DONE, merged]
 - [x] AI-18 - Next-steps template over a server-owned, claim-bound action catalogue [P1a L10, x2, new, DONE, merged]
-- [ ] AI-19 - What-changed summary over the superseded_by diff [P1a L10, new]
+- [x] AI-19 - What-changed summary over the superseded_by diff [P1a L10, new, DONE, merged; currently reviewer-only in effect, see STATUS.md]
 - [x] AI-20 - Hindi content drafts, offline batch with back-translation check, CSV for the reviewer [P1a L9, DONE, merged]
 
 ## Step 12 Hindi, accessibility, difficult states (M6) - OPEN
