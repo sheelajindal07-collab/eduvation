@@ -260,6 +260,40 @@ class TestExpandAttemptsZeroGap:
         assert explicit.duration_weeks == default.duration_weeks == 24
 
 
+class TestStageDisplayKind:
+    """UI-7: the three-way "required vs optional vs user assumption"
+    vocabulary (docs/UI.md "Timeline & cost") is additive -- every Stage
+    built before `kind` existed still gets a sensible two-way answer via
+    the existing `required` boolean, and `compute_timeline` never reads
+    `kind` at all (a display label only, same as `required` itself)."""
+
+    def test_required_true_falls_back_to_required_kind_when_kind_is_unset(self) -> None:
+        stage = Stage("Class 12", duration_weeks=52, required=True)
+        assert stage.kind is None
+        assert stage.display_kind == "required"
+
+    def test_required_false_falls_back_to_optional_kind_when_kind_is_unset(self) -> None:
+        stage = Stage("Bridge course", duration_weeks=None, required=False)
+        assert stage.display_kind == "optional"
+
+    def test_explicit_user_assumption_kind_overrides_required_true(self) -> None:
+        """A stage the student added themselves (an extra attempt, a gap
+        year) is a user assumption regardless of `required`'s own value
+        -- the two words never mean the same thing `kind` gives a third,
+        explicit option for."""
+        stage = Stage("Extra attempt 1", duration_weeks=None, required=True, kind="user_assumption")
+        assert stage.display_kind == "user_assumption"
+
+    def test_kind_never_affects_the_computed_total(self) -> None:
+        stages = [
+            Stage("Class 12", duration_weeks=52, kind="required"),
+            Stage("Extra attempt", duration_weeks=10, kind="user_assumption"),
+        ]
+        result = compute_timeline(stages)
+        assert result.total_weeks == 62
+        assert [s.display_kind for s in result.stages] == ["required", "user_assumption"]
+
+
 class TestParallelActivityListWithManyEntries:
     def test_five_plus_parallel_activities_all_reported_none_affect_total(self) -> None:
         stages = [Stage("Degree", duration_weeks=208)]

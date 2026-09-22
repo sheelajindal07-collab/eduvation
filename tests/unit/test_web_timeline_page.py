@@ -155,3 +155,180 @@ class TestTimelinePagePost:
         assert response.status_code == 200
         assert "100 weeks" in response.text
         assert 'value="Part-time certification"' in response.text
+
+
+class TestStageKindsRenderDistinguishably:
+    """UI-7: required vs optional vs user-assumption stages (docs/UI.md
+    "Timeline & cost") each get their own text label AND icon, sourced
+    from app/rules/timeline.py's `Stage.display_kind` -- never a CSS
+    class that happens to carry a different colour alone."""
+
+    def test_required_optional_and_user_assumption_all_render_distinguishably(self) -> None:
+        response = client.post(
+            "/timeline/view",
+            data={
+                "stage_name_1": "Class 12",
+                "stage_duration_weeks_1": "52",
+                "stage_required_1": "on",
+                "stage_name_2": "Optional bridge course",
+                "stage_duration_weeks_2": "10",
+                # No stage_required_2 -- an unchecked "Required" box, i.e. optional.
+                "action": "revise",  # adds the third kind, a user-assumption row
+            },
+        )
+        assert response.status_code == 200
+        # Required: its own CSS class and its own icon.
+        assert "stage-kind-badge--required" in response.text
+        assert "&#10003;" in response.text
+        # Optional: a different class, a different icon, and the capitalised
+        # badge text (distinct from the lowercase "(optional)" section heading).
+        assert "stage-kind-badge--optional" in response.text
+        assert "&#9675;" in response.text
+        assert "Optional" in response.text
+        # User assumption: the "Revise this scenario" row, a third class and icon.
+        assert "stage-kind-badge--user_assumption" in response.text
+        assert "&#8776;" in response.text
+        assert "Your assumption" in response.text
+        assert "Extra attempt 1" in response.text
+
+
+class TestReviseThisScenario:
+    """UI-7: "Revise this scenario" adds an extra attempt/stage and
+    recomputes -- never framed as a failure (docs/UI.md "Timeline &
+    cost": "A failed attempt offers 'Revise this scenario', not a
+    failure badge")."""
+
+    def test_revise_never_uses_failure_language(self) -> None:
+        response = client.post(
+            "/timeline/view",
+            data={
+                "stage_name_1": "Class 12",
+                "stage_duration_weeks_1": "52",
+                "stage_required_1": "on",
+                "action": "revise",
+            },
+        )
+        assert response.status_code == 200
+        assert "Revise this scenario" in response.text
+        assert "fail" not in response.text.lower()
+
+    def test_revise_adds_an_extra_attempt_row_live_via_a_real_round_trip(self) -> None:
+        """Two real requests through TestClient -- not a unit test on
+        compute_timeline() alone -- matching this screen's existing
+        pre-fill-and-resubmit loop (GET, then POST, then POST again)."""
+        # Step 1: a complete plan, then click "Revise this scenario".
+        revise_response = client.post(
+            "/timeline/view",
+            data={
+                "stage_name_1": "Class 12",
+                "stage_duration_weeks_1": "52",
+                "stage_required_1": "on",
+                "action": "revise",
+            },
+        )
+        assert revise_response.status_code == 200
+        assert 'name="stage_extra_name_1"' in revise_response.text
+        assert 'value="Extra attempt 1"' in revise_response.text
+        assert 'name="num_extra_rows" value="1"' in revise_response.text
+
+        # Step 2: fill in the new row's duration and recalculate -- the
+        # total must include it, live, via the same page.
+        calculate_response = client.post(
+            "/timeline/view",
+            data={
+                "stage_name_1": "Class 12",
+                "stage_duration_weeks_1": "52",
+                "stage_required_1": "on",
+                "num_extra_rows": "1",
+                "stage_extra_name_1": "Extra attempt 1",
+                "stage_extra_duration_weeks_1": "10",
+                "action": "calculate",
+            },
+        )
+        assert calculate_response.status_code == 200
+        assert "62 weeks" in calculate_response.text
+        assert "Complete" in calculate_response.text
+
+    def test_revise_button_is_disabled_once_the_maximum_is_reached(self) -> None:
+        data = {
+            "stage_name_1": "Class 12",
+            "stage_duration_weeks_1": "52",
+            "stage_required_1": "on",
+            "num_extra_rows": "6",  # _TIMELINE_EXTRA_ROWS_MAX
+            "action": "revise",
+        }
+        for i in range(1, 7):
+            data[f"stage_extra_name_{i}"] = f"Extra attempt {i}"
+            data[f"stage_extra_duration_weeks_{i}"] = "4"
+        response = client.post("/timeline/view", data=data)
+        assert response.status_code == 200
+        # Still only 6 extra rows -- the 7th click was a no-op, not silently
+        # accepted -- and the control itself says why (never a colour-only
+        # disabled state, per docs/UI.md's State-pattern table).
+        assert "Extra attempt 7" not in response.text
+        assert "most extra attempts this calculator supports" in response.text
+
+
+class TestTotalStaysUnknownAfterRevise:
+    """UI-7 safety property (app/rules/timeline.py's core invariant,
+    preserved through the new "Revise this scenario" control): adding an
+    attempt must never let a stale, now-incomplete total keep showing as
+    if it were still confident."""
+
+    def test_total_goes_back_to_unknown_the_moment_an_unfilled_attempt_is_added(self) -> None:
+        response = client.post(
+            "/timeline/view",
+            data={
+                "stage_name_1": "Class 12",
+                "stage_duration_weeks_1": "52",
+                "stage_required_1": "on",
+                "action": "revise",
+            },
+        )
+        assert response.status_code == 200
+        assert "Total not available yet" in response.text
+        assert "Missing a duration for: Extra attempt 1" in response.text
+
+
+class TestPathwayNameContext:
+    """UI-7: `pathway_id`/`pathway_name` are an optional pair -- display
+    context only, no database lookup (this route still has no `Depends(
+    get_db_client)` at all). Standalone mode (neither given) must keep
+    working exactly as before."""
+
+    def test_pathway_name_shown_when_pathway_id_given(self) -> None:
+        response = client.get(
+            "/timeline/view", params={"pathway_id": "abc-123", "pathway_name": "B.Tech (CSE)"}
+        )
+        assert response.status_code == 200
+        assert "Planning around" in response.text
+        assert "B.Tech (CSE)" in response.text
+        assert 'value="abc-123"' in response.text  # carried as a hidden field
+
+    def test_pathway_id_without_a_name_falls_back_to_a_generic_label(self) -> None:
+        response = client.get("/timeline/view", params={"pathway_id": "abc-123"})
+        assert response.status_code == 200
+        assert "Planning around" in response.text
+        assert "this pathway" in response.text
+
+    def test_standalone_mode_is_unaffected_when_no_pathway_id_is_given(self) -> None:
+        response = client.get("/timeline/view")
+        assert response.status_code == 200
+        assert "A standalone what-if calculator" in response.text
+        assert "Planning around" not in response.text
+
+    def test_pathway_context_persists_across_a_post_round_trip(self) -> None:
+        response = client.post(
+            "/timeline/view",
+            data={
+                "pathway_id": "abc-123",
+                "pathway_name": "B.Tech (CSE)",
+                "stage_name_1": "Class 12",
+                "stage_duration_weeks_1": "52",
+                "stage_required_1": "on",
+                "action": "calculate",
+            },
+        )
+        assert response.status_code == 200
+        assert "Planning around" in response.text
+        assert "B.Tech (CSE)" in response.text
