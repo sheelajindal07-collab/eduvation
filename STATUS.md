@@ -160,7 +160,7 @@ links.
   concurrently on the shared stack, not a Phase 1a change). Wave 2 is
   fully verified end to end.
 
-**Wave 3, AI-6 and AI-20 merged (2026-09-22), AI-14 still running.**
+**Wave 3, AI-6, AI-14 and AI-20 all merged (2026-09-22).**
 BCI-015 (AI-6, AI-14, AI-20) dispatched as three parallel worktree
 agents; two finished and were merged as soon as they were ready,
 without waiting for the third - **AI-6**: `app/ai/pipeline.py`'s
@@ -177,12 +177,32 @@ model-authored text - 30 passed, full unit suite 1203 at merge time.
 - translation pass, then a *separate* back-translation-check pass,
 token-overlap agreement scored and flagged (never silently accepted),
 writes a CSV for a human Hindi reviewer, hash-proven to never write
-`en.json`/`hi.json` or touch the database - 25 passed. Both merged
-clean, no file conflicts; full unit suite re-run after both: **1228
-passed**. **BCI-016 (AI-14, reviewer claim extraction) still running.**
+`en.json`/`hi.json` or touch the database - 25 passed. **AI-14**:
+`app/ai/extraction.py` - a pasted-document extraction pass proposing
+`field/value/quoted_span` triples, then a separate adversarial
+verification pass, then a mechanical verbatim-substring re-check in
+code that never trusts the model's own verification answer alone.
+Correctly found two of its card's assumptions were stale (`claims_forms.py`
+and `sources.py`, named as reusable, are actually empty stubs) and
+adapted using the closest already-established pattern instead of
+guessing - the new `/reviewer/extract` page calls `app/api/claims.py`'s
+existing `create_claim()` directly (the same pattern `queue.py` already
+uses for its own actions, since the real `POST /claims` route is
+Bearer-only and a plain form can't attach that header), so no new
+database write path exists; every write still goes through the
+existing, already-tested claims API and its maker-checker enforcement.
+Wired into the running app as the lead's own one-line fix (`app/web/
+reviewer/__init__.py` now includes the new router under the existing
+`reviewer_pages` slot - `app/main.py` itself needed no change, since
+that file only ever imports one combined router per console package).
+23 unit + 16 live db tests pass through the actually-wired app, not
+just its own standalone test harness. **All three merged clean, no
+file conflicts. Full unit suite: 1251 passed.**
 
-Next: merge AI-14 when it finishes; relaunch AI-4 once `consent-4`
-merges.
+Next: relaunch AI-4 once `consent-4` merges; open wave 4 (AI-7 wires
+the pipeline into the Ask BCION route; AI-8 the AI-off regression;
+AI-18/AI-19 the next-steps and what-changed templates) once AI-7's
+dependency (AI-6, now merged) clears it to start.
 
 ## Development plan — Wave 1 done, Wave 2's migration/eligibility lanes done (2026-09-21)
 `docs/DEVELOPMENT-PLAN.md` is being executed for real. `tasks/INDEX.md`

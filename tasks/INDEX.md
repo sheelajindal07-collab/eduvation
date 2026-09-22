@@ -192,7 +192,7 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 - [ ] AI-16 - Hindi-preferring person reviews Hindi answers and AI-20 drafts [P1a, human; needs I18N-6]
 - [ ] AI-12 - Fix round, enable on staging (or dev, recorded), kill-switch drill [P1a L4 + owner]
 - [ ] AI-17 - Owner sign-off to enable AI on production (after AI-13) [P2, owner - unchanged]
-- [ ] AI-14 - AI-assisted claim extraction drafts: paste text, extraction + verification pass, verbatim-span check, draft only [P1a L8, x2, un-dropped]
+- [x] AI-14 - AI-assisted claim extraction drafts: paste text, extraction + verification pass, verbatim-span check, draft only [P1a L8, x2, un-dropped, DONE, merged]
 - [ ] AI-18 - Next-steps template over a server-owned, claim-bound action catalogue [P1a L10, x2, new]
 - [ ] AI-19 - What-changed summary over the superseded_by diff [P1a L10, new]
 - [x] AI-20 - Hindi content drafts, offline batch with back-translation check, CSV for the reviewer [P1a L9, DONE, merged]
