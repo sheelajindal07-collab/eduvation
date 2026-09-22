@@ -20,7 +20,7 @@ How to read it:
 
 Migration ledger (Phase 1 order): 0007 DATA-12, 0008 SCOPE-3, 0009 AUTH-4, 0010 AUTH-5, 0011 PUB-2, 0012 PUB-3, 0013 SEC-6, 0014 CONSENT-4. Phase 2: AUTH-7, AUTH-10, DATA-4, I18N-7, I18N-8, AUTH-15, OPS-6, TRIAL-5, AI-4. Owner apply batches: DATA-10a (through 0008), DATA-10b (through 0010), PUB-4 (through 0012), DATA-10c (through 0014). **PROVISIONAL — re-verify against `ls db/migrations/` before the migration lane opens**: 0004 and 0005 are already real, taken by another session's guardian-consent gate, not this plan's — that is why the ledger starts at 0007, not 0004 (see docs/DEVELOPMENT-PLAN.md section 16 for the two collisions that moved this).
 
-Lockboard (lead only): `RESET` line goes here before the shared local stack is reset. Currently: none.
+Lockboard (lead only): `RESET` line goes here before the shared local stack is reset. Currently: **APPLY PENDING (Phase 1a lead, 2026-09-22)** - migration `0011_ai_usage.sql` merged to `main`, not yet applied to the shared `bcion-lite-test` stack (additive, `scripts/apply_migrations.py`, no reset). Holding for "no run in flight" from whoever's running tests/db against that stack right now (own AI-8/AI-18 lanes plus at least one Phase 1 lane per cross-session coordination) - will post here again once applied.
 
 ---
 
@@ -184,7 +184,7 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 - [x] AI-5 - Retrieval of approved records, import guard [P1a L5, DONE, merged; live fixture bug found+fixed at merge, see docs/DECISIONS.md]
 - [x] AI-9 - AI evaluator agent (proposed file) and 36-question evaluation set [P1a L3, day 1, DONE, merged; .claude/agents/ai-evaluator.md applied]
 - [x] UI-11 - Ask BCION shell, deterministic first, no input element [P1a L6, DONE, merged; router registered, i18n reconciled to askbcion.* at merge]
-- [ ] AI-4 - Migration 0013 (was 0011, renumbered - see docs/DECISIONS.md 2026-09-22): ai_usage, atomic two-call reservation, per-identity and global caps, RLS [P1a L2, migration-owner, BLOCKED on consent-4 merging]
+- [x] AI-4 - Migration 0011: ai_usage, atomic two-call reservation, per-identity and global caps, RLS [P1a L2, migration-owner, DONE, merged on its own third stack; not yet applied to the shared test stack - see lockboard]
 - [x] AI-6 - Two-pass pipeline (selection + verification), prompts, guards, outbound allow-list [P1a L4, DONE, merged]
 - [x] AI-7 - Ask BCION route wired to the pipeline; identity = account or guest session [P1a L6, DONE, merged; JSON route renders sentences/citations, HTML template markup still needed - follow-up]
 - [ ] AI-8 - AI-off journey regression (flag off; mock failing) [P1a L6]

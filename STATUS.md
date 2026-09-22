@@ -261,13 +261,55 @@ config.toml`, documentation-only, additive) so it runs in parallel
 instead of queuing behind the peer session's migration lane. Relaunched
 and running as of this note.
 
-Next: open wave 5 (AI-8 the AI-off regression, once AI-7's own
-worktree confirms live against a `.env.test`-configured stack; AI-18/
-AI-19 the next-steps and what-changed templates, both needing AI-7)
-once AI-7 and AI-11 finish their own final live checks; the two eval
-findings above (official-vs-synthetic seeding, the two uncoverable
-categories) need an explicit owner yes before AI-12's fix round treats
-either as settled.
+**AI-4 merged (2026-09-22 evening).** `db/migrations/0011_ai_usage.sql`:
+`ai_usage` + `ai_usage_caps`, `ai_reserve()`/`ai_settle()` (SECURITY
+DEFINER, pinned `search_path`, `select ... for update` on the caps row
+as the serialisation point). **Six separate protections revert-to-proved
+on the migration-owner's own third stack, all restored and re-verified**:
+the concurrent-reservation cap check, the account-scoped SELECT policy,
+the reviewer-only aggregate-view gate, the no-API-role-write grants,
+`ai_settle`'s two guards, and `ai_budget_remaining`'s own cap math. Full
+`tests/db` on that stack, after a reset and clean re-apply of 0001-0011
+from committed files: **691 passed, 8 xfailed, 0 failed.**
+
+**Two items accepted on my own read, recorded here for your visibility
+rather than silently settled:**
+- **A third `SECURITY DEFINER` function beyond the card's named two** -
+  `ai_budget_remaining()`, read-only, because two of the three caps are
+  installation-wide and cannot be answered from one caller's own
+  RLS-scoped row slice. It leaks only "how much headroom is left",
+  which the AI-unavailable banner already shows every visitor. Accepted;
+  say so if you'd rather it raised instead of answered.
+- **A known, documented residual risk**: anyone who can call
+  `ai_settle` and can guess a reservation's UUID (122-bit guess space)
+  could settle it early and free its headroom - a narrow window only
+  until the real settlement lands. The proper fix (a settlement secret
+  returned by `ai_reserve`) is a design decision beyond this card's
+  scope; flagging, not fixing, for now.
+
+Cap values (per-identity daily 5, global daily 50, global monthly 500)
+are placeholders, labelled as such in the migration's own comment -
+real figures are an owner `UPDATE`, not a new migration, whenever you
+have them (`docs/plan/phase-1a-ai.md` section 8b, which no agent reads).
+
+**Not yet applied to the shared test stack.** The access-matrix guard
+will hard-fail `tests/db` for every lane on that stack the moment it
+sees the new matrix rows without the table existing - holding for a
+"no run in flight" signal per the lockboard (`tasks/INDEX.md`), since
+several lanes (mine and at least one Phase 1 lane) are running live
+db tests against it right now. **Renumbering note**: `consent-4`'s own
+uncommitted `0011_admission_axis.sql`/`0012_safeguarding_schema.sql`
+shift to `0012`/`0013` now that this merged first, per the existing
+first-to-merge rule - a pure rename, nothing from either worktree has
+touched a cloud project.
+
+Next: apply `0011` to the shared stack once clear; open wave 5 (AI-8
+the AI-off regression; AI-18 the next-steps template) - both launched,
+running now; AI-19 (what-changed) queued behind AI-18 to avoid a
+shared-file collision on `app/api/ask.py`. The two eval findings from
+AI-11 (official-vs-synthetic seeding, the two uncoverable categories)
+still need an explicit owner yes before AI-12's fix round treats either
+as settled.
 
 ## Lead session, 2026-09-22 evening — merge-queue drain, cleanup, one process rule
 Owner asked for a speed analysis, then "do the treatment". What the

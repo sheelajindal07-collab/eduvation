@@ -5,6 +5,36 @@ never deleted.
 
 ---
 
+## 2026-09-22 — AI-4 merged: a third definer function accepted; a settlement-race risk accepted and documented, not fixed
+**Event:** Migration `0011_ai_usage.sql` (AI-4) shipped a third
+`SECURITY DEFINER` function, `ai_budget_remaining()`, beyond the two
+(`ai_reserve`, `ai_settle`) the task card named. Flagged by the
+migration owner for an explicit yes rather than assumed.
+**Decision:** Accepted. Two of `ai_usage_caps`' three caps (global
+daily, global monthly) are installation-wide, so `remaining()` - part
+of the call shape `app/ai/budget_db.py` must match to be a drop-in for
+`app/ai/budget.py`'s `AIRequestBudget` - cannot be answered from one
+caller's own RLS-scoped row slice. The function is read-only, `stable`,
+pinned `search_path`, returns a single integer, and discloses only "how
+much headroom is left" - information the planned AI-unavailable banner
+already shows every visitor regardless of identity.
+**Separately accepted, not fixed**: anyone who can call `ai_settle` and
+can correctly guess a reservation's UUID (122 bits of entropy) could
+settle it early as `failed, 0 calls`, freeing its reserved headroom -
+a narrow window that closes the moment the real settlement lands. The
+migration's own comment documents this. The proper fix - a settlement
+secret returned by `ai_reserve` and required by `ai_settle` - is a
+design decision beyond this card's scope, not attempted here.
+**What this changes:** Nothing yet. Both are named, accepted risks at
+this pilot's scale (CLAUDE.md: "Ranges and named assumptions only" for
+uncertainty; the spirit extends to a named, bounded operational risk).
+Revisit the settlement-secret fix before any deployment where a
+malicious guess of a UUID is a realistic threat model, not assumed here.
+**Status:** Accepted as documented. Migration merged to `main`, not yet
+applied to the shared test stack (see `tasks/INDEX.md` lockboard).
+
+---
+
 ## 2026-09-22 — A11Y-3 merged; briefly broke main's mypy, fixed same session
 **Decision.** Merged A11Y-3 to `main`: `app/web/errors.py`
 (`register_error_handlers`) adds global styled 404/403/500 HTML pages,
