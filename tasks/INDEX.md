@@ -88,7 +88,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] RULES-8 - Wire RuleSets into the eligibility API [W3a] -- invented the "rule_key" claim-field convention (no prior one existed; see docs/DECISIONS.md 2026-09-22); non-IN pathway display-only gate still not implemented on the fallback path
 - [x] RULES-9 - Timeline seeding from stage claims (session 1 W3a, session 2 W3b) -- invented the "stage:<order>:*" claim convention (no prior one existed; see docs/DECISIONS.md 2026-09-22)
 - [ ] UI-6 - Cost-assumption editing on Compare [W3b]
-- [x] SCOPE-4 - Currency-safe cost display [W3b] -- known follow-up: itemised fee_component:* claims with no legacy verified_charges claim show "Not available" on the display line while the total (correctly) uses the components; not carded yet
+- [x] SCOPE-4 - Currency-safe cost display [W3b] -- its disclosed follow-up (itemised fee_component:* claims with no legacy verified_charges claim showed "Not available" on the display line while the total used the components) is now closed: merged b75f939 (2026-09-22)
 - [x] UI-7 - Timeline stage kinds and "Revise this scenario" [W3b] -- pathway_id/pathway_name are display-only context, not yet wired from any linking screen
 - [x] RULES-16 - Requirements screen: DOB input, cycle label, "not checked here" list [W3b]
 - [ ] QA-7 - Mobile and desktop viewport e2e, full guest journey [W3b]
