@@ -143,6 +143,7 @@ from functools import lru_cache
 from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from postgrest.exceptions import APIError
 from pydantic import BaseModel
 from supabase import Client
 
@@ -299,7 +300,23 @@ def _pathway_id_for_plan(db: Client, plan_id: str) -> str:
     caller distinguish "wrong id shape" from "not yours"."""
     if not _looks_like_a_uuid(plan_id):
         raise HTTPException(status_code=404, detail="Plan not found.")
-    result = db.table("saved_plans").select("pathway_id").eq("id", plan_id).execute()
+    try:
+        result = db.table("saved_plans").select("pathway_id").eq("id", plan_id).execute()
+    except APIError as exc:
+        # CONSENT-4 (0014): saved_plans_select_own's USING clause calls
+        # account_active(auth.uid()), which anon no longer has EXECUTE
+        # on (the account_active() cross-user oracle fix) -- Postgres
+        # checks that grant at query-analysis time for EVERY caller who
+        # touches the policy, including a guest whose own row-match
+        # would have been "no", not just one who'd have matched. Before
+        # that fix, a guest's query here degraded to an empty result
+        # (the intended "a guest owns no saved_plans row at all" case,
+        # named in this function's own docstring); now it raises 42501
+        # instead. Same "not found" outcome either way -- a guest was
+        # never going to see a real plan_id's pathway through this path.
+        if exc.code == "42501":
+            raise HTTPException(status_code=404, detail="Plan not found.") from exc
+        raise
     rows = cast("list[dict[str, Any]]", result.data)
     if not rows:
         raise HTTPException(status_code=404, detail="Plan not found.")

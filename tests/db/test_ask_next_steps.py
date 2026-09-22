@@ -28,9 +28,27 @@ from fastapi.testclient import TestClient
 from supabase import Client
 
 from app.main import app
-from tests.db.conftest import run_name
+from tests.db.conftest import admit_student, run_name
 
 client = TestClient(app)
+
+
+# CONSENT-4 (0012): every test below that saves a plan exercises a real,
+# RLS-scoped write to saved_plans, which now also requires
+# is_admitted(auth.uid()). Same fixture-override pattern already used in
+# tests/db/test_plan_actions.py — see that file's own comment for why.
+@pytest.fixture
+def student_a(student_a: tuple[str, Client], admin_client: Client) -> tuple[str, Client]:
+    user_id, client_ = student_a
+    admit_student(admin_client, user_id)
+    return user_id, client_
+
+
+@pytest.fixture
+def student_b(student_b: tuple[str, Client], admin_client: Client) -> tuple[str, Client]:
+    user_id, client_ = student_b
+    admit_student(admin_client, user_id)
+    return user_id, client_
 
 
 def _auth(token: str) -> dict[str, str]:
