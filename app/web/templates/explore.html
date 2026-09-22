@@ -24,7 +24,11 @@
     <form action="/compare/view" method="get" id="compare-form">
       <div class="space-y-6">
         {% for entry in careers_with_pathways %}
-          <section class="card">
+          {# UI-3: an id per career so the landing page's "I have a
+             career in mind" choice (and any other future deep link) can
+             jump straight to one career's card instead of the top of a
+             possibly long list. #}
+          <section class="card" id="career-{{ entry.career.id }}">
             <h2 class="text-lg font-semibold text-charcoal mb-3">{{ entry.career.name }}</h2>
             {% if not entry.pathways %}
               <p class="text-sm text-neutral">No pathways published for this career yet.</p>

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{# UI-3 -- the /start chain's end. Matching these answers to real
+   pathway suggestions is UI-4's job, not this one (see
+   app/web/start_pages.py's docstring) -- this screen only confirms what
+   was told, or skipped, in plain language. #}
+{% from "_states.html" import alert %}
+{% block title %}Thanks &mdash; BCION Lite{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-2">Thanks &mdash; here's what you told us</h1>
+
+  {% if all_skipped %}
+    {% call alert("You skipped every question -- that's fine.", variant="neutral", class_names="mb-6") %}
+      You can still browse everything below.
+    {% endcall %}
+  {% else %}
+    <p class="text-neutral mb-6">
+      Nothing here is scored or ranked -- it just helps point you to a useful starting place.
+    </p>
+  {% endif %}
+
+  <section class="card mb-6">
+    <ul class="space-y-3">
+      {% for row in answers %}
+        <li>
+          <p class="text-sm font-medium text-charcoal">{{ row.question }}</p>
+          <p class="text-sm text-neutral">{{ row.answer or "Skipped" }}</p>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <div class="flex items-center gap-4">
+    <a href="/explore" class="btn-primary">Browse Explore</a>
+    <a href="/start" class="text-accent underline">Start again</a>
+  </div>
+{% endblock %}
