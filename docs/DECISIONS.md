@@ -84,6 +84,30 @@ passed).
 
 ---
 
+## 2026-09-22 — Owner names Mahesh for every open people role (CONSENT-2, PUB-13a, CONTENT-1 checker, I18N-6, TRIAL-1 second moderator)
+**Decision.** The owner named one person, Mahesh ("all rounder"), for: the
+non-author consent and safeguarding reviewer (CONSENT-2 — also the human
+read of `docs/CONSENT.md` that CONSENT-4 needs before it can merge, and
+the sign-off `docs/SECURITY.md` requires before any real minor account);
+the publishing checker (PUB-13a, and CONTENT-1's checker seat; the owner
+creates the reviewer account in PUB-13b); the Hindi reviewer (I18N-6 —
+that Mahesh reads Hindi comfortably is the owner's assumption, not
+verified here); and the second moderator for usability round 1
+(TRIAL-1). Contact details stay with the owner only — never in this
+repo, the same rule CONTENT-18 enforced for the owner's own address.
+**What stays separated, because the rules need it:** maker ≠ checker —
+Mahesh checks, so he never drafts the claims he approves (the owner and
+the AI-extracted drafts are the makers; the database refuses
+self-approval regardless). Consent reviewer ≠ author — holds; the
+workflow was written by agents and the owner. Round-1 **tester** ≠
+Mahesh — a moderator who knows the product is fine, a tester who does is
+not, so TRIAL-1's five tester profiles are still to be recruited.
+CONTENT-1's editor and corrections-owner seats default to the owner
+until someone else is named.
+**Risk, named:** one person on every human gate is a single point of
+failure for the schedule. Acceptable for a 10-100 user pilot; split the
+roles before the expansion cohort (Step 16) starts.
+
 ## 2026-09-22 — Owner lifts the wave concurrency cap: "launch everything that's unblocked"
 **Decision.** `docs/DEVELOPMENT-PLAN.md` section 8.8's wave table caps concurrent
 writing lanes at 6 (3 of them DB-touching), specifically so the lead session's

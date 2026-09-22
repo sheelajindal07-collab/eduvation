@@ -322,7 +322,14 @@ here scores you"; LOW tap targets under 44 px (skip/start-again 24 px,
 pathway links 21 px, change 19 px); LOW "You didn't tell us enough yet"
 mildly blames the student. Both peer lead sessions were messaged before
 and after; the AI lead confirmed and pushed its own pending commit
-first.
+first. **People gates resolved by the owner later this session:**
+Mahesh named for CONSENT-2 (both seats), PUB-13a, CONTENT-1's checker
+seat, I18N-6 and TRIAL-1's second-moderator seat — see
+`docs/DECISIONS.md`'s 2026-09-22 entry, including what must stay
+separated (maker ≠ checker; moderator, not tester). Contact details are
+the owner's, never the repo's. Still open on the people side: the five
+round-1 testers, and Mahesh's actual read of `docs/CONSENT.md`, which
+is what gates CONSENT-4's merge.
 
 ## Development plan — Wave 1 done, Wave 2's migration/eligibility lanes done (2026-09-21)
 `docs/DEVELOPMENT-PLAN.md` is being executed for real. `tasks/INDEX.md`

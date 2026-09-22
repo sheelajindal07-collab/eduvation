@@ -74,7 +74,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 
 ## Step 7 Compare and calculators (M2) + usability round 1 - PARTIAL (screens exist; no exam modules)
 - [x] RULES-1 - Rules contract v2 [W1, contract burst]
-- [ ] I18N-6 - Name the Hindi reviewer, fix the critical-key list [W0, owner, day 3]
+- [~] I18N-6 - Name the Hindi reviewer, fix the critical-key list [W0, owner, day 3] — **reviewer named: Mahesh** (2026-09-22, docs/DECISIONS.md); critical-key list fix still open
 - [ ] DESIGN-6 - Owner picks the round-1 vehicle [W0, owner, day 4]
 - [x] RULES-2 - Date-based age criteria (input fields only; before SEC-5) [W2]
 - [x] RULES-3 - Any-of subject groups, thresholds, qualification criteria [W2]
@@ -105,7 +105,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 
 ## Step 8 Sign-in, plans, consent (M3) - PARTIAL and BLOCKED (no age or consent gate)
 - ~~CONSENT-1~~ - **SUPERSEDED, not built.** Another session merged a real age + guardian-email consent gate (`db/migrations/0004_guardian_consent.sql`, `0005_guardian_consent_request_rpc.sql`, confirmed live in production) while this plan was being written — it does the actual job this stopgap was a cheap stand-in for, more completely. No checkbox; not counted in the 260 total's checklist.
-- [ ] CONSENT-2 - Owner names safeguarding people and the non-author reviewer [W0, owner, day 3]
+- [x] CONSENT-2 - Owner names safeguarding people and the non-author reviewer [W0, owner, day 3] — **Mahesh, both seats** (2026-09-22, docs/DECISIONS.md); his actual read of docs/CONSENT.md is still the gate on CONSENT-4's merge
 - [x] AUTH-1 - Session, guest and plan-store contract (owner explicit yes) [W1, contract burst]
 - [x] CONSENT-3 - Consent and safeguarding design doc (placeholders; human read follows) [W1, contract burst]
 - [x] SEC-2 - CSRF contract for cookie sessions [W2]
@@ -136,7 +136,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - DESIGN-11, DESIGN-12 - shrunk to one consent-screen sentence inside CONSENT-3 (no separate card)
 
 ## Step 9 Publishing console (M4) - PARTIAL (console exists; self-approval bypass open)
-- [ ] PUB-13a - Owner names reviewers [W0, owner, day 3]
+- [x] PUB-13a - Owner names reviewers [W0, owner, day 3] — **Mahesh** (2026-09-22, docs/DECISIONS.md); account creation is PUB-13b
 - [x] PUB-1 - Publishing contract incl. content hash (owner explicit yes) [W1, contract burst]
 - [x] PUB-5 - Split reviewer_pages.py into a package [W1]
 - [ ] PUB-2 - Migration 0011: identity enforcement, source versions, claim columns [W3]
@@ -154,7 +154,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] PUB-14 - Two-reviewer dry run on five real records [P2]
 
 ## Step 10 Real pilot dataset (M4) - OPEN (drafts only)
-- [ ] CONTENT-1 - Owner names editor, checker, corrections owner [W0, owner, day 3]
+- [~] CONTENT-1 - Owner names editor, checker, corrections owner [W0, owner, day 3] — **checker: Mahesh**; editor and corrections owner default to the owner until named (maker ≠ checker must hold) (2026-09-22, docs/DECISIONS.md)
 - [ ] TRIAL-7 - Open the editor-hours log [W0, owner, day 4]
 - [~] CONTENT-2 - Import contract: CSV templates, closed vocabulary, hash rule — **contract half done** (the content-hash field list and source_version rule are frozen in `docs/CONTRACTS.md` "Publishing evidence in Phase 1"); **artefacts still open**: `docs/CONTENT-IMPORT.md`, `content/templates/claims_import.csv`, `content/templates/sources_register.csv`, the closed `field` vocabulary — deliberately left outside the contract-burst agent's owned files, needs its own small session before CONTENT-3 [W1, contract burst]
 - [x] CONTENT-3 - Offline draft extractor and inventory [W1]
@@ -285,7 +285,7 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 - [x] DOCS-1 - Commit pending memory edits, one CLAUDE.md line, clean stale worktrees [W0] — **done**: `.claude/settings.json` deny rules and the CLAUDE.md line are committed and pushed (`2a9d6d2`); main is clean; the one existing worktree (`wf_9b7797a4-e76-1`) has real uncommitted work (the "Held, not merged" student sign-up UI, `STATUS.md`) and is deliberately left alone, not removed
 - [x] SEC-15 - Owner: move live Supabase keys out of the repo folder (blocks any fan-out) [W0, owner, new] — **done, owner-confirmed 2026-09-21**
 - [ ] SEC-16 - Owner: rotate the staging service-role key, JWT secret and DB password once QA-2 is merged (earlier agent sessions could read the pre-SEC-15 values) — hard precondition of DEPLOY-7 and PUB-13b [W1-W2, owner, new]
-- [ ] TRIAL-1 - Owner kickoff: name people, recruit adult round-1 testers, name a second moderator [W0, owner]
+- [~] TRIAL-1 - Owner kickoff: name people, recruit adult round-1 testers, name a second moderator [W0, owner] — **second moderator: Mahesh** (2026-09-22); the five adult tester profiles are still to be recruited — 2-3 week lead time, start now
 - [ ] SCOPE-1 - Owner confirms phasing and the trial coverage set (explicit yes) [W0, owner]
 - [ ] RULES-17 - Owner answers the six rules decisions [W0, owner]
 - [ ] CONSENT-17 - Record the DigiLocker route as deferred [W0, owner]
