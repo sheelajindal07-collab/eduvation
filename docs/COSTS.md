@@ -7,6 +7,7 @@ per merge batch — not a live dashboard, a running log.
 | Date | Batch | Sessions by tier (strongest/standard/cheap) | Fix rounds | Rate-limit stalls | Notes |
 |---|---|---|---|---|---|
 | 2026-09-21 | DOCS-1, DOCS-3a | 0 / 3 / 0 | 0 | 0 | Lead-only, on main |
+| 2026-09-22 | Queue drain: UI-4 merge, e2e locator fix merge, 20 merged worktrees removed, implementer DB-test rule, INDEX ticks | 0 / 1 / 0 | 0 | 0 | One lead session; plus one read-only ux-qa pass on UI-4 (not a writer) |
 
 Per-batch metrics line (append one row per merge batch, in the format
 above). **Tripwire** (plan section 8.6): if a wave's actual sessions

@@ -204,6 +204,39 @@ the pipeline into the Ask BCION route; AI-8 the AI-off regression;
 AI-18/AI-19 the next-steps and what-changed templates) once AI-7's
 dependency (AI-6, now merged) clears it to start.
 
+## Lead session, 2026-09-22 evening — merge-queue drain, cleanup, one process rule
+Owner asked for a speed analysis, then "do the treatment". What the
+analysis found and acted on: with the lane cap lifted (`docs/DECISIONS.md`
+2026-09-22), the throughput limit is the lead's **serial verify-and-merge**,
+not lane count — 8 lanes were writing across two lead sessions while
+finished branches sat unmerged, and the plan's own cut-back ("more than 4
+green branches waiting → no new lane") was about to trip; implementers
+were leaving every `tests/db` run to the lead because a worktree has no
+`.env.test`; and the owner's ~15 open W0 tasks (AI-10, DEPLOY-1, SEC-16,
+CONSENT-2/PUB-13a/CONTENT-1, I18N-6, TRIAL-1, DATA-10a) are the actual
+critical path — nothing an agent builds yields a measurable pilot result
+without content, a checker and testers. Done, every claim verified in
+this session: **UI-4 merged** (`9414085`; ruff + mypy clean, 1266 unit,
+`tests/db/test_web_pages.py` 46 passed live with `BCION_REQUIRE_LIVE=1`;
+`_why.html` content-only, per 6.4). **E2E locator fix merged** (`3f6d75b`,
+from `claude/vibrant-northcutt`; its red CI was main's own `extract.py`
+mypy break, since fixed — the test re-run here: 1 passed in 8 s, no
+hang). **Implementer DB-test rule** (`052b838`): `tasks/TEMPLATE.md` and
+`.claude/agents/implementer.md` now require copying `.env.test` into the
+worktree and running the card's DB tests with `BCION_REQUIRE_LIVE=1`; a
+report without its own live run is sent back, not merged. `tasks/INDEX.md`:
+I18N-1, I18N-2, UI-1, DESIGN-18 (merged in `f66d95a`) and UI-4 ticked.
+**20 merged, clean, unlocked worktrees removed** (40 → 20); every dirty,
+locked or `claude/*` session worktree left alone. CI on `3f6d75b`: all
+three jobs green. Left behind: an empty `.claude/worktrees/ui-4/` folder
+git has already unregistered — some process holds it as its cwd, delete
+when free; `.claude/worktrees/agent-ae56e118d8993f401` (sec-3) is merged
+and clean, left for the Phase 1 lead. A read-only ux-qa pass on the
+merged `/start` suggestion screen was launched; its result is recorded
+below this paragraph when it lands. Both peer lead sessions were messaged
+before and after; the AI lead confirmed and pushed its own pending commit
+first.
+
 ## Development plan — Wave 1 done, Wave 2's migration/eligibility lanes done (2026-09-21)
 `docs/DEVELOPMENT-PLAN.md` is being executed for real. `tasks/INDEX.md`
 finalised (DOCS-3a); `docs/CONTRACTS.md` fully frozen (all 7 Wave 1
