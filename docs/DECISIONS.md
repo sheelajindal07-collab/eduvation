@@ -78,6 +78,27 @@ safeguarding reviewer, but his own read of `docs/CONSENT.md` remains
 outstanding — no amount of AI review substitutes for that, per
 CLAUDE.md.
 
+**Independent confirmation, same evening.** A second, independent
+data-security pass (read-only, live on the loopback stack) re-verified
+the fix from scratch rather than trusting this entry's own claims:
+anon → 42501 on `account_active`/`is_admitted`/`is_safeguarding_staff`;
+an authenticated cross-uid probe → the constant safe default, never the
+real answer; no cross-identity path on `pilot_invites`/`consents`/
+`safeguarding_*`; access-matrix rows present for all four new tables
+(oracle tests 6/6, matrix 128/128, admission + next-steps 35/35, all
+passed). The owner is now applying `--through 0014` to the real project.
+Two LOW findings, backlog only, no action taken tonight: (1)
+`app/api/ask.py`'s `42501`-as-404 catch is correctly scoped to that one
+code and query, but for a signed-in (non-guest) caller it would silently
+turn a future grant misconfiguration into "Plan not found" with no
+signal — worth a log line gated on caller-is-not-a-guest. (2)
+`0012_admission_axis.sql`'s `pilot_invites.used_by ... on delete set
+null` means deleting a redeemer's `auth.users` row un-consumes an
+otherwise-unexpired invite code. A third, unrelated MEDIUM was found in
+AI-4's own `0011_ai_usage.sql` (`ai_budget_remaining`/`ai_reserve` are
+the same anon-callable per-uid oracle class) — handed to that lane's own
+session for an additive `0015`, not this one's to fix.
+
 ---
 
 ## 2026-09-22 — SCOPE-6 and UI-6 merged: both fixed after independent NEEDS_FIXES review
