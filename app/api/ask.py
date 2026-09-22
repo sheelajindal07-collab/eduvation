@@ -32,12 +32,13 @@ Tier-0/Tier-1 spend control from the national DPR §9): the three ids the
 three existing `_ask.html` call sites already use — `cost_breakdown`
 (compare.html's cost card), `pathway_overview` (compare.html's pathway
 column) and `eligibility_gap` (requirements.html's eligibility line) —
-plus `next_steps` (AI-18, `tasks/BCI-021.md`), which has no `_ask.html`
-call site yet (`app/web/ask_pages.py`/`app/web/templates/**` are outside
-this card's owned files). `template_id` is always one of these four ids,
-never free text a student typed — the query string carries an id, never
-a question (`docs/CONTRACTS.md`: "Every personal input ... is POST-only";
-a canned template id is not personal input, but it still never becomes a
+plus `next_steps` (AI-18, `tasks/BCI-021.md`) and `what_changed` (AI-19,
+`tasks/BCI-022.md`), neither of which has an `_ask.html` call site yet
+(`app/web/ask_pages.py`/`app/web/templates/**` are outside this card's
+owned files). `template_id` is always one of these five ids, never free
+text a student typed — the query string carries an id, never a question
+(`docs/CONTRACTS.md`: "Every personal input ... is POST-only"; a canned
+template id is not personal input, but it still never becomes a
 sentence).
 
 ## AI-18: `next_steps` and `plan_id`
@@ -77,6 +78,43 @@ at all, or one that is not even UUID-shaped, resolves identically —
 review 2026-09-19/2026-09-21: an oracle that told them apart would leak
 which plan ids exist).
 
+## AI-19: `what_changed` and `claim_id`
+
+`what_changed` needs a `claim_id` — the SUPERSEDED claim's own id, never
+a pathway/career id — so it is resolved entirely differently from the
+other four templates: `entity_kind_and_id(pathway_id, career_id)` below
+is skipped outright for this template (a `claim_id` is not a pathway or
+a career), and `claim_id` itself is shape-checked with the same
+`_looks_like_a_uuid` helper before anything else runs, 422-ing with a
+fixed, generic message for a missing or malformed id — never a 404, since
+"the claim id does not resolve to anything explainable" is this
+template's own `not_available` outcome, not a routing failure. Once
+resolved, `entity_kind="claim"`/`entity_id=claim_id` still flow through
+`assemble_ask_answer()` unconditionally, exactly like every other
+template (this module's own "assemble once, always" rule) — harmless,
+since `ASK_TEMPLATES["what_changed"].fields == ()` degrades to zero fact
+cards regardless of what `entity_type` that call ends up querying.
+
+The AI layer is where `what_changed` actually diverges: `_pipeline_answer()`
+is never called for this template — it builds an `AskRequest` carrying
+only `pathway_id`/`career_id`, never a `claim_id`, so
+`app.ai.pipeline.answer()` would see `record_id_for(template) is None`
+and degrade to `unsupported_template` every time. `_what_changed_answer()`
+below is `what_changed`'s own parallel helper (same settings gate, same
+`GeminiProvider()` construction and `GeminiNotConfiguredError` handling as
+`_pipeline_answer()`) that calls `app.ai.what_changed.answer_what_changed()`
+instead — see that module's own docstring for why its retrieval cannot
+reuse `app.ai.pipeline.answer()` at all. Its `WhatChangedAnswer.lines`
+(already rendered, code-only text — see that module's docstring) becomes
+`AskResponse.what_changed_lines` only when `status` is
+`AIAnswerStatus.answered`, the same "render nothing extra for any other
+status" rule every other template follows; `ai_sentences` stays empty for
+this template (there is no generic "field is value" phrasing equivalent —
+`what_changed`'s own `RenderedDiffLine.text` already IS the sentence), and
+`ai_citations` carries `WhatChangedAnswer.citations` instead, the same
+plain-data citation shape every other template's `ai_citations` already
+uses.
+
 ## Router registration (see this card's own completion report)
 
 `app/main.py` is a frozen, lead-only registry — this module cannot add
@@ -114,6 +152,7 @@ from app.ai.budget import AIRequestBudget, default_budget
 from app.ai.gemini_provider import GeminiNotConfiguredError, GeminiProvider
 from app.ai.schemas import AIAnswerStatus, AskRequest
 from app.ai.schemas import Answer as AIAnswer
+from app.ai.what_changed import RenderedDiffLine, WhatChangedAnswer, answer_what_changed
 from app.api.compare import COMPARISON_FIELDS, FieldValueOut
 from app.api.deps import get_db_client
 from app.api.eligibility import GENERIC_CRITERION_FIELDS
@@ -179,6 +218,18 @@ ASK_TEMPLATES: dict[str, AskTemplate] = {
         # `assemble_ask_answer()` below iterates `template.fields`, so an
         # empty tuple degrades to zero fact cards / zero missing labels,
         # never an error.
+        fields=(),
+    ),
+    "what_changed": AskTemplate(
+        id="what_changed",
+        # No i18n key added for this card either -- same safe,
+        # non-crashing placeholder-key precedent `next_steps` above
+        # already establishes.
+        prompt_key="askbcion.prompt.what_changed",
+        # Deliberately empty -- see module docstring's "AI-19" section.
+        # This template's deterministic baseline has nothing to show:
+        # "what changed" is derived from a diff of two claims, not a
+        # field on either one.
         fields=(),
     ),
 }
@@ -462,6 +513,36 @@ def _pipeline_answer(
     return ai_pipeline.answer(db, request, provider, _ai_budget(), as_of=as_of)
 
 
+def _what_changed_answer(
+    db: Client,
+    claim_id: str,
+    *,
+    as_of: date,
+) -> WhatChangedAnswer | None:
+    """`what_changed`'s own additive AI layer — mirrors `_pipeline_answer()`
+    above (same settings gate, same `GeminiProvider()` construction and
+    `GeminiNotConfiguredError` handling), but calls
+    `app.ai.what_changed.answer_what_changed()` instead of
+    `app.ai.pipeline.answer()`. See this module's own docstring's "AI-19"
+    section for why `what_changed` cannot go through `_pipeline_answer()`
+    at all: that function only ever builds an `AskRequest` carrying
+    `pathway_id`/`career_id`, never a `claim_id`, and `what_changed`
+    requires `claim_id` (`app.ai.prompts.TEMPLATE_REGISTRY`).
+
+    Returns `None` under the exact same condition `_pipeline_answer()`
+    does — AI disabled/not configured — meaning "never even called",
+    never a status.
+    """
+    settings = get_settings()
+    if not (settings.ai_enabled and settings.ai_configured):
+        return None
+    try:
+        provider = GeminiProvider()
+    except GeminiNotConfiguredError:
+        return WhatChangedAnswer(status=AIAnswerStatus.ai_unavailable)
+    return answer_what_changed(db, claim_id, provider, _ai_budget(), as_of=as_of)
+
+
 class AskFactCardOut(BaseModel):
     field: str
     field_label: str
@@ -478,6 +559,34 @@ class NextStepActionOut(BaseModel):
     claim_id: str
     source_authority: str | None
     source_url: str | None
+
+
+class WhatChangedLineOut(BaseModel):
+    """One `app.ai.what_changed.RenderedDiffLine`, JSON-shaped — AI-19.
+    Always present as a key on `AskResponse` (possibly empty), same
+    always-present-possibly-empty convention `next_step_actions` already
+    uses, never omitted for a non-`what_changed` template. `old_value`/
+    `new_value` are already JSON-safe here (`_json_safe` below converts a
+    `date` to its ISO string at the route boundary — `RenderedDiffLine`
+    itself stays a plain, generically-typed dataclass; see `ask()`)."""
+
+    attribute: str
+    old_value: str | int | float | bool | list[Any] | dict[str, Any] | None
+    new_value: str | int | float | bool | list[Any] | dict[str, Any] | None
+    text: str
+
+
+def _json_safe(value: Any) -> Any:
+    """`RenderedDiffLine.old_value`/`.new_value` may hold a raw
+    `datetime.date` (the `verification_date` diff line) alongside every
+    other attribute's already-JSON-safe `Claim.value`/`str | None` shapes
+    — this is the one, single place that date is turned into its ISO
+    string, at the route boundary, so `WhatChangedLineOut` never has to
+    carry a type pydantic/FastAPI would otherwise have to guess how to
+    serialise."""
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
 
 
 class AskResponse(BaseModel):
@@ -514,6 +623,12 @@ class AskResponse(BaseModel):
     "answered-only" rule as `ai_sentences`/`ai_citations` above, plus the
     template check (this module's own docstring's "AI-18" section). Empty
     for every other template, always, never omitted."""
+    what_changed_lines: list[WhatChangedLineOut]
+    """AI-19. Populated ONLY for `template_id == "what_changed"` and only
+    when `_what_changed_answer()` returned `AIAnswerStatus.answered` --
+    same "answered-only" rule as every other additive field above, plus
+    the template check (this module's own docstring's "AI-19" section).
+    Empty for every other template, always, never omitted."""
 
 
 @router.get("/ask", response_model=AskResponse)
@@ -522,72 +637,105 @@ def ask(
     pathway_id: str | None = Query(default=None),
     career_id: str | None = Query(default=None),
     plan_id: str | None = Query(default=None),
+    claim_id: str | None = Query(default=None),
     db: Client = Depends(get_db_client),
 ) -> AskResponse:
     """`?template=<id>&pathway_id=<uuid>` (or `&career_id=<uuid>` instead
     of `pathway_id`, or -- `next_steps` only -- `&plan_id=<uuid>` instead
-    of `pathway_id`; see module docstring's "AI-18" section) — see module
-    docstring. An unknown `template_id` 404s with a fixed, generic message
-    that never reflects the raw value back (avoid any reflected-value
-    surface) — the id is deliberately left out of `detail` entirely, not
-    merely escaped."""
+    of `pathway_id`; see module docstring's "AI-18" section, or --
+    `what_changed` only -- `&claim_id=<uuid>` instead of any of the above;
+    see module docstring's "AI-19" section) — see module docstring. An
+    unknown `template_id` 404s with a fixed, generic message that never
+    reflects the raw value back (avoid any reflected-value surface) — the
+    id is deliberately left out of `detail` entirely, not merely
+    escaped."""
     ask_template = ASK_TEMPLATES.get(template)
     if ask_template is None:
         raise HTTPException(status_code=404, detail="We don't recognise that question.")
 
-    if ask_template.id == "next_steps" and plan_id is not None and pathway_id is None:
-        # AI-18: resolve BEFORE entity_kind_and_id runs, so a plan that
-        # does not resolve 404s here rather than falling through to the
-        # generic 422 the other three templates already use for "neither
-        # id given". Only ever consulted for next_steps -- see module
-        # docstring; the other three templates never see a plan_id.
-        pathway_id = _pathway_id_for_plan(db, plan_id)
+    if ask_template.id == "what_changed":
+        # AI-19: what_changed needs a claim_id, not a pathway/career id --
+        # entity_kind_and_id() below is skipped entirely for this
+        # template. See module docstring's "AI-19" section.
+        if claim_id is None or not _looks_like_a_uuid(claim_id):
+            raise HTTPException(status_code=422, detail="Provide a valid claim_id.")
+        entity_kind, entity_id = "claim", claim_id
+    else:
+        if ask_template.id == "next_steps" and plan_id is not None and pathway_id is None:
+            # AI-18: resolve BEFORE entity_kind_and_id runs, so a plan that
+            # does not resolve 404s here rather than falling through to the
+            # generic 422 the other three templates already use for "neither
+            # id given". Only ever consulted for next_steps -- see module
+            # docstring; the other three templates never see a plan_id.
+            pathway_id = _pathway_id_for_plan(db, plan_id)
 
-    resolved = entity_kind_and_id(pathway_id, career_id)
-    if resolved is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Provide exactly one of pathway_id or career_id, each a valid id.",
-        )
-    entity_kind, entity_id = resolved
+        resolved = entity_kind_and_id(pathway_id, career_id)
+        if resolved is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Provide exactly one of pathway_id or career_id, each a valid id.",
+            )
+        entity_kind, entity_id = resolved
 
     as_of = datetime.now(tz=UTC).date()
     answer = assemble_ask_answer(
         db, ask_template, entity_kind=entity_kind, entity_id=entity_id, as_of=as_of
     )
-    ai_answer = _pipeline_answer(
-        db, ask_template, entity_kind=entity_kind, entity_id=entity_id, as_of=as_of
-    )
+
     next_step_action_objs: tuple[NextStepAction, ...] = ()
-    if ai_answer is not None and ai_answer.status == AIAnswerStatus.answered:
-        ai_sentences = list(ai_answer.sentences)
-        ai_citations = list(ai_answer.citations)
-        if ask_template.id == "next_steps":
-            # AI-18: the model's role was only to select and order which
-            # of the pathway's verified facts survive two-pass grounding
-            # (ai_answer.citations, unchanged pipeline output) -- turning
-            # a surviving citation into actual action text is entirely
-            # app.ai.actions's job, never this route's and never the
-            # model's (see that module's own docstring).
-            next_step_action_objs = next_step_actions_from_citations(ai_answer.citations)
+    what_changed_line_objs: tuple[RenderedDiffLine, ...] = ()
+    ai_sentences: list[str]
+    ai_citations: list[dict[str, Any]]
+    if ask_template.id == "what_changed":
+        # AI-19: what_changed's own AI layer -- see module docstring's
+        # "AI-19" section for why this cannot go through
+        # `_pipeline_answer()`/`ai_pipeline.answer()` at all.
+        what_changed_result = _what_changed_answer(db, entity_id, as_of=as_of)
+        if (
+            what_changed_result is not None
+            and what_changed_result.status == AIAnswerStatus.answered
+        ):
+            what_changed_line_objs = what_changed_result.lines
+            ai_sentences = []
+            ai_citations = list(what_changed_result.citations)
+        else:
+            # Every other status (including "never even called") -- render
+            # nothing extra, same rule every other template follows.
+            ai_sentences = []
+            ai_citations = []
     else:
-        # Every other status (including "the pipeline was never called at
-        # all", ai_answer is None) -- render nothing extra, per this
-        # module's docstring: the response is exactly what the AI-off
-        # path already produces, plus these always-present, possibly
-        # -empty lists.
-        ai_sentences = []
-        ai_citations = []
+        ai_answer = _pipeline_answer(
+            db, ask_template, entity_kind=entity_kind, entity_id=entity_id, as_of=as_of
+        )
+        if ai_answer is not None and ai_answer.status == AIAnswerStatus.answered:
+            ai_sentences = list(ai_answer.sentences)
+            ai_citations = list(ai_answer.citations)
+            if ask_template.id == "next_steps":
+                # AI-18: the model's role was only to select and order which
+                # of the pathway's verified facts survive two-pass grounding
+                # (ai_answer.citations, unchanged pipeline output) -- turning
+                # a surviving citation into actual action text is entirely
+                # app.ai.actions's job, never this route's and never the
+                # model's (see that module's own docstring).
+                next_step_action_objs = next_step_actions_from_citations(ai_answer.citations)
+        else:
+            # Every other status (including "the pipeline was never called at
+            # all", ai_answer is None) -- render nothing extra, per this
+            # module's docstring: the response is exactly what the AI-off
+            # path already produces, plus these always-present, possibly
+            # -empty lists.
+            ai_sentences = []
+            ai_citations = []
 
     settings = get_settings()
-    # `next_step_action_objs` is always `()` for the three original
-    # templates (it is only ever assigned for `next_steps`, above), so
-    # this is exactly the original expression for them -- AI-18 adds a
-    # second way for a template to have "something to show" without
-    # changing what that meant for pathway_overview/cost_breakdown/
-    # eligibility_gap.
+    # `next_step_action_objs`/`what_changed_line_objs` are each only ever
+    # assigned for their own template above, so this is exactly the
+    # original expression for pathway_overview/cost_breakdown/
+    # eligibility_gap -- AI-18 and AI-19 each add one more way for a
+    # template to have "something to show" without changing what that
+    # meant for the others.
     show_fallback = not (settings.ai_enabled and settings.ai_configured) or not (
-        answer.fact_cards or next_step_action_objs
+        answer.fact_cards or next_step_action_objs or what_changed_line_objs
     )
 
     return AskResponse(
@@ -619,5 +767,14 @@ def ask(
                 source_url=action.source_url,
             )
             for action in next_step_action_objs
+        ],
+        what_changed_lines=[
+            WhatChangedLineOut(
+                attribute=line.attribute,
+                old_value=_json_safe(line.old_value),
+                new_value=_json_safe(line.new_value),
+                text=line.text,
+            )
+            for line in what_changed_line_objs
         ],
     )

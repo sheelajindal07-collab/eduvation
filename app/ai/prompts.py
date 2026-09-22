@@ -6,8 +6,8 @@
 `TEMPLATE_REGISTRY` is the entire question surface for this pilot's
 two-pass pipeline: a student never types a question (`app.ai.schemas`'s
 `AskRequest` module docstring — "there is no `question`, `text`, `prompt`
-or `notes` field"), they pick one of these four fixed templates, and the
-server resolves whichever record(s) that template needs. Four templates,
+or `notes` field"), they pick one of these five fixed templates, and the
+server resolves whichever record(s) that template needs. Five templates,
 each declaring exactly one `PromptTemplateRequirement` it needs a record
 id for (per `app.ai.schemas.PromptTemplate`'s own docstring: "a template
 that needed two ids would be two templates"):
@@ -33,6 +33,20 @@ that needed two ids would be two templates"):
   module docstring for the full reasoning, including why a separate
   `prompt_next_steps.py` was not needed: this template requires no new
   prompt-building logic at all.
+- `what_changed` (AI-19, `tasks/BCI-022.md`) also needs a `claim_id`, but
+  — unlike `eligibility_gap` — is NOT answered via
+  `app.ai.pipeline.answer()`/`app.ai.retrieval.fetch_claim_record` at
+  all: the claim id this template is given names the SUPERSEDED half of
+  a supersession, whose own `status` is `superseded`, never `published`
+  — `fetch_claim_record`'s `_grounded_claims` re-check accepts only
+  `published`, so it would return `None` for this template's own input
+  on every call. `app/ai/what_changed.py`'s `answer_what_changed` is its
+  own, independent two-pass implementation (fetches the named claim and
+  its `superseded_by` successor, diffs them via
+  `app.planning.claim_diff.compute_claim_diff`, then runs the same
+  selection/verification shape over the diff's own changed fields) that
+  still looks THIS registry entry up here, by id, for its fixed question
+  label — the one thing this module owns for every template alike.
 
 Note what is deliberately NOT used: `PromptTemplateRequirement.career_id`
 and `.plan_id` are real enum members (`app/ai/schemas.py`), but no
@@ -124,6 +138,15 @@ TEMPLATE_REGISTRY: Final[PromptTemplateRegistry] = {
             "student still needs to do next on this pathway?"
         ),
         requires=PromptTemplateRequirement.pathway_id,
+    ),
+    "what_changed": PromptTemplate(
+        id="what_changed",
+        label=(
+            "Which of these lines describes something that actually "
+            "changed between the previous verified record and its "
+            "replacement?"
+        ),
+        requires=PromptTemplateRequirement.claim_id,
     ),
 }
 
