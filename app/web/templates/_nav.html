@@ -32,8 +32,12 @@
    (text, not just a dim colour) and is not a link, so nobody lands on a
    404.
    --------------------------------------------------------------------- #}
+{# UI-3: "/" used to be a bare redirect to "/explore", so matching it
+   here for the Explore destination's active state was correct. "/" is
+   now its own landing screen (`app/web/landing_pages.py`) -- none of
+   the four destinations, so none should light up on it. #}
 {% set DESTINATIONS = [
-  {"key": "explore", "href": "/explore",      "label": "Explore",  "match": ["/explore", "/"]},
+  {"key": "explore", "href": "/explore",      "label": "Explore",  "match": ["/explore"]},
   {"key": "compare", "href": "/compare/view", "label": "Compare",  "match": ["/compare"]},
   {"key": "myplan",  "href": none,            "label": "My Plan",  "match": ["/plan"]},
   {"key": "saved",   "href": none,            "label": "Saved",    "match": ["/saved"]}

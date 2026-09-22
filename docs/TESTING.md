@@ -46,3 +46,18 @@ and `pytest tests/db` (against real repo-secret credentials — never
 skips) on every push/PR. `pytest tests/e2e` is not yet a CI job — it runs
 locally today (`make test-e2e`); wiring it into CI as its own job,
 alongside the local-stack DB job, is tracked separately (QA-5).
+
+**mypy: run the plain `mypy app` (`mk/quality.mk`'s `typecheck` target),
+never `mypy app --follow-imports=skip`.** A local, unpinned `numpy` in
+this machine's shared Python environment (not in either lockfile, not
+imported by any app code) makes a plain `mypy app` crash on a stub-syntax
+error, and `--follow-imports=skip` was used session over session as a
+workaround (see `docs/DECISIONS.md`/`STATUS.md`, 2026-09-21 entries) —
+but that flag doesn't just skip numpy, it skips resolving every
+third-party import, which silently hid a real `arg-type` error (A11Y-3's
+exception-handler typing) that only CI's clean, lockfile-only mypy run
+caught (docs/DECISIONS.md, 2026-09-22). If `mypy app` still crashes on
+the numpy stub locally, verify the specific file(s) in isolation
+(`mypy app/path/to/file.py` — doesn't pull in the same transitive
+resolution) and let CI be the authoritative full-project check, rather
+than reaching for `--follow-imports=skip` again.

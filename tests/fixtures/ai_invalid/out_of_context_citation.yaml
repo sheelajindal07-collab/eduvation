@@ -1,0 +1,19 @@
+# SYNTHETIC -- NOT VERIFIED, NOT REAL. Calibration fixture for the
+# ai-evaluator agent (AI-9). A plausible-looking but wrong AI answer,
+# paired with the specific reason it is wrong. Never real content.
+
+case_id: out-of-context-citation-01
+reason_type: out_of_context_citation
+question: "What is the minimum age for the Riverine Systems Technician (SYNTHETIC) pathway?"
+retrieved_record_ids: [synthetic-pathway-002, synthetic-claim-002]
+answer: >
+  According to synthetic-claim-099, the minimum age for the Riverine
+  Systems Technician (SYNTHETIC) pathway is 15.
+why_wrong: >
+  synthetic-claim-099 was never among the records retrieved for this
+  question -- only synthetic-claim-002 was passed into the prompt.
+  Citing an id from outside the supplied context is fabrication
+  wearing a citation-shaped disguise, exactly the failure mode
+  app/ai/grounding.py's citation validation exists to reject (a
+  bracketed claim id must be one of the claims actually included in
+  that prompt, or the whole response is rejected).

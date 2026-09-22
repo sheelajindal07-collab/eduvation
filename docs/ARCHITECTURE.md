@@ -69,3 +69,31 @@ See `docs/SECURITY.md` for the full data-flow map (Lite Build Pack §8). Mumbai
 database region does not by itself make the system India-only — logs,
 monitoring, email and model processing are separate flows with their own
 regions, tracked individually.
+
+## AI
+Ask BCION is a **two-pass** pipeline, and ordinary code — never the model —
+writes every sentence a student reads.
+
+Pass one (selection): the model is given a fixed prompt template plus the
+retrieved, published records, and must answer with record ids only. Pass
+two (verification): a second, adversarial call is made over *only* the ids
+pass one selected, asking whether each one actually supports the question;
+it may drop ids, never add them. Code validation then runs last: the
+surviving ids are re-fetched, the sentences are generated from the records'
+own fields, and the banned-phrase guard runs over the result. A response
+that fails any stage is discarded whole and degrades to a status
+(`app/ai/schemas.py`'s `AIAnswerStatus`) — never repaired, never partially
+salvaged.
+
+The model therefore never authors user-facing prose. Its entire output
+surface is a set of ids; "what the answer says" is a pure function of the
+verified records plus code. That is what makes "AI never invents facts"
+testable rather than aspirational.
+
+**Free tier, no student text.** No student-typed text is ever sent to the
+provider — a student picks a prompt template, they do not write a question.
+`OutboundPayload` (`app/ai/schemas.py`) is the only permitted wire shape and
+carries exactly four fields: `template_id`, `record_ids`, `record_values`,
+`lang`. It forbids extra fields and requires every value to be namespaced by
+an allow-listed record id, so there is no channel through which free-typed
+text, PII or vault data could reach a hosted model even by mistake.

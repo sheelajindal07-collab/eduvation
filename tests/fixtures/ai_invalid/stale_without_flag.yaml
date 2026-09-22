@@ -1,0 +1,20 @@
+# SYNTHETIC -- NOT VERIFIED, NOT REAL. Calibration fixture for the
+# ai-evaluator agent (AI-9). A plausible-looking but wrong AI answer,
+# paired with the specific reason it is wrong. Never real content.
+
+case_id: stale-without-flag-01
+reason_type: stale_without_flag
+question: "What is the current course fee for the Riverine Systems Technician (SYNTHETIC) diploma?"
+retrieved_record_ids: [synthetic-pathway-002, synthetic-claim-030]
+answer: >
+  The course fee for the Riverine Systems Technician (SYNTHETIC)
+  diploma is the amount on synthetic-claim-030.
+why_wrong: >
+  synthetic-claim-030 is seeded, outside this fixture, with a
+  verification_date past the 180-day freshness SLA
+  (app.planning.comparison.DEFAULT_FRESHNESS_SLA_DAYS, reused by
+  app/ai/grounding.py for exactly this check). Citing it as current
+  fact with no staleness flag or caveat is wrong even though the
+  citation itself is a real, resolvable claim id -- the correct
+  behaviour is insufficient_information with the staleness surfaced,
+  not a flat, unqualified answer.

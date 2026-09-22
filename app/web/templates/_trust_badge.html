@@ -34,7 +34,7 @@
 {% endmacro %}
 
 {% macro evidence_line(source_authority, source_url, verification_date, label=none,
-                       applicable_cycle=none, report_issue_url=none) %}
+                       applicable_cycle=none, report_issue_url=none, rule_version=none) %}
   {# The "source authority ... official link, verification date" line
      docs/UI.md requires per fact -- factored out of field_value() below
      so a caller with the same three evidence fields but no FieldValue
@@ -61,7 +61,21 @@
      Neither is wired into a screen yet: no table stores a cycle
      (docs/CONTRACTS.md's scope columns landed, the cycle did not) and
      no report endpoint exists. The slots are here so the screen
-     templates never have to change when either lands. #}
+     templates never have to change when either lands.
+
+     RULES-16 adds one more, same "optional, renders nothing when
+     absent" contract:
+
+       rule_version      the declared version of the named `RuleSet`
+                         (app/rules/ruleset.py) an eligibility
+                         criterion was checked against
+                         (EligibilityResponse.rule_version) -- requirements.html
+                         is this argument's first caller. Deliberately
+                         inside THIS same citation line rather than a
+                         second display of its own: "which rule" is
+                         evidence about the fact being cited, exactly
+                         like `applicable_cycle` above, not a separate
+                         kind of information. #}
   {% if source_url %}
     <p class="text-xs text-neutral mt-1">
       <a href="{{ source_url }}" class="underline hover:text-accent" target="_blank" rel="noopener noreferrer">
@@ -71,6 +85,7 @@
         <span class="sr-only"> (opens in a new tab)</span>
       </a>
       {% if applicable_cycle %} &middot; {{ applicable_cycle }} cycle{% endif %}
+      {% if rule_version %} &middot; rule {{ rule_version }}{% endif %}
       {% if verification_date %} &middot; verified {{ verification_date }}{% endif %}
     </p>
   {% endif %}

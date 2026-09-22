@@ -55,5 +55,14 @@
   "compare.closing_prompt.text": "Which option would you like to investigate further?",
 
   "askbcion.answer.not_available": "We don't have a verified record for this yet.",
-  "askbcion.answer.insufficient_information": "We have some information, but not enough here for a confident answer."
+  "askbcion.answer.insufficient_information": "We have some information, but not enough here for a confident answer.",
+
+  "askbcion.entry.default_label": "Ask BCION about this",
+  "askbcion.prompt.cost_breakdown": "What will this cost?",
+  "askbcion.prompt.pathway_overview": "What does this pathway involve?",
+  "askbcion.prompt.eligibility_gap": "What do I need to be eligible?",
+  "askbcion.fact_cards.heading": "What we know so far",
+  "askbcion.missing_information.heading": "Not yet published",
+  "askbcion.unknown_template.message": "We don't recognise that question yet.",
+  "askbcion.invalid_request.message": "We need a valid pathway or career to answer that."
 }

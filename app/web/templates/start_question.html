@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{# UI-3 -- one shared shell for all four /start questions. Every route
+   in app/web/start_pages.py renders this same template with different
+   heading/options/hidden_answers/next_action/skip_url context, so the
+   markup for "one question at a time, independently skippable" lives in
+   exactly one place. A plain `method="get"` form: submitting it is a
+   normal GET navigation, so it works identically with or without
+   JavaScript, and the answer becomes part of the next page's own URL
+   (docs/UI.md "Quick start"). #}
+{% block title %}Quick start &mdash; BCION Lite{% endblock %}
+{% block content %}
+  <p class="text-sm text-neutral mb-2">Question {{ step }} of {{ total_steps }}</p>
+  <h1 class="text-2xl font-semibold text-charcoal mb-6">{{ heading }}</h1>
+
+  <form method="get" action="{{ next_action }}" class="space-y-6">
+    {% for key, value in hidden_answers.items() %}
+      <input type="hidden" name="{{ key }}" value="{{ value }}" />
+    {% endfor %}
+
+    <fieldset class="space-y-2">
+      <legend class="sr-only">{{ heading }}</legend>
+      {% for opt in options %}
+        <label
+          class="flex items-center gap-3 min-h-11 px-3 py-2 rounded-md border
+                 border-charcoal/15 hover:bg-charcoal/5 cursor-pointer text-sm"
+        >
+          <input
+            type="radio" name="{{ field_name }}" value="{{ opt.value }}"
+            class="h-5 w-5 text-accent focus:ring-accent"
+          />
+          <span>{{ opt.label }}</span>
+        </label>
+      {% endfor %}
+    </fieldset>
+
+    <div class="flex items-center gap-4">
+      <button type="submit" class="btn-primary">Continue</button>
+      <a href="{{ skip_url }}" class="text-accent underline">Skip this question</a>
+    </div>
+  </form>
+{% endblock %}

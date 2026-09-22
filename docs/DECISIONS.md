@@ -5,6 +5,375 @@ never deleted.
 
 ---
 
+## 2026-09-22 — A11Y-3 merged; briefly broke main's mypy, fixed same session
+**Decision.** Merged A11Y-3 to `main`: `app/web/errors.py`
+(`register_error_handlers`) adds global styled 404/403/500 HTML pages,
+gated on BOTH a closed JSON-API route deny-list AND `Accept: text/html`
+(never Accept alone — a browser navigating directly to a JSON API URL
+also sends `Accept: text/html`, so Accept alone would silently turn a
+JSON error into HTML for that case) so every existing JSON API error
+shape is byte-for-byte unchanged. `/explore` now degrades to the same
+friendly "temporarily unavailable" alert `/compare/view` and
+`/requirements/view` already show when the DB is down, via
+`_db_client_or_none`, instead of a raw 500.
+**A real CI break, caught and fixed within the same session, not
+carried forward.** The merge's own local verification used `mypy app
+--follow-imports=skip` (this session's copied habit from the
+2026-09-21 numpy-stub workaround — see `docs/TESTING.md`'s new
+warning), which reported clean. CI's plain `mypy app` (Python 3.11,
+hash-checked lockfile — the actually-authoritative environment) failed:
+`app/web/errors.py:202` registered a handler typed to accept
+`StarletteHTTPException` where Starlette's own `ExceptionHandler` alias
+is `Callable[[Request, Exception], ...]` (contravariant — a handler
+that only accepts the narrower subtype is not a valid substitute).
+Main was CI-red for ~5 minutes (12:41-12:46) while two peers' unrelated
+pushes (AI-7, AI-11) landed in the same window and inherited the same
+red status. Fixed by widening the parameter to `Exception` and narrowing
+with `assert isinstance(exc, StarletteHTTPException)` inside — confirmed
+against the exact CI-reported line, then pushed and watched fully green
+(run 35729179715, all 3 jobs). **`--follow-imports=skip` must not be
+used for verification again** — see `docs/TESTING.md`. A separate peer
+session is fixing the underlying local numpy/mypy environment issue so
+a plain `mypy app` works locally without that flag at all.
+**Addendum — a second, independent fix collided with this one.** A peer
+session ("AI in lite version") separately found and fixed the same
+break with a different approach (`cast()` at the `add_exception_handler`
+call site rather than widening the handler's own parameter type), and
+it landed in `main`'s history as an unrelated-looking commit (`bd44177`,
+"STATUS: ux-qa findings...") — a pathspec-scoped `git commit STATUS.md`
+that, per this session's own established trap (see the "no cap"
+concurrency entry below), still captured `app/web/errors.py`'s full
+current working-tree content, including that peer's uncommitted cast
+fix sitting in the same shared checkout. My own fix (`7fea5e2`) was then
+built on top of that already-cast-fixed file — its diff only touched
+`_handle_http_exception`'s own definition, so it composed cleanly rather
+than conflicting — leaving both fixes present at once (harmless but
+redundant). The peer caught this on their own next `git fetch`, compared
+both, kept the assert-based one (cleaner, matches Starlette's actual
+contravariant handler type more directly), and dropped their now-unused
+`cast`/`Callable`/`Coroutine` imports — pushed as `777254a`, confirmed
+green. No action was needed from this session beyond fast-forwarding to
+match. Net lesson, same as the earlier one: a pathspec-scoped commit in
+this shared checkout still needs a `git diff <file>` glance before
+committing, even for a file that looks unrelated to what you meant to
+touch.
+
+---
+
+## 2026-09-22 — SEC-3 merged: nginx per-IP rate limiting, documented not yet wired in
+**Decision.** Merged SEC-3 to `main`: `deploy/nginx/ratelimit.conf` (four
+zones — `bcion_auth` 30r/m burst 20, `bcion_plans_write` 60r/m burst 30 via a
+`map`-based GET/HEAD exclusion rather than `limit_except` (which nginx
+rejects `limit_req` inside), `bcion_ask` 30r/m burst 15, a shared
+`bcion_perip_conn` 20-connection cap) plus `app/static/429.html` and a new
+`docs/SECURITY.md` "Rate limiting (SEC-3)" section documenting this as Layer
+1 alongside Supabase Auth's own independent Layer 2 limiting. This is a
+config snippet only — no nginx deployment exists yet; DEPLOY-4/7 wires it
+into a real site file. Live-tested (not just `nginx -t`) against a local
+`nginx:stable` Docker container: confirmed the GET/HEAD exclusion passes
+unlimited, a `POST /plans` burst passes exactly 31 requests before 429s, `GET
+/ask` passes exactly 16.
+**Open question for the owner:** the task card named POST/PATCH/DELETE for
+`/plans`; the config excludes GET/HEAD instead (covering the card's list
+plus `PUT /plans/{id}/actions/{action_key}`, a write the card didn't name).
+Flagging for confirmation that's the intended scope.
+**Verified before merge/push:** ruff clean, mypy clean (81 files), `pytest
+tests/unit -q` 1251 passed, CI green on `main` post-push (run 35727986184 —
+build-image, lint-typecheck-test including DB/RLS tests, secret-scan all
+passed).
+
+---
+
+## 2026-09-22 — Owner names Mahesh for every open people role (CONSENT-2, PUB-13a, CONTENT-1 checker, I18N-6, TRIAL-1 second moderator)
+**Decision.** The owner named one person, Mahesh ("all rounder"), for: the
+non-author consent and safeguarding reviewer (CONSENT-2 — also the human
+read of `docs/CONSENT.md` that CONSENT-4 needs before it can merge, and
+the sign-off `docs/SECURITY.md` requires before any real minor account);
+the publishing checker (PUB-13a, and CONTENT-1's checker seat; the owner
+creates the reviewer account in PUB-13b); the Hindi reviewer (I18N-6 —
+that Mahesh reads Hindi comfortably is the owner's assumption, not
+verified here); and the second moderator for usability round 1
+(TRIAL-1). Contact details stay with the owner only — never in this
+repo, the same rule CONTENT-18 enforced for the owner's own address.
+**What stays separated, because the rules need it:** maker ≠ checker —
+Mahesh checks, so he never drafts the claims he approves (the owner and
+the AI-extracted drafts are the makers; the database refuses
+self-approval regardless). Consent reviewer ≠ author — holds; the
+workflow was written by agents and the owner. Round-1 **tester** ≠
+Mahesh — a moderator who knows the product is fine, a tester who does is
+not, so TRIAL-1's five tester profiles are still to be recruited.
+CONTENT-1's editor and corrections-owner seats default to the owner
+until someone else is named.
+**Risk, named:** one person on every human gate is a single point of
+failure for the schedule. Acceptable for a 10-100 user pilot; split the
+roles before the expansion cohort (Step 16) starts.
+
+## 2026-09-22 — Owner lifts the wave concurrency cap: "launch everything that's unblocked"
+**Decision.** `docs/DEVELOPMENT-PLAN.md` section 8.8's wave table caps concurrent
+writing lanes at 6 (3 of them DB-touching), specifically so the lead session's
+own verify-and-merge step — reading every diff, running the real test suite
+live, watching CI — stays possible per lane. Asked directly whether to raise
+it, the owner chose **no cap: launch everything currently unblocked**, over
+either keeping 6 or a modest raise to ~10-12.
+**What does not change:** the hard technical constraints stay in force
+regardless of this cap — one open migration at a time (a schema-safety rule,
+not a throughput knob), never two lanes with overlapping file ownership,
+every merge still gets read and live-tested by the lead before pushing. What
+changes is lane COUNT, not review rigor per lane, though at higher lane
+counts the lead leans more on each task's own dedicated reviewer agent(s)
+and less on independently re-deriving every finding by hand — a real,
+named trade-off, not a free speedup, and the owner was told this before
+choosing.
+**Reason:** asked directly ("can we do more work together") after the owner
+found the pace slow; walked through the actual bottlenecks (a real Docker
+outage, a session restart, deliberately-thorough live DB verification, and
+this cap) and asked which lever to pull.
+
+## 2026-09-22 — `compare.html`'s Ask BCION links now guarded on a resolved pathway id, closing a raw-uuid leak
+**Event:** The first full `tests/db` run after merging UI-11 (wave 2)
+found 2 failures in `tests/db/test_web_pages.py`, a Phase 1 file no
+Phase 1a card touched. `TestComparePage::
+test_nonexistent_pathway_id_gives_a_friendly_heading_not_the_raw_uuid`
+failed: a comparison request naming one real and one nonexistent
+pathway id rendered the nonexistent id's raw UUID into the page, inside
+the now-real `ask_bcion(...)` link's `href` - defeating the page's own
+"This pathway" fallback heading, whose entire purpose is to never show
+an unresolved id. `compare.html`'s own header comment (written before
+this session, at UI-1/A11Y-2) already named the exact fix: "the detail
+link only renders for a pathway_id this screen actually resolved to a
+real name... same guard already used below" - but the guard
+(`{% if c.pathway_id in pathway_names %}`) was only ever wired to the
+`pathway_detail_link` call, never to the `ask_bcion(...)` call sitting
+directly above it. Latent and invisible for as long as `_ask.html`'s
+macro was an empty stub (UI-1); real the moment UI-11 filled it in.
+**Decision:** Fixed at merge, by the lead, not by re-opening a new UI-11
+or compare.html card: wrapped both of `compare.html`'s `ask_bcion(...)`
+calls (`pathway_overview` and `cost_breakdown`) in the same guard
+already named in the file's own comment. Two lines, no other change -
+completing a fix the file already documented as owed, not a new design.
+`compare.html` is normally a single-writer file on a fixed editing
+chain (A11Y-2 -> I18N-3 -> UI-6 -> SCOPE-4, all already closed); this is
+the lead's integration-time correction of a regression the merge itself
+exposed, the same category as the `AIAnswerStatus` and `BANNED_PHRASES`
+reconciliations above.
+**What this changes:** Any future macro that starts real (a stub going
+from "renders nothing" to "renders a real link/id") needs its call
+sites re-checked for exactly this shape of latent bug - a stub hides an
+unguarded call until the day it stops being a stub.
+`TestComparePage`/`TestRequirementsPage`: 27 passed after the fix. Full
+`tests/db` (598 tests) re-run to confirm clean.
+**Status:** Done, merged to `main`, verified live in this session.
+
+---
+
+## 2026-09-22 — RULES-16: a real date of birth on the requirements screen
+**Event:** The requirements screen gets a real `date_of_birth` field —
+POST-only like every other personal input there, never stored, never
+logged, never echoed into a link (verified live: every `href` in the
+response grepped for the literal DOB value; `caplog` checked around a real
+submission). Plain `age` stays as a fallback for a criterion built from a
+pathway's own claims (no DOB-cutoff concept), not removed. A malformed,
+future, or implausibly-old DOB degrades to a friendly message, matching
+this screen's existing `age`/`marks_percentage` convention — never a raw
+422 or 500.
+Also surfaces the rest of RULES-8's response for the first time: cycle and
+jurisdiction shown once near the results; `rule_version` added to
+`_trust_badge.html`'s `evidence_line()` as one more additive, optional
+trailing argument (existing arguments untouched); a "Not checked here" list
+for RULES-8's `NotChecked` entries; a combined stale-evidence warning when
+either the rule set's own cycle has ended or a backing claim is overdue for
+recheck. `app/api/eligibility.py` itself was read-only for this task.
+**A real, independent finding along the way (not this task's own bug):**
+verifying this branch's merge exposed a live bug in unrelated, still-
+uncommitted work in progress elsewhere in the same session (`_ask.html`'s
+`ask_bcion()` macro renders its link unconditionally, leaking a raw
+pathway UUID for an unresolved pathway on Compare — the exact bug class
+UI-5 already fixed for `pathway_detail_link` two macro calls away).
+Flagged to that work's own owner before it was committed, not fixed here.
+**Verified live:** `tests/db/test_web_pages.py` 35 → 46 tests; full
+`tests/db` suite 590 passed, 8 xfailed, 0 skipped, 0 failed (run before the
+unrelated WIP above existed); `tests/unit` unchanged (no unit-test surface
+touched).
+
+## 2026-09-22 — `forbid_publishing_synthetic_claims()` refuses every role, including service role; a live-only test fixture bug found this
+**Event:** AI-5's own agent (BCI-013) could not reach the shared local
+Docker/Supabase stack in its worktree and correctly said so rather than
+claiming a pass. Running `tests/db/test_ai_retrieval_live.py` myself
+against the real stack, after merging, surfaced a genuine fixture bug:
+its `retrieval_pathway` fixture tried to `admin_client.table("claims")
+.insert(...)` a row with `status="published"` and a synthetic source's
+id, on the stated assumption that this trigger "should prevent" that
+state "in practice" - but the insert itself failed immediately
+(`APIError: A claim sourced from a synthetic Source can never be
+published`), because the trigger fires on the write for every role,
+including the service-role `admin_client` this fixture used. The whole
+fixture setup crashed before any of the six dependent tests ran.
+**Decision:** Fixed by removing the impossible insert from the shared
+fixture and adding a dedicated, passing test
+(`TestSyntheticSourceCanNeverBePublishedLive`) that asserts the refusal
+directly - a stronger proof than the original intent, since it confirms
+the non-negotiable ("synthetic fixtures ... never published") is
+enforced at the database layer, not only inferred from a docstring.
+`app.ai.retrieval`'s own Python-level re-filter for this exact case
+stays covered where it already was, in `tests/unit/test_ai_retrieval.py`'s
+fake-client tests - the only place that state can actually be
+constructed, since a real database now refuses to hold it.
+**What this changes:** A migration-owner or implementer writing a live
+fixture that needs a "published + synthetic" row to test a defence
+against it must not seed it directly, even as `admin_client` - assert
+the insert is refused instead. `tests/db/test_ai_retrieval_live.py` +
+`tests/db/test_ask_view.py`: 18 passed, 0 errors after the fix.
+**Status:** Done, merged to `main`, verified live in this session.
+
+---
+
+## 2026-09-22 — UI-3 and UI-5: landing/quick-start and the pathway detail page
+**UI-3.** `GET /` is a real "Find your next step" landing page now (three
+choices — career in mind, not sure yet, show me everything), replacing the
+old bare redirect to `/explore`. A new `GET /start` chain asks four
+independently-skippable questions (stage, goal, interest, priority), answers
+carried forward as non-personal query params, ending at `/start/results` —
+zero JS, no cookie, no `localStorage`/`sessionStorage`/`indexedDB` (verified
+against `tests/unit/test_no_client_persistence.py`, A11Y-5's guard, and
+against two independent live Playwright scripts — the implementer's own and,
+separately, the reviewer's own re-derived one — covering real browser
+Back-button preservation). The suggestion-matching logic that turns these
+answers into real pathway recommendations is UI-4's job, not built here.
+**UI-5.** `GET /pathways/{id}/view`, the pathway/career detail page — every
+fact assembled through the exact same `field_value_for()` the Compare screen
+already uses, plus a new, additive `academic_cycle_for()` helper reusing
+that same publication gate for the cycle label. Fills in `_components.html`'s
+`pathway_detail_link` stub (UI-1) — its first real caller anywhere in the
+app. **A real regression found and fixed, not merged blind:** once that stub
+started rendering an actual link, `compare.html`'s unconditional call to it
+leaked a raw, unresolved pathway UUID into the page via the `href` for any
+pathway Compare couldn't resolve a name for — defeating the existing "This
+pathway" fallback a sibling test already pinned. Fixed with the identical
+guard already used two lines below for the "See requirements" link;
+confirmed independently by both the implementer and a separate reviewer, not
+accepted on the implementer's word alone. Live tests seeded a `draft` claim
+and an `in_review`+`synthetic`-sourced claim and proved neither renders in
+any form.
+**Verified:** `tests/unit` 1009/1020 → 1029 passed across both (before the
+peer session's later AI-1/AI-9 merges brought the total to 1097); `tests/db`
+592 passed, 8 xfailed, 0 failed for UI-5 specifically, run live by both the
+implementer and an independent reviewer while the local stack was up. This
+session's own post-merge re-run of `tests/db` hit a `WinError 10061` —
+Docker Desktop's engine not responding on this machine, unrelated to either
+task — so CI's own run against the real staging project (green) is this
+push's live DB verification instead.
+
+## 2026-09-22 — One `AIAnswerStatus`: `app/ai/grounding.py` now imports it from `app/ai/schemas.py`
+**Event:** Merging BCI-009 (AI-1) surfaced a real duplicate: `app/ai/
+grounding.py` (M5, already on `main`) defined its own three-value
+`AIAnswerStatus` (`answered`, `not_available`, `insufficient_information`)
+years — well, sessions — before AI-1 was told to define a six-value
+`AIAnswerStatus` in the new `app/ai/schemas.py` (adding `ai_unavailable`,
+`budget_exhausted`, `unsupported_template`). `grounding.py` was a
+forbidden file on AI-1's card, so both existed on `main` at once for one
+merge batch, flagged as an open question in AI-1's own completion report.
+**Decision:** `schemas.py`'s version is canonical. `grounding.py` now
+does `from app.ai.schemas import AIAnswerStatus` instead of defining its
+own — the three shared values are spelled and mean identically in both,
+`grounding.py` only ever assigned those three, and it never gets the
+three new request/route-layer values, so this is a pure re-export with
+zero behaviour change. Verified in this session: `ruff` clean, the
+targeted AI test files pass, the full unit suite (1097 tests) passes
+after the change.
+**What this changes:** One name, one definition. Any future card
+touching either file imports `AIAnswerStatus` from `app.ai.schemas` (or
+via `app.ai.grounding`'s re-export, which will keep working) — never
+redefines it. AI-9's `evals/`, written independently before AI-1
+existed, needed the same treatment: its local `BANNED_PHRASES` fallback
+copy is now the canonical import from `app.ai.schemas`, confirmed the
+one fixture phrase it calibrates against (`probably`, in
+`tests/fixtures/ai_invalid/hedge_word.yaml`) is present in both lists
+before switching.
+**Status:** Done, merged to `main`, verified live in this session.
+
+---
+
+## 2026-09-22 — Migration numbers must be checked against the migration-owner stack's own ledger, not just `ls`
+**Event:** The AI-4 migration-owner agent (BCI-010, Phase 1a) and an
+independent peer session both found the same real collision within
+minutes of each other: `db/migrations/0011` and `0012` are uncommitted
+on `main` (`ls db/migrations/` shows only 0001-0010), but a `consent-4`
+lane (peer session, CONSENT-4 split into two migrations) had already
+written `0011_admission_axis.sql` and `0012_safeguarding_schema.sql` in
+its own worktree **and applied both to the one shared migration-owner
+local stack** `supabase/config.toml` reserves. AI-4's card had reserved
+"0011" against `ls` alone, which cannot see an uncommitted migration
+already live on that shared stack from a different worktree.
+**Decision:** A migration number is not free until confirmed against
+BOTH `ls db/migrations/` on `main` AND the migration-owner stack's own
+`_schema_migrations` ledger (`supabase status`, or query it directly).
+`tasks/TEMPLATE.md`'s existing "reserve at session open, not from an old
+draft" rule stands; this adds the second check. AI-4 stopped correctly
+before writing any file, applying anything, or touching the stack
+(`.claude/agents/migration-owner.md`'s "never more than one open
+migration" rule fired as designed) - no rework, nothing to revert.
+**What this changes:** `tasks/BCI-010.md` (AI-4) is corrected: blocked
+until the `consent-4` lane merges to main (frees the stack and settles
+the real numbers) or a second migration-owner project/port pair is
+reserved in `supabase/config.toml` (lead-only file, not a card to
+self-serve); expected next-free number **0013**, to be confirmed fresh,
+not assumed. Two design gaps the first attempt also surfaced, folded
+into the card: the cross-user access-matrix guard couples
+`tests/db/access_matrix.py` to `tests/db/test_access_matrix.py` (the
+`_PROBE_BUILDERS` list), so a migration that adds matrix rows must own
+both files, additively; and a view (`ai_usage_daily_totals`) cannot be a
+`MATRIX` row at all, since the matrix's `catalogue` fixture reads
+`pg_tables` and a view there hard-fails under `BCION_REQUIRE_LIVE=1` -
+its cross-user coverage belongs in the migration's own test file instead.
+**Status:** Recorded. AI-4 re-launches once `consent-4` merges.
+
+---
+
+## 2026-09-22 — Phase 1a inserted: an AI-only build phase, with three rules on every AI card
+**Decision (owner, in chat, 2026-09-22):** "Phase 1a should only AI
+implementation"; "fast reliable quality, more work in less time"; "AI has
+to give correct answers, no speculation, no maybe"; "every AI call should
+be reviewed/verified two times"; "we are using free Gemini". The lead
+turned this into `docs/plan/phase-1a-ai.md` (lead-only) and a pointer
+section in `docs/DEVELOPMENT-PLAN.md` section 4.
+**What this changes:**
+- Phase 1a runs **alongside** Phase 1 (owner clarification, same day:
+  "start separately, without touching Phase 1, add it when ready"). AI
+  cards touch no Phase 1 file, merge to `main` behind `AI_ENABLED=false`
+  as each goes green, and the module is "added" by flipping the flag on
+  staging after the plan's exit gate (AI-12). The 6-lane cap is shared;
+  Phase 1's exit gate is unchanged and it loses at most the two AI-4
+  migration days. A long-lived integration branch was rejected: same
+  isolation, plus a big-bang merge.
+- The cuts-and-moves row "All AI tasks except AI-2 ... Phase 2" is
+  superseded. AI-14 (extraction drafts) is un-dropped — a D16 change; it
+  still can never publish (the DB rule from 0001/0003 stands).
+- Four cards added: AI-14 (rescheduled), AI-18 next-steps template, AI-19
+  what-changed summary, AI-20 Hindi content drafts. All run the same
+  two-pass shape and the same "code renders, model only selects" rule.
+- Migration ledger: AI-4 takes **0011**; PUB-2 0012, PUB-3 0013, SEC-6
+  0014, CONSENT-4 0015. Reserved at session open, as always.
+- Rule 1, correctness: the model never authors a sentence; a banned-phrase
+  unit test (hedges, guarantees, rank and personality language, in
+  English, Hindi and Hinglish) fails the build.
+- Rule 2, double verification: every runtime answer = a selection call +
+  an adversarial verification call over the selected ids only, then code
+  validation; disagreement → refusal. Reviewer-facing calls (extraction,
+  Hindi drafts) do the same and then go to a human.
+- Rule 3, free tier: accepted only because no student-typed text leaves
+  the server (enforced by an outbound allow-list test). The follow-up
+  field is not built until CONSENT-7 exists and a paid, no-training tier
+  is chosen. Quota errors = cap hit, no retry.
+**Still needs the owner's explicit yes (plan section 8a):** P1a-1 run it
+alongside under the shared cap, flag-gated; P1a-2 the 0011 slot; P1a-3 the free-tier acceptance with the
+AI-10 facts; P1a-4 live answers for guests on dev/staging keyed on the
+guest-session id; P1a-5 AI-14 un-dropped. Provisional 24-hour defaults
+(8b): flash model, caps, fixed prompts only, i18n-key Hindi, email
+alerts, SDK kept, pasted-text extraction.
+**Status:** Planned, not started. No code changed in this entry.
+
+---
+
 ## 2026-09-22 — RULES-9: a second invented claim convention (timeline stages), plus real database-backed prefill
 **Event:** `app/planning/timeline_assembly.py`'s `stages_from_claims()` reads a
 pathway's published timeline stages from claims for the first time. As with

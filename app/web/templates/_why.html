@@ -1,9 +1,15 @@
-{# UI-1 stub partial — "why am I seeing this?".
+{# "why am I seeing this?" — the per-screen SLOT.
 
-   OWNER: the quick-start suggestion task (app/planning/suggest.py,
-   /start/results), whose card lists this file. Call sites exist as of
-   UI-1 on `explore.html` (why this list) and `compare.html` (why these
-   pathways are side by side).
+   FILLED IN BY UI-4: forwards straight to `why_seeing_this`
+   (`_components.html`), the visual component DESIGN-18 already built.
+   This slot's only job is to exist at a stable name/signature a screen
+   can call before the caller has anything real to explain — explore.html
+   and compare.html both already call `why_am_i_seeing_this()` with no
+   arguments (UI-1), so they keep rendering nothing, exactly as before,
+   now for the honest reason that `why_seeing_this` itself renders
+   nothing with nothing to explain, not because this slot is a stub.
+   `/start/results` (`app/web/start_pages.py`, UI-4) is the first real
+   caller with something to say — see `app/planning/suggest.py`.
 
    THE RULE THIS MACRO CARRIES: docs/UI.md — "A recommendation shows why
    it appeared, which preferences influenced it, what remains unknown,
@@ -12,10 +18,13 @@
    version of this ("you are a 92% match"): a reason is a named,
    retrieved fact, never a score.
 
-   WHY IT RENDERS NOTHING TODAY: nothing recommends anything yet. There
-   is no quick start, no preference capture and no suggestion engine, so
-   there is no "why" to state. An explanation box with invented contents
-   would be exactly the thing this component exists to prevent.
+   WHY IT STILL RENDERS NOTHING ON MOST SCREENS: only a caller that
+   passes real `reasons`/`preferences`/`unknowns` has anything to state —
+   `why_seeing_this` itself renders nothing when all three are empty
+   (`_components.html`), so `explore.html`/`compare.html` calling this
+   with no arguments still correctly render nothing, same as before UI-4.
+   An explanation box with invented contents would be exactly the thing
+   this component exists to prevent — this slot still never invents one.
 
    TWO MACROS, ONE IDEA — read this before wiring anything:
 
@@ -25,11 +34,12 @@
      `why_seeing_this` (_components) the visual COMPONENT that renders
                                      the block (DESIGN-18).
 
-   The slot will call the component. They are deliberately two names so
-   a screen never has to know the markup, and DESIGN-18 could build the
-   component before the suggestion engine exists.
+   The slot calls the component (below). They are deliberately two names
+   so a screen never has to know the markup, and DESIGN-18 could build
+   the component before the suggestion engine existed.
 
    Signature frozen by UI-1 — see docs/UI.md. #}
+{% from "_components.html" import why_seeing_this %}
 
 {% macro why_am_i_seeing_this(reasons=none, preferences=none, unknowns=none,
                               change_preferences_url=none, heading=none) %}
@@ -47,5 +57,10 @@
         change_preferences_url  where to go to change them; docs/UI.md
                                 requires "how to change the preferences"
         heading                 override for the block's heading
-  -#}
+
+     A thin forward to `why_seeing_this` (`_components.html`) — this slot
+     decides nothing about markup, only whether a screen has anything to
+     pass at all. -#}
+  {{ why_seeing_this(reasons=reasons, preferences=preferences, unknowns=unknowns,
+                     change_preferences_url=change_preferences_url, heading=heading) }}
 {% endmacro %}

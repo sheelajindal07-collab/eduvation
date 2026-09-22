@@ -34,10 +34,20 @@
             {{ pathway_names.get(c.pathway_id, "This pathway") }}
           </h2>
 
-          {# Pre-wired slots (UI-1), all empty today: the pathway-level
-             "Ask BCION" entry, the detail link and the save toggle. #}
-          {{ ask_bcion("pathway_overview", pathway_id=c.pathway_id) }}
-          {{ pathway_detail_link(c.pathway_id, label=pathway_names.get(c.pathway_id)) }}
+          {# Pre-wired slots (UI-1): the pathway-level "Ask BCION" entry
+             and the save toggle, both still empty today. The detail
+             link (UI-5) only renders for a pathway_id this screen
+             actually resolved to a real name -- same guard already used
+             below for the "See requirements" link. Without it, an
+             unresolved id (e.g. a stale/garbled shared link naming a
+             pathway that no longer exists) would render a real,
+             followable link whose href carries the raw id straight into
+             the page, defeating the "This pathway" fallback the heading
+             above already uses specifically to avoid that. #}
+          {% if c.pathway_id in pathway_names %}
+            {{ ask_bcion("pathway_overview", pathway_id=c.pathway_id) }}
+            {{ pathway_detail_link(c.pathway_id, label=pathway_names[c.pathway_id]) }}
+          {% endif %}
           {{ save_action("pathway", c.pathway_id, return_to="/compare/view") }}
 
           {# docs/UI.md's field order for this screen: entry requirements
@@ -134,8 +144,15 @@
                       </p>
                     {% endif %}
                   {% endif %}
-                  {# UI-11's cost-card entry point, pre-wired by UI-1. #}
-                  {{ ask_bcion("cost_breakdown", pathway_id=c.pathway_id) }}
+                  {# UI-11's cost-card entry point, pre-wired by UI-1. Same
+                     "resolved pathway only" guard as the pathway-overview
+                     entry point above -- an unresolved id must never reach
+                     an ask_bcion() call, or its href carries the raw id
+                     into the page regardless of the "This pathway"
+                     heading fallback (docs/DECISIONS.md 2026-09-22). #}
+                  {% if c.pathway_id in pathway_names %}
+                    {{ ask_bcion("cost_breakdown", pathway_id=c.pathway_id) }}
+                  {% endif %}
                 </div>
               </div>
             </div>

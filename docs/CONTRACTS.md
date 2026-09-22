@@ -203,3 +203,17 @@ phase is adults-only.
 ## Migration ledger, fixtures
 <DOCS-3, DOCS-4, QA-2/3/4 - see tasks/INDEX.md's own ledger line, marked
 PROVISIONAL; re-verify against `ls db/migrations/` before trusting it>
+
+## AI (Ask BCION)
+`AIAnswerStatus` (`app/ai/schemas.py`) is exactly: `answered`,
+`not_available`, `insufficient_information`, `ai_unavailable`,
+`budget_exhausted`, `unsupported_template`. Only `answered` carries
+sentences; the other five carry none, ever.
+
+An outbound provider payload carries exactly four fields — `template_id`,
+`record_ids`, `record_values`, `lang` — and nothing else; every value must
+trace to an allow-listed record id, so no student-typed text reaches a model.
+
+Answers are produced in two passes: a selection call returning record ids,
+then an adversarial verification call over only those ids, then code
+validation — the model never writes a sentence a student reads.

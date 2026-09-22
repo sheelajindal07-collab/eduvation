@@ -181,6 +181,10 @@ Two checkpoints inside it:
 
 **Not claimed at Phase 1 exit:** backup restored, spend alerts tested, consent workflow reviewed by a non-author, distress rule reviewed in Hindi and Hinglish, instrument piloted, separate production.
 
+### Phase 1a - AI only (owner decision 2026-09-22; inserted between Phase 1 and Phase 2)
+
+Owner decision on 2026-09-22: a dedicated phase that builds **only** AI, run as parallel lanes under the 8.8 caps. The whole Step 11 card set (AI-1, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, UI-11; owner cards AI-10, 16, 17) plus four "broad AI" cards (AI-14 un-dropped, AI-18 next-steps template, AI-19 what-changed summary, AI-20 Hindi content drafts). Three rules on every card: answer or refuse, never guess; two model verifications plus code validation on every call; free tier, so no student-typed text ever leaves the server. It runs **alongside** Phase 1 under the shared 6-lane cap (owner clarification, same day): AI cards touch no Phase 1 file, merge to `main` behind `AI_ENABLED=false`, and are "added" by flipping the flag after their exit gate. The migration ledger shifts by one (AI-4 takes 0011 while the lane is idle). Numbers, lanes, cards, decisions and the exit gate: **`docs/plan/phase-1a-ai.md`** (lead-only). Phase 1's exit gate and Phase 2's contents are unchanged; Phase 1 loses at most the two AI-4 migration days plus whatever lane slots it shares. Cuts-and-moves row "All AI tasks except AI-2 ... Phase 2" is superseded by this section.
+
 ### Phase 2 - Real-users gate, production, AI, Hindi, trial dataset
 
 Exit gate: every "real-users-gate" item in build pack section 12 passes once, on one release candidate, with human sign-offs (CONSENT-11, SEC-13, DATA-11, AI-17), then DEPLOY-12 and DEPLOY-13. See section 14.
