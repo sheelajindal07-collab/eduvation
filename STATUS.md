@@ -303,13 +303,35 @@ shift to `0012`/`0013` now that this merged first, per the existing
 first-to-merge rule - a pure rename, nothing from either worktree has
 touched a cloud project.
 
-Next: apply `0011` to the shared stack once clear; open wave 5 (AI-8
-the AI-off regression; AI-18 the next-steps template) - both launched,
-running now; AI-19 (what-changed) queued behind AI-18 to avoid a
-shared-file collision on `app/api/ask.py`. The two eval findings from
-AI-11 (official-vs-synthetic seeding, the two uncoverable categories)
-still need an explicit owner yes before AI-12's fix round treats either
-as settled.
+**Wave 5, AI-8 and AI-18 both merged; migration applied to the shared
+stack (2026-09-22 evening).** **AI-8**: `tests/unit/test_ai_off_journey.py`
++ `tests/e2e/test_ai_off.py` - both AI-off modes (flag off; flag on with
+every provider call forced to fail) render identically, no 5xx, no dead
+links. The e2e test didn't complete live in the implementing worktree
+(shared stack busy at that moment); re-run directly against the real
+stack by the lead, 1 passed. **AI-18**: `app/ai/actions.py`, a fixed,
+in-code action catalogue mapping `pipeline.answer()`'s own verified
+citations to action text ("Register before `<date>`", "Collect
+`<document>`") - never the model. Deliberately reuses the pipeline
+completely unchanged rather than building a second two-pass
+implementation, the simpler and better-justified of two valid readings
+of the card. `plan_id` resolves through the existing plans API's own
+RLS, so another identity's plan 404s before any AI call. 16 + 8 tests
+(the 8 live, against the real stack, run by the implementing agent
+itself under the new `BCION_REQUIRE_LIVE=1` rule). Full unit suite
+after both merges: **1378 passed**, mypy clean.
+
+**Migration `0011_ai_usage` applied to the shared `bcion-lite-test`
+stack** - held for a cross-session "no run in flight" signal first
+(lockboard, `tasks/INDEX.md`), applied additively once both my own
+wave-5 lanes and a concurrent Phase 1 lane's own live run cleared. Full
+`tests/db` regression re-run against the updated stack; result below
+once it finishes.
+
+Next: AI-19 (what-changed) can now start, sequenced after AI-18 as
+planned. The two eval findings from AI-11 (official-vs-synthetic
+seeding, the two uncoverable categories) still need an explicit owner
+yes before AI-12's fix round treats either as settled.
 
 ## Lead session, 2026-09-22 evening — merge-queue drain, cleanup, one process rule
 Owner asked for a speed analysis, then "do the treatment". What the
