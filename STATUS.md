@@ -325,13 +325,17 @@ after both merges: **1378 passed**, mypy clean.
 stack** - held for a cross-session "no run in flight" signal first
 (lockboard, `tasks/INDEX.md`), applied additively once both my own
 wave-5 lanes and a concurrent Phase 1 lane's own live run cleared. Full
-`tests/db` regression re-run against the updated stack; result below
-once it finishes.
+`tests/db` regression re-run against the updated stack, confirming the
+migration disturbed nothing anyone else on the shared stack depends on:
+**728 passed, 8 xfailed, 0 failed** (grew from 691 on the migration's
+own throwaway stack - other lanes' work landing on the shared stack
+concurrently, not a Phase 1a change).
 
-Next: AI-19 (what-changed) can now start, sequenced after AI-18 as
-planned. The two eval findings from AI-11 (official-vs-synthetic
-seeding, the two uncoverable categories) still need an explicit owner
-yes before AI-12's fix round treats either as settled.
+Next: AI-19 (what-changed) launching now that AI-18 is merged and the
+shared stack is confirmed clean. The two eval findings from AI-11
+(official-vs-synthetic seeding, the two uncoverable categories) still
+need an explicit owner yes before AI-12's fix round treats either as
+settled.
 
 ## Lead session, 2026-09-22 evening — merge-queue drain, cleanup, one process rule
 Owner asked for a speed analysis, then "do the treatment". What the
