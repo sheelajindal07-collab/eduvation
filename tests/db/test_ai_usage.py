@@ -530,7 +530,9 @@ class TestCrossUserAccess:
         _student_b_id, client_b = student_b
         _reviewer_id, client_reviewer = reviewer
 
-        budget_a = AIRequestBudgetDB.for_account(student_a_id, template_id=TEMPLATE_ID)
+        budget_a = AIRequestBudgetDB.for_account(
+            student_a_id, template_id=TEMPLATE_ID, client=client_a
+        )
         usage.append(budget_a.identity_hash)
         usage_id = budget_a.reserve_usage(calls=1)
 
@@ -567,7 +569,9 @@ class TestCrossUserAccess:
         (granting insert to `authenticated`) is one of the revert-to-prove
         drills."""
         student_a_id, client_a = student_a
-        budget_a = AIRequestBudgetDB.for_account(student_a_id, template_id=TEMPLATE_ID)
+        budget_a = AIRequestBudgetDB.for_account(
+            student_a_id, template_id=TEMPLATE_ID, client=client_a
+        )
         usage.append(budget_a.identity_hash)
         usage_id = budget_a.reserve_usage(calls=1)
 
