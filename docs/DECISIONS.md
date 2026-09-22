@@ -5,6 +5,39 @@ never deleted.
 
 ---
 
+## 2026-09-22 — A11Y-3 merged; briefly broke main's mypy, fixed same session
+**Decision.** Merged A11Y-3 to `main`: `app/web/errors.py`
+(`register_error_handlers`) adds global styled 404/403/500 HTML pages,
+gated on BOTH a closed JSON-API route deny-list AND `Accept: text/html`
+(never Accept alone — a browser navigating directly to a JSON API URL
+also sends `Accept: text/html`, so Accept alone would silently turn a
+JSON error into HTML for that case) so every existing JSON API error
+shape is byte-for-byte unchanged. `/explore` now degrades to the same
+friendly "temporarily unavailable" alert `/compare/view` and
+`/requirements/view` already show when the DB is down, via
+`_db_client_or_none`, instead of a raw 500.
+**A real CI break, caught and fixed within the same session, not
+carried forward.** The merge's own local verification used `mypy app
+--follow-imports=skip` (this session's copied habit from the
+2026-09-21 numpy-stub workaround — see `docs/TESTING.md`'s new
+warning), which reported clean. CI's plain `mypy app` (Python 3.11,
+hash-checked lockfile — the actually-authoritative environment) failed:
+`app/web/errors.py:202` registered a handler typed to accept
+`StarletteHTTPException` where Starlette's own `ExceptionHandler` alias
+is `Callable[[Request, Exception], ...]` (contravariant — a handler
+that only accepts the narrower subtype is not a valid substitute).
+Main was CI-red for ~5 minutes (12:41-12:46) while two peers' unrelated
+pushes (AI-7, AI-11) landed in the same window and inherited the same
+red status. Fixed by widening the parameter to `Exception` and narrowing
+with `assert isinstance(exc, StarletteHTTPException)` inside — confirmed
+against the exact CI-reported line, then pushed and watched fully green
+(run 35729179715, all 3 jobs). **`--follow-imports=skip` must not be
+used for verification again** — see `docs/TESTING.md`. A separate peer
+session is fixing the underlying local numpy/mypy environment issue so
+a plain `mypy app` works locally without that flag at all.
+
+---
+
 ## 2026-09-22 — SEC-3 merged: nginx per-IP rate limiting, documented not yet wired in
 **Decision.** Merged SEC-3 to `main`: `deploy/nginx/ratelimit.conf` (four
 zones — `bcion_auth` 30r/m burst 20, `bcion_plans_write` 60r/m burst 30 via a

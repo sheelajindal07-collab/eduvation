@@ -199,10 +199,75 @@ that file only ever imports one combined router per console package).
 just its own standalone test harness. **All three merged clean, no
 file conflicts. Full unit suite: 1251 passed.**
 
-Next: relaunch AI-4 once `consent-4` merges; open wave 4 (AI-7 wires
-the pipeline into the Ask BCION route; AI-8 the AI-off regression;
-AI-18/AI-19 the next-steps and what-changed templates) once AI-7's
-dependency (AI-6, now merged) clears it to start.
+**Wave 4, AI-7 and AI-11 both merged (2026-09-22).** **AI-7**: `app.ai.
+pipeline.answer()` wired into `GET /ask` (JSON) and `GET /ask/view`
+(HTML) as an additive layer over UI-11's deterministic baseline -
+`AskResponse.ai_sentences`/`ai_citations` render only when the pipeline
+returns `answered`; every other status (including AI off, which the
+pipeline never even attempts) falls back to exactly the pre-existing
+fact-card page. **Real gap found and left as a documented follow-up,
+not silently closed**: `ask.html`/`_ask.html` are forbidden files for
+this card and have no markup reading the new fields yet - the AI data
+reaches the HTML template context but isn't visually rendered on
+`/ask/view` until a future template-only card adds that markup; the
+JSON route is where this is observable today. **AI-11**: the capped
+evaluation runner, `scripts/run_ai_eval.py` + `scripts/
+seed_ai_eval_fixtures.py`, maps every one of the 36 eval questions to a
+real `AskRequest` (the question's own text becomes a report label only,
+never sent to the pipeline - Rule 3) and runs the real two-pass
+pipeline with a hard call ceiling.
+
+**Owner-visible flag, not silently accepted**: to get real data through
+to the `answered` path at all, the eval seed script had to mark its rows
+`source_type='official'` rather than `'synthetic'` - `db/migrations/
+0001_init.sql`'s trigger refuses a **published** claim on a synthetic
+source for every role including service_role, and `app/ai/retrieval.py`
+separately excludes synthetic-sourced claims regardless of status, so a
+synthetic-sourced row can structurally never reach `answered` through
+the real pipeline. Scoped tightly - local test stack only (reuses
+`scripts/seed_synthetic.py`'s own production/environment guard,
+verbatim, unweakened), every row name still carries `[SAMPLE DATA - NOT
+VERIFIED]` - but this sits close enough to CLAUDE.md's "synthetic
+fixtures ... never published as verified facts" that it deserves your
+own read, not just mine. **Also found**: two of the 7 eval categories
+(`ambiguous`, `source_mismatch` - 10 of 36 questions) have no path to
+real coverage under the current one-id-per-template `AskRequest`
+design - a structural pipeline gap, not a seeding problem, needing
+either a design change or accepting it as permanent Phase 1a scope.
+**Also found**: a published claim's entire value renders verbatim into
+an answered sentence - the two-pass validation holds (the model invents
+nothing), but text already embedded in a published claim's own value
+does reach the student; a maker-checker/content-review concern, not an
+AI-adapter bug.
+
+**Verified live in this session, not just from the agents' own
+reports**: `tests/db/test_ask_view.py` 11 passed against the real
+wired-in app; the eval fixtures actually seeded onto the local stack
+(1 source, 1 career, 10 pathways, 15 claims) and a full mock-provider
+run against that real data completed end to end - **36/36 questions
+reached, 0 cap hits, 15 answered / 9 insufficient_information / 8
+unsupported_template / 4 ai_unavailable** (the last four are exactly
+the `api_failure` category correctly demonstrating the pipeline's own
+fallback), report at `evals/reports/2026-09-22.json`. A separate real
+mypy break was also found and fixed this session in `app/web/
+errors.py` (A11Y-3's exception handlers, not a Phase 1a file - a
+narrower-than-declared handler type passed to `add_exception_handler`;
+same `cast()` pattern already used elsewhere in this codebase). Full
+unit suite: **1352 passed**, mypy clean (83 files), ruff clean.
+
+**AI-4 unblocked, no longer waiting on `consent-4`** - a third,
+separate migration-owner local stack was reserved (`supabase/
+config.toml`, documentation-only, additive) so it runs in parallel
+instead of queuing behind the peer session's migration lane. Relaunched
+and running as of this note.
+
+Next: open wave 5 (AI-8 the AI-off regression, once AI-7's own
+worktree confirms live against a `.env.test`-configured stack; AI-18/
+AI-19 the next-steps and what-changed templates, both needing AI-7)
+once AI-7 and AI-11 finish their own final live checks; the two eval
+findings above (official-vs-synthetic seeding, the two uncoverable
+categories) need an explicit owner yes before AI-12's fix round treats
+either as settled.
 
 ## Lead session, 2026-09-22 evening — merge-queue drain, cleanup, one process rule
 Owner asked for a speed analysis, then "do the treatment". What the
@@ -507,6 +572,27 @@ ruff clean, mypy clean (81 files), `pytest tests/unit -q` 1251 passed;
 CI green on `main` post-push (build-image, lint-typecheck-test
 including live DB/RLS tests against the real staging project,
 secret-scan).
+
+**`A11Y-3` merged** — global styled 404/403/500 pages
+(`app/web/errors.py`, `register_error_handlers`), gated on both a closed
+JSON-API route deny-list and `Accept: text/html` (never Accept alone),
+so every existing JSON API error shape is unchanged; `/explore` now
+degrades to the same friendly DB-down alert `/compare/view` and
+`/requirements/view` already show, via `_db_client_or_none`. **This
+merge broke main's CI for ~5 minutes** (12:41-12:46) — my own local
+verification used `mypy app --follow-imports=skip` (copied from a
+2026-09-21 workaround for an unrelated local numpy-stub crash), which
+missed a real `arg-type` error CI's plain `mypy app` caught: a handler
+typed to `StarletteHTTPException` registered against Starlette's
+`Callable[[Request, Exception], ...]` handler type. Fixed in the same
+session (widened the param to `Exception`, narrowed with `assert
+isinstance` inside), verified against the exact CI-reported line, pushed,
+confirmed fully green (run 35729179715). Two peers' unrelated pushes
+(AI-7, AI-11) landed on main during the red window and inherited the
+same red status through no fault of their own — flagged to them
+directly. **`--follow-imports=skip` must not be used for mypy
+verification again** — see `docs/TESTING.md`'s new warning; a separate
+peer session is fixing the underlying numpy/mypy environment issue.
 
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
