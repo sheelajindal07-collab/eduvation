@@ -4,17 +4,67 @@ Stateless -- no database involved, same reasoning as
 tests/unit/test_api_timeline.py for POST /timeline itself -- this page
 just wraps compute_timeline() with an HTML form/response layer, so these
 live in tests/unit/, not tests/db/.
+
+RULES-9's GET-only prefill is the one exception: `TestRealPathwayPrefillDegradesGracefully`
+below exercises the DB-unavailable and pathway-not-found degradation
+paths via a fake client / dependency override, with no real network
+I/O -- the actual claim-gated prefill (a published vs. a draft stage
+claim) is proven live against the real local stack in
+tests/db/test_web_timeline_page.py, per this task's own acceptance
+criteria ("proven with a real seeded draft claim against the local DB,
+not just a pure unit test").
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from typing import Any
 
 from fastapi.testclient import TestClient
+from supabase import Client
 
 from app.main import app
+from app.web.pages import _db_client_or_none
 
 client = TestClient(app)
+
+_REAL_LOOKING_UUID = "00000000-0000-0000-0000-000000000001"
+
+
+class _FakeResult:
+    def __init__(self, data: list[dict[str, Any]]) -> None:
+        self.data = data
+
+
+class _FakeQuery:
+    """Enough of Supabase's fluent `.select().eq().in_().execute()`
+    interface for `app.web.timeline_pages._pathway_prefill` -- filters
+    are accepted and ignored (each fake table below is already exactly
+    the rows one specific test wants back), never real network I/O."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+
+    def select(self, *args: Any, **kwargs: Any) -> _FakeQuery:
+        return self
+
+    def eq(self, *args: Any, **kwargs: Any) -> _FakeQuery:
+        return self
+
+    def in_(self, *args: Any, **kwargs: Any) -> _FakeQuery:
+        return self
+
+    def execute(self) -> _FakeResult:
+        return _FakeResult(self._rows)
+
+
+class _FakeDbClient:
+    def __init__(self, tables: dict[str, list[dict[str, Any]]]) -> None:
+        self._tables = tables
+
+    def table(self, name: str) -> _FakeQuery:
+        return _FakeQuery(self._tables.get(name, []))
 
 
 class TestTimelinePageGet:
@@ -156,6 +206,43 @@ class TestTimelinePagePost:
         assert "100 weeks" in response.text
         assert 'value="Part-time certification"' in response.text
 
+    def test_negative_duration_shows_a_plain_language_error_not_a_500(self) -> None:
+        """RULES-9: app/rules/timeline.py's compute_timeline() raises
+        TimelineValidationError for a negative duration -- same "friendly
+        message, never a crash" handling as the overlap case above, and
+        the SAME `_states.html` `alert()` macro (role="alert")."""
+        response = client.post(
+            "/timeline/view",
+            data={
+                "stage_name_1": "Broken stage",
+                "stage_duration_weeks_1": "-5",
+                "stage_required_1": "on",
+            },
+        )
+        assert response.status_code == 200
+        assert "negative" in response.text.lower()
+        assert 'role="alert"' in response.text
+        # Still the same editable form, not a crash page.
+        assert 'name="stage_name_1"' in response.text
+        assert 'value="Broken stage"' in response.text
+
+    def test_negative_overlap_shows_a_plain_language_error_not_a_500(self) -> None:
+        response = client.post(
+            "/timeline/view",
+            data={
+                "stage_name_1": "Class 12",
+                "stage_duration_weeks_1": "52",
+                "stage_required_1": "on",
+                "stage_name_2": "Entrance prep",
+                "stage_duration_weeks_2": "26",
+                "stage_required_2": "on",
+                "stage_overlap_weeks_with_previous_2": "-1",
+            },
+        )
+        assert response.status_code == 200
+        assert "negative" in response.text.lower()
+        assert 'role="alert"' in response.text
+
 
 class TestStageKindsRenderDistinguishably:
     """UI-7: required vs optional vs user-assumption stages (docs/UI.md
@@ -292,9 +379,13 @@ class TestTotalStaysUnknownAfterRevise:
 
 class TestPathwayNameContext:
     """UI-7: `pathway_id`/`pathway_name` are an optional pair -- display
-    context only, no database lookup (this route still has no `Depends(
-    get_db_client)` at all). Standalone mode (neither given) must keep
-    working exactly as before."""
+    context by default. RULES-9 adds a real database lookup on GET, but
+    ONLY for a well-formed UUID `pathway_id` -- every test in this class
+    uses the non-UUID `"abc-123"`, so no lookup is attempted and these
+    stay exactly the display-only-context assertions UI-7 wrote (no
+    Supabase configured in this test environment either, so `db` here
+    is always `None` regardless). Standalone mode (neither given) must
+    keep working exactly as before."""
 
     def test_pathway_name_shown_when_pathway_id_given(self) -> None:
         response = client.get(
@@ -304,6 +395,57 @@ class TestPathwayNameContext:
         assert "Planning around" in response.text
         assert "B.Tech (CSE)" in response.text
         assert 'value="abc-123"' in response.text  # carried as a hidden field
+
+
+class TestRealPathwayPrefillDegradesGracefully:
+    """RULES-9: `GET /timeline/view?pathway_id=<uuid>` now has a real
+    `Depends(_db_client_or_none)`. Both paths here are forced via a
+    dependency override / fake client -- no real network I/O -- so they
+    run in tests/unit rather than tests/db."""
+
+    def test_db_unavailable_shows_the_friendly_message_and_still_renders_the_form(
+        self,
+    ) -> None:
+        def _unavailable() -> Iterator[Client | None]:
+            yield None
+
+        app.dependency_overrides[_db_client_or_none] = _unavailable
+        try:
+            response = client.get(
+                "/timeline/view",
+                params={"pathway_id": _REAL_LOOKING_UUID, "pathway_name": "B.Tech (CSE)"},
+            )
+        finally:
+            app.dependency_overrides.pop(_db_client_or_none, None)
+        assert response.status_code == 200
+        assert "trouble reaching our data" in response.text
+        assert "try again shortly" in response.text
+        # The calculator itself still renders, blank, zero-JS -- a
+        # student can keep using it even while the lookup is down.
+        assert 'name="stage_name_1"' in response.text
+        assert "<script" not in response.text
+
+    def test_pathway_not_found_falls_back_to_the_query_param_name(self) -> None:
+        """A stale or mistyped link (a well-formed UUID that matches no
+        row) must not blank out a `pathway_name` the caller already
+        supplied -- same "degrade to what was already there" convention
+        as UI-7's own not-a-UUID case."""
+
+        def _empty_db() -> Iterator[Client | None]:
+            yield _FakeDbClient({"pathways": [], "claims": [], "sources": []})  # type: ignore[arg-type]
+
+        app.dependency_overrides[_db_client_or_none] = _empty_db
+        try:
+            response = client.get(
+                "/timeline/view",
+                params={"pathway_id": _REAL_LOOKING_UUID, "pathway_name": "B.Tech (CSE)"},
+            )
+        finally:
+            app.dependency_overrides.pop(_db_client_or_none, None)
+        assert response.status_code == 200
+        assert "Planning around" in response.text
+        assert "B.Tech (CSE)" in response.text
+        assert response.text.count('name="stage_name_1"') == 1  # still the blank calculator
 
     def test_pathway_id_without_a_name_falls_back_to_a_generic_label(self) -> None:
         response = client.get("/timeline/view", params={"pathway_id": "abc-123"})

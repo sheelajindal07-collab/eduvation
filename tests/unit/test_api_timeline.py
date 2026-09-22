@@ -116,6 +116,49 @@ class TestTimelineEndpointOverlapValidation:
         assert response.status_code == 400
 
 
+class TestNegativeDurationValidation:
+    """RULES-9: a negative duration/overlap is the same class of
+    content-authoring error the overlap checks above already return 400
+    for -- app/rules/timeline.py's `TimelineValidationError` -- never an
+    unhandled 500 and never a silently-wrong total."""
+
+    def test_negative_stage_duration_returns_400_not_500(self) -> None:
+        response = client.post(
+            "/timeline",
+            json={"stages": [{"name": "Broken stage", "duration_weeks": -1}]},
+        )
+        assert response.status_code == 400
+        assert "negative" in response.json()["detail"].lower()
+
+    def test_negative_overlap_returns_400_not_500(self) -> None:
+        response = client.post(
+            "/timeline",
+            json={
+                "stages": [
+                    {"name": "Class 12", "duration_weeks": 52},
+                    {
+                        "name": "Entrance prep",
+                        "duration_weeks": 26,
+                        "overlap_weeks_with_previous": -1,
+                    },
+                ]
+            },
+        )
+        assert response.status_code == 400
+        assert "negative" in response.json()["detail"].lower()
+
+    def test_negative_parallel_activity_duration_returns_400_not_500(self) -> None:
+        response = client.post(
+            "/timeline",
+            json={
+                "stages": [{"name": "Degree", "duration_weeks": 100}],
+                "parallel_activities": [{"name": "Broken activity", "duration_weeks": -5}],
+            },
+        )
+        assert response.status_code == 400
+        assert "negative" in response.json()["detail"].lower()
+
+
 class TestParallelActivities:
     def test_parallel_activity_visible_but_excluded_from_total(self) -> None:
         response = client.post(

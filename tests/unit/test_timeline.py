@@ -13,6 +13,7 @@ from app.rules.timeline import (
     BackupPathway,
     ParallelActivity,
     Stage,
+    TimelineValidationError,
     compute_timeline,
     expand_attempts,
 )
@@ -119,6 +120,59 @@ class TestOverlappingDurationsAreNotBlindlySummed:
         ]
         result = compute_timeline(stages)
         assert result.total_weeks == 208  # the internship adds nothing extra
+
+
+class TestNegativeDurationsAreRejected:
+    """RULES-9: a negative duration is a content-authoring error, the
+    same class of bug an over-long overlap already was — raised as the
+    same typed `TimelineValidationError` (a `ValueError` subclass), never
+    silently computed into a nonsense total."""
+
+    def test_negative_stage_duration_raises(self) -> None:
+        with pytest.raises(TimelineValidationError, match="negative duration"):
+            compute_timeline([Stage("Broken stage", duration_weeks=-1)])
+
+    def test_negative_duration_is_checked_even_when_another_stage_is_merely_unknown(
+        self,
+    ) -> None:
+        """A negative number must never be allowed to hide behind a
+        different stage's separately-missing duration -- it is checked
+        BEFORE the "any unknown duration -> total is None" short-circuit,
+        not skipped because the total was already going to be unknown."""
+        stages = [
+            Stage("Unknown stage", duration_weeks=None),
+            Stage("Broken stage", duration_weeks=-5),
+        ]
+        with pytest.raises(TimelineValidationError, match="negative duration"):
+            compute_timeline(stages)
+
+    def test_zero_duration_is_still_valid_only_negative_is_rejected(self) -> None:
+        """Boundary: `0` is a legitimate "instant transition" stage
+        (TestComputeTimelineBasics above) -- only strictly negative
+        values raise."""
+        result = compute_timeline([Stage("Instant transition", duration_weeks=0)])
+        assert result.total_weeks == 0
+        assert result.complete is True
+
+    def test_negative_overlap_raises(self) -> None:
+        stages = [
+            Stage("Class 12", duration_weeks=52),
+            Stage("Entrance prep", duration_weeks=26, overlap_weeks_with_previous=-1),
+        ]
+        with pytest.raises(TimelineValidationError, match="negative overlap"):
+            compute_timeline(stages)
+
+    def test_negative_parallel_activity_duration_raises(self) -> None:
+        stages = [Stage("Degree", duration_weeks=208)]
+        activities = [ParallelActivity("Broken activity", duration_weeks=-10)]
+        with pytest.raises(TimelineValidationError, match="negative duration"):
+            compute_timeline(stages, parallel_activities=activities)
+
+    def test_timeline_validation_error_is_a_value_error(self) -> None:
+        """Every pre-existing `except ValueError` against this engine
+        (app/api/timeline.py, app/web/timeline_pages.py, and this
+        module's own overlap tests above) must keep matching unchanged."""
+        assert issubclass(TimelineValidationError, ValueError)
 
 
 class TestExpandAttempts:

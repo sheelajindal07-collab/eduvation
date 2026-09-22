@@ -348,6 +348,53 @@ class TestFormatDurationWeeks:
         assert not (DEVANAGARI_DIGITS & set(format_duration_weeks(78, "hi")))
 
 
+class TestWeeksToApproximateYearsMonthsRoundingRule:
+    """RULES-9: `format_duration_weeks` IS the "weeks -> 'about N years M
+    months'" helper the timeline flows need — checked against this
+    module before writing a second one that would do almost the same
+    thing (see app/planning/timeline_assembly.py's own module docstring
+    for the same "don't duplicate an existing helper" reasoning applied
+    to `field_value_for`). Nothing new to add here; what was missing was
+    a single place documenting and pinning the exact rounding rule at
+    every year/month boundary the acceptance criteria name, together,
+    in one table — four of the five (0, 51, 52, 260) were already
+    scattered across individual tests above; 53 is the one genuinely new
+    case.
+
+    The rule, from `_approximate_parts` above:
+      1. `years, remaining = divmod(whole_weeks, 52)` — 52 weeks makes a
+         year (durations in this codebase are always a whole number of
+         weeks, docs/CONTRACTS.md, so there is no leap-year/365.25-day
+         correction to make).
+      2. `months = round(remaining / (52 / 12))` — the remainder in
+         twelfths-of-a-year months, rounded to the nearest whole month.
+      3. A remainder that rounds UP to 12 months carries into one more
+         year rather than ever displaying "0 years 12 months".
+    """
+
+    @pytest.mark.parametrize(
+        ("weeks", "expected"),
+        [
+            (0, "0 weeks"),
+            # 51/52 = 0 years remainder 51; 51/4.333.. = 11.77 rounds UP
+            # to 12 months, which carries into 1 year, 0 months.
+            (51, "51 weeks (about 1 year)"),
+            # Exactly one year, no remainder at all.
+            (52, "52 weeks (about 1 year)"),
+            # 53/52 = 1 year remainder 1 week; 1/4.333.. = 0.23 rounds
+            # DOWN to 0 months -- still "about 1 year", not "1 year 1
+            # month" and not carried into a 2nd year.
+            (53, "53 weeks (about 1 year)"),
+            # 260/52 = exactly 5 years, no remainder.
+            (260, "260 weeks (about 5 years)"),
+        ],
+    )
+    def test_five_documented_year_month_boundary_weeks(
+        self, weeks: int, expected: str
+    ) -> None:
+        assert format_duration_weeks(weeks) == expected
+
+
 class TestNoNewDependency:
     def test_formatting_imports_only_the_standard_library_and_app_i18n(self) -> None:
         source = (

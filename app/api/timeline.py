@@ -19,6 +19,7 @@ from app.rules.timeline import (
     ParallelActivity,
     Stage,
     TimelineResult,
+    TimelineValidationError,
     compute_timeline,
 )
 
@@ -113,10 +114,11 @@ def compute_timeline_route(request: TimelineRequest) -> TimelineResponse:
     ]
     try:
         result = compute_timeline(stages, parallel)
-    except ValueError as exc:
-        # An overlap exceeding a stage's own duration is a content-
-        # authoring error (app/rules/timeline.py's own docstring), not a
-        # student input to silently clamp — surfaced as 400, not 500 or
-        # a quietly-wrong total.
+    except TimelineValidationError as exc:
+        # An overlap exceeding a stage's own duration, or a negative
+        # duration/overlap (RULES-9), is a content-authoring error
+        # (app/rules/timeline.py's own docstring), not a student input to
+        # silently clamp — surfaced as 400, not 500 or a quietly-wrong
+        # total.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _to_response(result)

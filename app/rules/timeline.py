@@ -134,6 +134,26 @@ class TimelineResult:
         return tuple(s for s in self.stages if s.duration_weeks is None)
 
 
+class TimelineValidationError(ValueError):
+    """RULES-9: a content-authoring error in the stage/parallel-activity
+    list itself (a negative duration, an overlap that does not fit) --
+    never a student's own malformed input, which the JSON API's Pydantic
+    models and the HTML form's own parsing (`app/web/common.py`'s
+    `_int_or_none`) already turn into "not provided" before a `Stage`
+    ever reaches this module.
+
+    A `ValueError` subclass on purpose: every `except ValueError` already
+    written against `compute_timeline()` (`app/api/timeline.py`,
+    `app/web/timeline_pages.py`, and this module's own pre-RULES-9 tests)
+    keeps matching unchanged. The more specific type exists so a caller
+    that wants to tell "this engine rejected the input" apart from some
+    unrelated `ValueError` can do so — `app/api/timeline.py` and
+    `app/web/timeline_pages.py` both now catch this name explicitly
+    rather than the bare superclass, per docs/CONTRACTS.md's steer
+    towards clear, typed exceptions the API layer can catch.
+    """
+
+
 def compute_timeline(
     stages: list[Stage],
     parallel_activities: list[ParallelActivity] | None = None,
@@ -145,8 +165,38 @@ def compute_timeline(
     validated, not silently clamped: an overlap longer than either
     adjacent stage's own duration means the input data is wrong, and
     hiding that would risk an under-count nobody can see.
+
+    RULES-9: a negative `duration_weeks` (on a `Stage` or a
+    `ParallelActivity`) or a negative `overlap_weeks_with_previous` is
+    the same class of content-authoring error as an over-long overlap
+    already was — "a value nobody could really mean", not a fact to
+    compute with — so it is checked FIRST, before the "any unknown
+    duration makes the total unknown" short-circuit below: a negative
+    number must never be allowed to hide behind a separate stage's
+    merely-missing one. `0` remains explicitly valid (an "instant
+    transition" stage, `TestComputeTimelineBasics.
+    test_zero_duration_stage_is_a_valid_edge_case`) — only strictly
+    negative values raise.
     """
     parallel = tuple(parallel_activities or ())
+
+    for stage in stages:
+        if stage.duration_weeks is not None and stage.duration_weeks < 0:
+            raise TimelineValidationError(
+                f"{stage.name!r} has a negative duration ({stage.duration_weeks} weeks) — "
+                "a duration cannot be negative."
+            )
+        if stage.overlap_weeks_with_previous < 0:
+            raise TimelineValidationError(
+                f"{stage.name!r} has a negative overlap_weeks_with_previous "
+                f"({stage.overlap_weeks_with_previous}) — an overlap cannot be negative."
+            )
+    for activity in parallel:
+        if activity.duration_weeks is not None and activity.duration_weeks < 0:
+            raise TimelineValidationError(
+                f"Parallel activity {activity.name!r} has a negative duration "
+                f"({activity.duration_weeks} weeks) — a duration cannot be negative."
+            )
 
     if not stages:
         return TimelineResult(
@@ -168,13 +218,13 @@ def compute_timeline(
         overlap = stage.overlap_weeks_with_previous
         if overlap:
             if previous is None:
-                raise ValueError(
+                raise TimelineValidationError(
                     f"{stage.name!r} can't overlap with a previous stage — "
                     "it's the first one, so there's nothing before it."
                 )
             assert previous.duration_weeks is not None
             if overlap > previous.duration_weeks or overlap > stage.duration_weeks:
-                raise ValueError(
+                raise TimelineValidationError(
                     f"Stage {stage.name!r} overlaps its previous stage by {overlap} weeks, "
                     f"which exceeds one of their durations "
                     f"({previous.name}={previous.duration_weeks}w, "
