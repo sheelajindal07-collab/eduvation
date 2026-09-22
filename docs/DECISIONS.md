@@ -5,6 +5,36 @@ never deleted.
 
 ---
 
+## 2026-09-22 — One `AIAnswerStatus`: `app/ai/grounding.py` now imports it from `app/ai/schemas.py`
+**Event:** Merging BCI-009 (AI-1) surfaced a real duplicate: `app/ai/
+grounding.py` (M5, already on `main`) defined its own three-value
+`AIAnswerStatus` (`answered`, `not_available`, `insufficient_information`)
+years — well, sessions — before AI-1 was told to define a six-value
+`AIAnswerStatus` in the new `app/ai/schemas.py` (adding `ai_unavailable`,
+`budget_exhausted`, `unsupported_template`). `grounding.py` was a
+forbidden file on AI-1's card, so both existed on `main` at once for one
+merge batch, flagged as an open question in AI-1's own completion report.
+**Decision:** `schemas.py`'s version is canonical. `grounding.py` now
+does `from app.ai.schemas import AIAnswerStatus` instead of defining its
+own — the three shared values are spelled and mean identically in both,
+`grounding.py` only ever assigned those three, and it never gets the
+three new request/route-layer values, so this is a pure re-export with
+zero behaviour change. Verified in this session: `ruff` clean, the
+targeted AI test files pass, the full unit suite (1097 tests) passes
+after the change.
+**What this changes:** One name, one definition. Any future card
+touching either file imports `AIAnswerStatus` from `app.ai.schemas` (or
+via `app.ai.grounding`'s re-export, which will keep working) — never
+redefines it. AI-9's `evals/`, written independently before AI-1
+existed, needed the same treatment: its local `BANNED_PHRASES` fallback
+copy is now the canonical import from `app.ai.schemas`, confirmed the
+one fixture phrase it calibrates against (`probably`, in
+`tests/fixtures/ai_invalid/hedge_word.yaml`) is present in both lists
+before switching.
+**Status:** Done, merged to `main`, verified live in this session.
+
+---
+
 ## 2026-09-22 — Migration numbers must be checked against the migration-owner stack's own ledger, not just `ls`
 **Event:** The AI-4 migration-owner agent (BCI-010, Phase 1a) and an
 independent peer session both found the same real collision within

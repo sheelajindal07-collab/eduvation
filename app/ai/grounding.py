@@ -173,11 +173,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from enum import StrEnum
 from typing import Any
 
 from app.ai.adapter import AIProvider
 from app.ai.budget import AIRequestBudget
+from app.ai.schemas import AIAnswerStatus
 from app.data.models import Claim, ClaimStatus, Source, SourceType
 from app.planning.comparison import DEFAULT_FRESHNESS_SLA_DAYS
 
@@ -197,12 +197,17 @@ _SELECTION_LINE = re.compile(r"^\[(?P<claim_id>[^\[\]]+)\]$")
 NOT_GROUNDED_TOKEN = "NOT_GROUNDED"
 
 
-class AIAnswerStatus(StrEnum):
-    """See the module docstring's "Status vocabulary" section."""
-
-    answered = "answered"
-    not_available = "not_available"
-    insufficient_information = "insufficient_information"
+# AIAnswerStatus lives in app/ai/schemas.py (BCI-009/AI-1) as the single
+# canonical definition — re-exported here so every existing import of
+# `app.ai.grounding.AIAnswerStatus` keeps working unchanged. This module
+# only ever assigns three of its six members (`answered`, `not_available`,
+# `insufficient_information` — see the module docstring's "Status
+# vocabulary" section for why); schemas.py's three extra members
+# (`ai_unavailable`, `budget_exhausted`, `unsupported_template`) belong to
+# the request/route layer, not this pure grounding module, and this file
+# never constructs or compares against them. Two same-named enums briefly
+# existed in this package (2026-09-22, see docs/DECISIONS.md) — this
+# import is the reconciliation, not a new decision.
 
 
 @dataclass(frozen=True)

@@ -47,22 +47,43 @@ shifts by one. Waiting on the owner's "go" and five explicit yeses (plan
 section 8a) plus AI-10 (key, free-tier terms and limits) before any live
 call. `tasks/INDEX.md` Step 11 retagged `[P1a]`; four cards added
 (AI-14 un-dropped, AI-18, AI-19, AI-20). No code changed.
-**Day 1 launched, AI-4 self-stopped correctly (2026-09-22):** BCI-009
-(AI-1), BCI-010 (AI-4) and BCI-011 (AI-9) dispatched as three parallel
-worktree agents. AI-4 found a live collision with a peer session's
-`consent-4` lane (CONSENT-4, split into two migrations) before writing
-anything: `consent-4` already holds uncommitted `0011_admission_axis.sql`
-and `0012_safeguarding_schema.sql`, already applied to the one shared
-migration-owner local stack this repo's `supabase/config.toml` reserves.
-AI-4 stopped per `.claude/agents/migration-owner.md`'s "never more than
-one open migration" rule, applied nothing, touched no cloud project, and
-its worktree was auto-removed (zero commits). `tasks/BCI-010.md` is
-corrected: blocked until `consent-4` merges (or a second migration-owner
-stack is reserved), next-free number expected **0013** (confirm fresh at
-restart, not just via `ls` - see the card), plus two design gaps the
-first attempt surfaced (the access-matrix guard needs
-`tests/db/test_access_matrix.py` in Owned files; the `ai_usage_daily_totals`
-view cannot be a matrix row). AI-1 and AI-9 still running.
+**Day 1: AI-1 and AI-9 merged and verified live; AI-4 correctly blocked
+(2026-09-22).** BCI-009 (AI-1), BCI-010 (AI-4) and BCI-011 (AI-9)
+dispatched as three parallel worktree agents. **AI-4 found a live
+collision** with a peer session's `consent-4` lane (CONSENT-4, split
+into two migrations) before writing anything: `consent-4` already held
+uncommitted `0011_admission_axis.sql` and `0012_safeguarding_schema.sql`,
+already applied to the one shared migration-owner local stack this
+repo's `supabase/config.toml` reserves. AI-4 stopped per
+`.claude/agents/migration-owner.md`'s "never more than one open
+migration" rule, applied nothing, touched no cloud project, its worktree
+auto-removed (zero commits). `tasks/BCI-010.md` corrected: blocked until
+`consent-4` merges, next-free number expected **0013** (confirm fresh,
+not just via `ls`), plus two design gaps folded in (access-matrix guard
+needs `tests/db/test_access_matrix.py` in Owned files; a database view
+cannot be a matrix row). **AI-1 merged** (`app/ai/schemas.py`: six-value
+`AIAnswerStatus`, `AskRequest`, `Answer`, typed provider errors, a
+32-entry append-only `BANNED_PHRASES`, and `OutboundPayload` — a closed
+four-field allow-list whose `record_values` keys must be
+`<record_id>.<field>`, so untraceable text is a `ValidationError`, not a
+review note; `docs/ARCHITECTURE.md`/`docs/CONTRACTS.md` each gained one
+appended section). **AI-9 merged** (`evals/ask_bcion_questions.yaml`: 36
+synthetic questions across 7 categories, 14 Hindi/Hinglish, 2 all-India,
+2 abroad-out-of-coverage; 5 labelled `tests/fixtures/ai_invalid/`
+fixtures; the proposed `.claude/agents/ai-evaluator.md` applied). **Lead
+reconciliation on merge, verified live in this session, not on trust**:
+`app/ai/grounding.py` had its own pre-existing 3-value `AIAnswerStatus`
+(from M5) that briefly duplicated AI-1's 6-value superset — now a single
+canonical definition, `grounding.py` re-exports from `schemas.py`
+(identical spelling/meaning for the 3 shared values, zero behaviour
+change, `ruff` + the full unit suite re-run clean after). AI-9's
+`BANNED_PHRASES` fallback (written before AI-1 existed) swapped for the
+canonical import; the shared `hedge_word.yaml` fixture (`probably`)
+confirmed present in both before switching. **1097 unit tests passing
+(up from 1020), lint clean**, both re-run by the lead in this session
+after merge, not just quoted from an agent report. `AI_ENABLED` still
+`false`; no live provider call made. Next: relaunch AI-4 once `consent-4`
+merges; open wave 2 (AI-3, AI-5, UI-11) now that AI-1 is on `main`.
 
 ## Development plan — Wave 1 done, Wave 2's migration/eligibility lanes done (2026-09-21)
 `docs/DEVELOPMENT-PLAN.md` is being executed for real. `tasks/INDEX.md`

@@ -11,16 +11,14 @@ Everything this test reads (`evals/ask_bcion_questions.yaml`,
 `tests/fixtures/ai_invalid/*.yaml`) is synthetic, per each file's own
 header -- see evals/README.md.
 
-## BANNED_PHRASES: local fallback, not the real thing
+## BANNED_PHRASES
 
-BCI-011 (this card) is independent of AI-1/BCI-009, which owns
-`app/ai/schemas.py` and its `BANNED_PHRASES` constant. That file did
-not exist yet when this card was written, so `BANNED_PHRASES` below is
-a local fallback copy used only to calibrate
-`tests/fixtures/ai_invalid/hedge_word.yaml`.
-
-TODO: import from app/ai/schemas.py once AI-1 merges, and delete this
-local copy -- see this card's completion report for the same note.
+Imported from `app/ai/schemas.py` (BCI-009/AI-1), the canonical
+append-only list -- used only to calibrate
+`tests/fixtures/ai_invalid/hedge_word.yaml`'s `hedge_phrase: probably`
+against the real list, not a copy of it. AI-1 merged after this card was
+first written; this file originally carried a smaller local fallback
+copy, reconciled at merge time (2026-09-22, see docs/DECISIONS.md).
 """
 
 from __future__ import annotations
@@ -31,26 +29,7 @@ from typing import Any
 
 import yaml
 
-try:
-    from app.ai.schemas import BANNED_PHRASES  # type: ignore[import-not-found]
-except ImportError:
-    # TODO: import from app/ai/schemas.py once AI-1 merges (see module
-    # docstring above). Kept lowercase/deliberately small -- only used
-    # to calibrate tests/fixtures/ai_invalid/hedge_word.yaml here.
-    BANNED_PHRASES: tuple[str, ...] = (
-        "probably",
-        "likely",
-        "i think",
-        "i believe",
-        "in my opinion",
-        "it seems",
-        "generally speaking",
-        "as far as i know",
-        "typically",
-        "should be",
-        "might be",
-        "presumably",
-    )
+from app.ai.schemas import BANNED_PHRASES
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVAL_YAML_PATH = REPO_ROOT / "evals" / "ask_bcion_questions.yaml"
