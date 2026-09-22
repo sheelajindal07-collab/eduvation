@@ -63,12 +63,12 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] DESIGN-2 - Copy rules, microcopy deck, key convention (docs/COPY.md) [W1]
 - [x] DESIGN-1 - Component and state contract v1 in docs/UI.md [W1]
 - [x] DESIGN-3 - Banned-phrase lint test [W1]
-- [ ] I18N-1 - i18n mechanism, shared Jinja env, frozen key contract [W2]
-- [ ] UI-1 - App shell, nav, stub partials, macros, sample-data ribbon (2 sessions; does **not** edit the journey templates — A11Y-2 adds the `_save.html` include lines) [W2]
-- [ ] DESIGN-18 - Content component macros; fills `_ask` and `_why` stubs [W2]
+- [x] I18N-1 - i18n mechanism, shared Jinja env, frozen key contract [W2]
+- [x] UI-1 - App shell, nav, stub partials, macros, sample-data ribbon (2 sessions; does **not** edit the journey templates — A11Y-2 adds the `_save.html` include lines) [W2]
+- [x] DESIGN-18 - Content component macros; fills `_ask` and `_why` stubs [W2]
 - [ ] I18N-3 - Extract strings from existing templates, split by file; string-lint merges last [W3a]
 - [x] UI-3 - Landing page and stateless quick start [W3a]
-- [ ] UI-4 - Suggestion rule and "why am I seeing this" [W3a]
+- [x] UI-4 - Suggestion rule and "why am I seeing this" [W3a]
 - [ ] SCOPE-6 - Derived coverage and "not verified yet" states [W3b]
 - [ ] I18N-4 - Language switch with a prod flag [P2]
 
@@ -199,7 +199,7 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 
 ## Step 12 Hindi, accessibility, difficult states (M6) - OPEN
 - [x] A11Y-1 - Difficult-states and cache-class contract [W1, contract burst]
-- [ ] I18N-2 - Locale-aware formatting helpers [W2]
+- [x] I18N-2 - Locale-aware formatting helpers [W2]
 - [x] A11Y-4 - Cache-Control middleware, shared-device hygiene [W2] -- e2e shared-device test written but not passing in CI/local pytest yet, blocked on a pytest-playwright environment hang tracked separately
 - [x] A11Y-5 - Guard test: no service worker or client persistence [W2]
 - [x] A11Y-2 - State macros and base.html landmarks [W3a]

@@ -39,6 +39,11 @@ reference to one is unavoidable, Grep the specific heading only.
 - `npm ci` (or the worktree's `node_modules` junction) so `make css`
   works, if your card touches templates or styles.
 - Strict no-skip mode for any DB test, once the local stack exists.
+- Your worktree has no `.env.test` of its own: copy it from the repo
+  root (the shared local stack, `docs/TESTING.md`) and run the DB tests
+  your card names yourself, with `BCION_REQUIRE_LIVE=1`, before you
+  report. "Could not reach the stack" is a stop condition to report,
+  never a reason to hand DB verification to the lead.
 - `make css` before any e2e run. **Never stage `app.css`** — it is
   generated; a diff containing it is rejected at merge.
 - Run only the test commands your card names. Before the local Supabase

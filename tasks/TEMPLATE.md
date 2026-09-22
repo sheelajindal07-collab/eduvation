@@ -41,6 +41,11 @@ checking `ls db/migrations/`, not from a number written weeks earlier>
 ## Tests
 <exact make targets or pytest paths to run. State plainly if make test-db
 or e2e is off-limits (true for every card before QA-2 lands).>
+DB tests are yours to run, not the lead's: copy `.env.test` from the repo
+root (the shared local stack) into your worktree, then run every DB test
+named above with `BCION_REQUIRE_LIVE=1` so a skip fails loudly. Report
+the exact counts. A card reported without its own live DB run is sent
+back, not merged.
 
 ## Stop conditions
 - Needs a file outside the owned list
