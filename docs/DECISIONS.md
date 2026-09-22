@@ -5,6 +5,30 @@ never deleted.
 
 ---
 
+## 2026-09-22 — SEC-3 merged: nginx per-IP rate limiting, documented not yet wired in
+**Decision.** Merged SEC-3 to `main`: `deploy/nginx/ratelimit.conf` (four
+zones — `bcion_auth` 30r/m burst 20, `bcion_plans_write` 60r/m burst 30 via a
+`map`-based GET/HEAD exclusion rather than `limit_except` (which nginx
+rejects `limit_req` inside), `bcion_ask` 30r/m burst 15, a shared
+`bcion_perip_conn` 20-connection cap) plus `app/static/429.html` and a new
+`docs/SECURITY.md` "Rate limiting (SEC-3)" section documenting this as Layer
+1 alongside Supabase Auth's own independent Layer 2 limiting. This is a
+config snippet only — no nginx deployment exists yet; DEPLOY-4/7 wires it
+into a real site file. Live-tested (not just `nginx -t`) against a local
+`nginx:stable` Docker container: confirmed the GET/HEAD exclusion passes
+unlimited, a `POST /plans` burst passes exactly 31 requests before 429s, `GET
+/ask` passes exactly 16.
+**Open question for the owner:** the task card named POST/PATCH/DELETE for
+`/plans`; the config excludes GET/HEAD instead (covering the card's list
+plus `PUT /plans/{id}/actions/{action_key}`, a write the card didn't name).
+Flagging for confirmation that's the intended scope.
+**Verified before merge/push:** ruff clean, mypy clean (81 files), `pytest
+tests/unit -q` 1251 passed, CI green on `main` post-push (run 35727986184 —
+build-image, lint-typecheck-test including DB/RLS tests, secret-scan all
+passed).
+
+---
+
 ## 2026-09-22 — Owner lifts the wave concurrency cap: "launch everything that's unblocked"
 **Decision.** `docs/DEVELOPMENT-PLAN.md` section 8.8's wave table caps concurrent
 writing lanes at 6 (3 of them DB-touching), specifically so the lead session's

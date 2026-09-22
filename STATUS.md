@@ -421,6 +421,38 @@ Docker is confirmed healthy again as of this session (the owner
 restarted it) — full `tests/db` also independently re-confirmed clean
 at 592 passed after the fix, on the real local stack.
 
+**`SEC-3` merged** — nginx per-IP rate limiting, `deploy/nginx/
+ratelimit.conf`: four zones (`bcion_auth` 30r/m burst 20 for
+`/auth/*`+`/reviewer/sign-in`; `bcion_plans_write` 60r/m burst 30 for
+`/plans` writes, via a `map $request_method` empty-key exclusion for
+GET/HEAD rather than `limit_except` — nginx rejects `limit_req` inside
+`limit_except`, found live against a local `nginx:stable` Docker
+container, not assumed; `bcion_ask` 30r/m burst 15 for `GET /ask`; a
+shared `bcion_perip_conn` 20-connection cap) plus `app/static/429.html`
+and a new `docs/SECURITY.md` section documenting this as Layer 1
+alongside Supabase Auth's own independent Layer 2 rate limiting. **This
+is a documented config snippet only — no nginx deployment exists yet**
+(this app has no public domain/reverse proxy in front of it — see
+"Needs your input" below); DEPLOY-4/7 wires it into a real site file
+when that work starts. Live-tested with real request bursts against a
+local Docker nginx (not just `nginx -t` syntax check): confirmed the
+GET/HEAD exclusion passes unlimited, a `POST /plans` burst passes
+exactly 31 requests before 429s, `GET /ask` passes exactly 16 — and one
+real bug in the *test stub itself* was caught this way (a `return 200`
+stand-in finalizes in nginx's REWRITE phase, before PREACCESS-phase
+rate limiters ever run; switching to a content-phase `try_files` stub
+fixed it — the production `proxy_pass` directives were never at risk).
+**Open question for the owner**: the task card named POST/PATCH/DELETE
+for `/plans`; the merged config excludes GET/HEAD instead, which also
+covers `PUT /plans/{id}/actions/{action_key}`, a write the card didn't
+name — flagging for confirmation that's the intended scope. Purely
+additive (`3 files changed, 370 insertions(+)`, no existing file logic
+changed except the `docs/SECURITY.md` addition). Verified before merge:
+ruff clean, mypy clean (81 files), `pytest tests/unit -q` 1251 passed;
+CI green on `main` post-push (build-image, lint-typecheck-test
+including live DB/RLS tests against the real staging project,
+secret-scan).
+
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
 - `GET /compare?pathway_id=X&pathway_id=Y` — trust-labelled fields plus

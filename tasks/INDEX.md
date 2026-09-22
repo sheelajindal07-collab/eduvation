@@ -227,7 +227,7 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 - [ ] OPS-1 - Owner: vendors, backup tier, VM region, n8n status [W0, owner]
 - [ ] OPS-2 - PII-free structured logging and request id [W2]
 - [x] RULES-11 - "Critical rule cases" gate command [W2]
-- [ ] SEC-3 - Proxy rate limiting [P2]
+- [x] SEC-3 - Proxy rate limiting [P2] (nginx config, not yet wired into a live deploy — DEPLOY-4/7 to wire in)
 - [ ] TRIAL-5 - usage_events table and metric views [P2]
 - [ ] TRIAL-16 - Usage event write hook [P2]
 - [ ] OPS-4 - Error tracking with scrubbed payloads [P2]
