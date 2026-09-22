@@ -181,6 +181,20 @@ entry for the exact shape. Also disclosed, not fixed: a non-`IN`
 fallback path, contrary to `docs/CONTRACTS.md` — no live impact today
 (no foreign-pathway content exists yet), flagged for a follow-up.
 
+**`RULES-9` merged** — `GET /timeline/view?pathway_id=X` now does a real
+database-backed prefill (the pathway's name + published stages), not
+just UI-7's display-only echo; degrades to the usual friendly message
+when the database is unreachable. `compute_timeline()` rejects a
+negative duration/overlap cleanly (400 on the API, a styled alert on
+the page) instead of accepting nonsense or crashing. **A second
+invented claim convention, same day as RULES-8's**: timeline stages
+are now `stage:<order>:name/duration_weeks/kind/
+overlap_weeks_with_previous` claims — again, nothing existed before
+this task. Two Rules-adjacent conventions invented in one session is
+worth a deliberate look before real content authoring starts; see
+`docs/DECISIONS.md`'s 2026-09-22 "RULES-9" entry. `tests/unit`: 1020
+passed. `tests/db`: 579 passed, 8 xfailed, 0 skipped, 0 failed.
+
 **`A11Y-5` merged** — a guard test scans `app/web/templates/` and
 `app/static/` and fails on any `serviceWorker`/`localStorage`/
 `sessionStorage`/`indexedDB`/`caches.`/`sw.js` reference, proven (via a

@@ -5,6 +5,50 @@ never deleted.
 
 ---
 
+## 2026-09-22 — RULES-9: a second invented claim convention (timeline stages), plus real database-backed prefill
+**Event:** `app/planning/timeline_assembly.py`'s `stages_from_claims()` reads a
+pathway's published timeline stages from claims for the first time. As with
+RULES-8's `rule_key`, **no stage-claim convention existed anywhere in this
+codebase** (`db/migrations/*.sql`, `docs/DATA.md`) — invented here, documented
+in the module rather than guessed silently: one atomic claim per fact, same
+"atomic field, not a JSON blob" shape every other engine already uses
+(`minimum_age`, `verified_charges`, RULES-10's `fee_component:<name>`):
+```
+stage:<order>:name                         str, required for the stage to exist at all
+stage:<order>:duration_weeks                int, whole weeks
+stage:<order>:kind                          "required" | "optional" (never "user_assumption")
+stage:<order>:overlap_weeks_with_previous   int, defaults to 0
+```
+`<order>` is numeric and fixes the resulting `Stage` list's own sequence — unlike
+`fee_component:*` (alphabetical, no inherent order), a stage's position decides
+what `overlap_weeks_with_previous` even means. A published `name` with an
+unpublished `duration_weeks` still produces a real `Stage` — the student sees
+the stage exists, its duration honestly marked unknown — through the same
+`field_value_for()` gating every other engine in this codebase already uses.
+**Recording this alongside RULES-8's `rule_key` entry**: two Rules-adjacent
+tasks in one day both had to invent a content convention nobody had written
+down. Whoever builds content-authoring tooling next needs to reconcile (or
+deliberately reject) both.
+**`compute_timeline()` hardened**: a negative duration or overlap now raises a
+new `TimelineValidationError(ValueError)` — a `ValueError` subclass so every
+existing `except ValueError` keeps matching, while the API/web layers now
+catch the specific name. Maps to a clean 400 on `POST /timeline`, a friendly
+styled alert on the HTML page. `0` stays valid (an "instant transition" stage).
+**`GET /timeline/view?pathway_id=X` now does real work**, not just the
+display-only echo UI-7 added and explicitly flagged as its own follow-up: a
+genuine database-backed fetch of the pathway's name and published stages,
+pre-filling the calculator. Degrades to the existing friendly DB-unavailable
+message when Supabase isn't reachable — the calculator still renders and
+works, blank, matching every other screen's established convention. `POST`
+stays fully stateless; no new database dependency there.
+**No second duration-formatting helper was added.** `app/i18n/formatting.py`'s
+`format_duration_weeks` already was the "weeks → about N years M months"
+helper the card asked for; new tests pin its exact rounding at the five
+required boundary cases (0, 51, 52, 53, 260 weeks) rather than duplicating it.
+**Verified live:** `tests/unit` 981 → 1020 passed; `tests/db` 574 → 579
+passed, 8 xfailed, 0 skipped, 0 failed — run in the implementer's own
+worktree and again against the shared local stack after merge.
+
 ## 2026-09-22 — UI-7: timeline stage kinds, "Revise this scenario" never framed as a failure
 **Event:** `app/rules/timeline.py`'s `Stage` gains an optional `kind` field
 (`"required" | "optional" | "user_assumption"`) plus a `display_kind` property
