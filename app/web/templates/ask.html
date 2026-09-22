@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% from "_trust_badge.html" import field_value %}
+{% from "_states.html" import ai_unavailable, alert %}
+{#- UI-11 / BCI-014: deterministic-mode "Ask BCION" answer page.
+
+   No free-text entry field or editable-region markup of any kind
+   anywhere in this file -- docs/UI.md's component set: canned prompts
+   over retrieved records, never a blank chat box.
+   tests/unit/test_web_ask.py greps this exact file, mechanically, for
+   the three tags/attribute this rule forbids -- keep this comment free
+   of those literal strings too (it would otherwise match its own
+   description of the rule), and keep the rule itself true if this
+   template is ever touched again. -#}
+{% block title %}Ask BCION &mdash; BCION Lite{% endblock %}
+{% block content %}
+  {% if error %}
+    {% call alert(error, variant="caution", class_names="mb-6") %}
+      <a href="/explore" class="underline">Back to explore</a>.
+    {% endcall %}
+  {% elif state == "unknown_template" %}
+    {#- Friendly 404, not a 500 -- and the raw, unrecognised template id
+       is never passed into this context at all (see ask_pages.py), so
+       there is nothing here that could reflect it back. -#}
+    {% call alert(t("ask.unknown_template.message"), variant="caution", class_names="mb-6") %}
+      <a href="/explore" class="underline">Back to explore</a>.
+    {% endcall %}
+  {% elif state == "invalid_request" %}
+    {% call alert(t("ask.invalid_request.message"), variant="caution", class_names="mb-6") %}
+      <a href="/explore" class="underline">Back to explore</a>.
+    {% endcall %}
+  {% else %}
+    <h1 class="text-2xl font-semibold text-charcoal mb-2">{{ t(prompt_key) }}</h1>
+    {% if entity_name %}
+      <p class="text-neutral mb-6">{{ entity_name }}</p>
+    {% endif %}
+
+    {#- docs/UI.md difficult state "AI unavailable / budget exhausted":
+       exact copy, shown alongside whatever fact cards ARE available --
+       never instead of them, and never an error page. show_fallback is
+       true whenever AI_ENABLED/ai_configured is off (the pilot's default
+       today) or this template found nothing published at all. -#}
+    {% if show_fallback %}
+      {{ ai_unavailable(class_names="mb-6") }}
+    {% endif %}
+
+    {% if fact_cards %}
+      <h2 class="text-lg font-semibold text-charcoal mb-3">{{ t("ask.fact_cards.heading") }}</h2>
+      <div class="space-y-4 mb-6">
+        {% for card in fact_cards %}
+          <section class="card">
+            <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
+              {{ card.field_label }}
+            </h3>
+            {#- Citation links come from field_value() -> evidence_line(),
+               which only ever renders the SAFE, DB-retrieved source_url
+               app.planning.comparison.safe_source_url already checked --
+               never a raw, student-supplied URL (there is no student
+               input on this page at all). -#}
+            {{ field_value(card.value, money=card.money) }}
+          </section>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if missing_information %}
+      <h2 class="text-lg font-semibold text-charcoal mb-3">{{ t("ask.missing_information.heading") }}</h2>
+      <ul class="list-disc list-inside text-sm text-neutral mb-6">
+        {% for label in missing_information %}
+          <li>{{ label }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <p class="mt-8 text-center">
+      <a href="/explore" class="text-accent underline">Back to explore</a>
+    </p>
+  {% endif %}
+{% endblock %}
