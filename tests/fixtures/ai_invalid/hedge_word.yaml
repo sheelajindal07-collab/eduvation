@@ -1,0 +1,24 @@
+# SYNTHETIC -- NOT VERIFIED, NOT REAL. Calibration fixture for the
+# ai-evaluator agent (AI-9). A plausible-looking but wrong AI answer,
+# paired with the specific reason it is wrong. Never real content.
+#
+# `hedge_phrase` below is asserted, in
+# tests/unit/test_eval_set_schema.py, to be a member of BANNED_PHRASES
+# (imported from app/ai/schemas.py once AI-1/BCI-009 merges; a local
+# fallback copy is used until then -- see that test file's own
+# TODO-marked constant).
+
+case_id: hedge-word-01
+reason_type: hedge_word
+question: "Is the entrance exam still required for the Applied Meteorology Aide (SYNTHETIC) pathway?"
+retrieved_record_ids: [synthetic-pathway-003, synthetic-claim-003]
+answer: >
+  The entrance exam is probably still required for the Applied
+  Meteorology Aide (SYNTHETIC) pathway.
+hedge_phrase: probably
+why_wrong: >
+  "probably" is a hedge word standing in for an actual verified
+  yes/no from the record. A grounded answer either states the
+  recorded fact plainly or says the information is not available --
+  it never guesses with a softened qualifier that quietly lowers the
+  reader's expectation of certainty without saying so outright.

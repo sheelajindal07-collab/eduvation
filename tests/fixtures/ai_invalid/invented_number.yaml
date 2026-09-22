@@ -1,0 +1,17 @@
+# SYNTHETIC -- NOT VERIFIED, NOT REAL. Calibration fixture for the
+# ai-evaluator agent (AI-9). A plausible-looking but wrong AI answer,
+# paired with the specific reason it is wrong. Never real content.
+
+case_id: invented-number-01
+reason_type: invented_number
+question: "What is the total course fee for the Cryo-Botany Technician (SYNTHETIC) diploma?"
+retrieved_record_ids: [synthetic-pathway-001, synthetic-claim-001]
+answer: >
+  The total course fee for the Cryo-Botany Technician (SYNTHETIC)
+  diploma is Rs 72,500.
+why_wrong: >
+  Rs 72,500 does not appear on synthetic-claim-001 or on any other
+  retrieved record -- it is a number the model invented that merely
+  looks plausible sitting next to a real citation. Correct behaviour
+  is to state only the exact figure present on a resolved claim, or
+  say the information is not available if none is.
