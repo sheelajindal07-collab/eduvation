@@ -5,6 +5,34 @@ never deleted.
 
 ---
 
+## 2026-09-22 — UI-7: timeline stage kinds, "Revise this scenario" never framed as a failure
+**Event:** `app/rules/timeline.py`'s `Stage` gains an optional `kind` field
+(`"required" | "optional" | "user_assumption"`) plus a `display_kind` property
+that falls back to the existing two-way `required` bool for every `Stage`
+built before this field existed — purely additive; `compute_timeline()` never
+reads it, so it can never change a total, and the JSON API's
+`StageIn`/`StageOut` (`app/api/timeline.py`) are untouched. The timeline
+calculator now shows each stage's kind as a text+icon badge (never colour
+alone) and adds "Revise this scenario": a second submit button that appends
+one bounded (max 6) "extra attempt" row, tagged `user_assumption`, styled and
+worded as a normal part of planning rather than a setback — no failure
+badge, no "you failed" language (`docs/UI.md`'s own explicit rule). The new
+row is already named the moment it's added, so it's a real stage — which
+means `compute_timeline`'s existing "any unknown duration makes the total
+unknown" rule already covers it correctly with no special-casing.
+**A real discrepancy found, not assumed:** the task card's premise was that
+`GET /timeline/view` already accepted `pathway_id` for pre-fill. It did not —
+that was a planned line in the pre-plan inventory that was never actually
+implemented. Added `pathway_id`/`pathway_name` as an optional, **display-only**
+pair (no database lookup — this module still has zero `Depends(get_db_client)`
+anywhere) rather than wiring a real lookup, since the card's own scope says
+"no data dependency" and no screen currently links here with a pathway
+context to test against. Wiring an actual caller (Compare or Requirements
+linking into the calculator with a real pathway) is a follow-up task's job.
+**Verified live:** `tests/unit` 968 → 981 passed; `tests/db` 574 passed, 8
+xfailed, 0 skipped, 0 failed (run twice — implementer's worktree and again
+against the shared stack after merge).
+
 ## 2026-09-22 — RULES-8: the eligibility engine now uses the rules registry, and invents the "rule_key" claim convention doing it
 **Event:** `GET /eligibility`'s `_criteria_from_claims` used to be the whole
 story — a generic claim-shape reader, never touching the Rules lane's own

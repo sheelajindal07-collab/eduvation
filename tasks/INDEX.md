@@ -89,7 +89,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] RULES-9 - Timeline seeding from stage claims (session 1 W3a, session 2 W3b)
 - [ ] UI-6 - Cost-assumption editing on Compare [W3b]
 - [x] SCOPE-4 - Currency-safe cost display [W3b] -- known follow-up: itemised fee_component:* claims with no legacy verified_charges claim show "Not available" on the display line while the total (correctly) uses the components; not carded yet
-- [ ] UI-7 - Timeline stage kinds and "Revise this scenario" [W3b]
+- [x] UI-7 - Timeline stage kinds and "Revise this scenario" [W3b] -- pathway_id/pathway_name are display-only context, not yet wired from any linking screen
 - [ ] RULES-16 - Requirements screen: DOB input, cycle label, "not checked here" list [W3b]
 - [ ] QA-7 - Mobile and desktop viewport e2e, full guest journey [W3b]
 - [ ] UI-15 - Owner phone walk-through and component-set freeze [W3, owner]

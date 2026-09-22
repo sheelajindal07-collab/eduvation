@@ -188,6 +188,18 @@ planted-string fixture) to actually catch something rather than
 passing vacuously. Nothing on the tree trips it today. `tests/unit`:
 968 passed.
 
+**`UI-7` merged** — the timeline calculator shows each stage's kind
+(required/optional/your-assumption) as a text+icon badge, and adds
+"Revise this scenario" (a bounded extra-attempt row, framed as a normal
+part of planning, never a failure). A real gap found along the way: the
+task card assumed `pathway_id` pre-fill already existed on this route —
+it didn't, so it's added now as display-only context (no DB lookup;
+nothing links here with a pathway yet, flagged as a follow-up). This
+unblocks **`RULES-9`** (timeline seeding from published stage claims —
+its other two dependencies, `RULES-1` and `UI-2`, were already done).
+`tests/unit`: 981 passed. `tests/db`: 574 passed, 8 xfailed, 0 skipped,
+0 failed.
+
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
 - `GET /compare?pathway_id=X&pathway_id=Y` — trust-labelled fields plus
