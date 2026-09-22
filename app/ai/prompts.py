@@ -6,8 +6,8 @@
 `TEMPLATE_REGISTRY` is the entire question surface for this pilot's
 two-pass pipeline: a student never types a question (`app.ai.schemas`'s
 `AskRequest` module docstring — "there is no `question`, `text`, `prompt`
-or `notes` field"), they pick one of these three fixed templates, and the
-server resolves whichever record(s) that template needs. Three templates,
+or `notes` field"), they pick one of these four fixed templates, and the
+server resolves whichever record(s) that template needs. Four templates,
 each declaring exactly one `PromptTemplateRequirement` it needs a record
 id for (per `app.ai.schemas.PromptTemplate`'s own docstring: "a template
 that needed two ids would be two templates"):
@@ -18,6 +18,21 @@ that needed two ids would be two templates"):
 - `eligibility_gap` needs a `claim_id` and is answered from
   `app.ai.retrieval.fetch_claim_record` — a single eligibility-shaped
   fact (e.g. `minimum_age`), read in isolation.
+- `next_steps` (AI-18, `tasks/BCI-021.md`) also needs a `pathway_id` and
+  is answered the exact same way `pathway_overview` is — the SAME
+  `fetch_pathway_records` call, the SAME two-pass selection/verification
+  over the pathway's generic per-field records, nothing new here. What
+  differs is entirely downstream, in `app/api/ask.py`'s wiring and the
+  new `app/ai/actions.py`: only when this template's own `Answer.status`
+  is `answered` does `app.ai.actions.next_step_actions_from_citations`
+  translate the surviving, model-selected-and-ordered `Answer.citations`
+  into actual next-action text, from a small fixed catalogue keyed by
+  claim field name — never from `Answer.sentences` (that field's generic
+  "field is value" phrasing, `app.ai.guards.fact_sentence_for_record`,
+  is simply unused for this template). See `app/ai/actions.py`'s own
+  module docstring for the full reasoning, including why a separate
+  `prompt_next_steps.py` was not needed: this template requires no new
+  prompt-building logic at all.
 
 Note what is deliberately NOT used: `PromptTemplateRequirement.career_id`
 and `.plan_id` are real enum members (`app/ai/schemas.py`), but no
@@ -31,7 +46,11 @@ this pipeline could retrieve. `app/ai/pipeline.py`'s own record-fetch
 dispatch still handles that requirement kind explicitly (returning no
 records, which degrades safely to `not_available`) rather than assuming
 it can never occur, but no template in THIS registry ever exercises that
-branch — documented here rather than silently left unreachable.
+branch — documented here rather than silently left unreachable. (AI-18's
+own `plan_id` query parameter on `GET /ask` is resolved to a `pathway_id`
+entirely in `app/api/ask.py`, BEFORE a `PromptTemplate` is ever involved
+— see that module's docstring — so `next_steps` itself still only ever
+declares `pathway_id` here, same as the other three.)
 
 ## The two prompt builders
 
@@ -97,6 +116,14 @@ TEMPLATE_REGISTRY: Final[PromptTemplateRegistry] = {
         id="eligibility_gap",
         label="What does this specific verified eligibility record state?",
         requires=PromptTemplateRequirement.claim_id,
+    ),
+    "next_steps": PromptTemplate(
+        id="next_steps",
+        label=(
+            "Which of these verified facts describes something the "
+            "student still needs to do next on this pathway?"
+        ),
+        requires=PromptTemplateRequirement.pathway_id,
     ),
 }
 

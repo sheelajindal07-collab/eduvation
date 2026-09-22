@@ -28,15 +28,54 @@ retrieved records ... never a blank chat box".
 
 `ASK_TEMPLATES` is the small, hardcoded, server-side list `docs/UI.md`
 requires ("fixed template ... never a blank chat box" — also the
-Tier-0/Tier-1 spend control from the national DPR §9): exactly the three
-ids the three existing `_ask.html` call sites already use —
-`cost_breakdown` (compare.html's cost card), `pathway_overview`
-(compare.html's pathway column) and `eligibility_gap`
-(requirements.html's eligibility line). `template_id` is always one of
-these three ids, never free text a student typed — the query string
-carries an id, never a question (`docs/CONTRACTS.md`: "Every personal
-input ... is POST-only"; a canned template id is not personal input, but
-it still never becomes a sentence).
+Tier-0/Tier-1 spend control from the national DPR §9): the three ids the
+three existing `_ask.html` call sites already use — `cost_breakdown`
+(compare.html's cost card), `pathway_overview` (compare.html's pathway
+column) and `eligibility_gap` (requirements.html's eligibility line) —
+plus `next_steps` (AI-18, `tasks/BCI-021.md`), which has no `_ask.html`
+call site yet (`app/web/ask_pages.py`/`app/web/templates/**` are outside
+this card's owned files). `template_id` is always one of these four ids,
+never free text a student typed — the query string carries an id, never
+a question (`docs/CONTRACTS.md`: "Every personal input ... is POST-only";
+a canned template id is not personal input, but it still never becomes a
+sentence).
+
+## AI-18: `next_steps` and `plan_id`
+
+`next_steps` is answered exactly like `pathway_overview` — same
+`_pipeline_answer()` call below, unchanged, over the same
+`fetch_pathway_records` per-field records — but its `AskTemplate.fields`
+is deliberately empty (`assemble_ask_answer()`'s deterministic fact-card
+baseline has nothing to show for it: "next actions" is not a field on
+any entity, it is derived, see `app/ai/actions.py`). When
+`ai_answer.status` is `AIAnswerStatus.answered`, `AskResponse.
+next_step_actions` is populated from `ai_answer.citations` via
+`app.ai.actions.next_step_actions_from_citations` — never from
+`ai_answer.sentences`, which this template leaves unused (its generic
+"field is value" phrasing is not action text — see that module's own
+docstring).
+
+`next_steps` accepts `pathway_id` exactly like the other three templates,
+OR a new `plan_id` query parameter naming a `saved_plans` row
+(`app/api/plans.py`, AUTH-5) to resolve to ITS `pathway_id` before the
+usual `entity_kind_and_id` resolution runs. Resolution reuses the exact
+ownership-check PATTERN `app/api/plans.py`'s own routes already use
+(e.g. `list_plan_actions`): query `saved_plans` through the SAME
+already-request-scoped `db` this route receives from `get_db_client`
+(guest anon-key client by default, a signed-in caller's own JWT-scoped
+client when a bearer token is present — identical shape to
+`app.api.deps.AuthedSession.client`) and let `saved_plans_own_row` RLS
+(`db/migrations/0002_saved_plans.sql`, tightened by 0004) decide what is
+visible — never a second, service-role read path. A guest's anon client
+sees no `saved_plans` row at all (creating one requires sign-in,
+`app/api/plans.py`'s own docstring); another student's JWT-scoped client
+sees only THEIR OWN rows. Either case, or a plan id that does not exist
+at all, or one that is not even UUID-shaped, resolves identically —
+`_pathway_id_for_plan` below 404s with the same deliberately ambiguous
+"Plan not found." `app/api/plans.py` already uses, never distinguishing
+"no such plan" from "not yours" (that module's own precedent, security
+review 2026-09-19/2026-09-21: an oracle that told them apart would leak
+which plan ids exist).
 
 ## Router registration (see this card's own completion report)
 
@@ -70,6 +109,7 @@ from pydantic import BaseModel
 from supabase import Client
 
 from app.ai import pipeline as ai_pipeline
+from app.ai.actions import NextStepAction, next_step_actions_from_citations
 from app.ai.budget import AIRequestBudget, default_budget
 from app.ai.gemini_provider import GeminiNotConfiguredError, GeminiProvider
 from app.ai.schemas import AIAnswerStatus, AskRequest
@@ -127,6 +167,20 @@ ASK_TEMPLATES: dict[str, AskTemplate] = {
         # requirements.html's own badges mean.
         fields=GENERIC_CRITERION_FIELDS,
     ),
+    "next_steps": AskTemplate(
+        id="next_steps",
+        # No i18n key added for this card (app/i18n/*.json is outside
+        # this card's owned files) -- app.i18n.translate()/lookup()
+        # already fall back to returning the bare key itself when a
+        # catalogue entry is missing (app/i18n/__init__.py), so this is
+        # a safe, non-crashing placeholder, not a new failure mode.
+        prompt_key="askbcion.prompt.next_steps",
+        # Deliberately empty -- see module docstring's "AI-18" section.
+        # `assemble_ask_answer()` below iterates `template.fields`, so an
+        # empty tuple degrades to zero fact cards / zero missing labels,
+        # never an error.
+        fields=(),
+    ),
 }
 
 _MONEY_TEMPLATE_IDS = frozenset({"cost_breakdown"})
@@ -182,6 +236,23 @@ def entity_kind_and_id(pathway_id: str | None, career_id: str | None) -> tuple[s
         return None
     entity_kind = "pathway" if pathway_id else "career"
     return entity_kind, entity_id
+
+
+def _pathway_id_for_plan(db: Client, plan_id: str) -> str:
+    """AI-18: `next_steps`'s `plan_id` -> its `pathway_id` — see this
+    module's own docstring's "AI-18: `next_steps` and `plan_id`" section
+    for the full ownership-check reasoning. Raises `HTTPException(404)`
+    for every case that must look identical to the caller: a malformed
+    id, a nonexistent plan, a guest (who owns no `saved_plans` row at
+    all), or another identity's plan — never a 422 that would let a
+    caller distinguish "wrong id shape" from "not yours"."""
+    if not _looks_like_a_uuid(plan_id):
+        raise HTTPException(status_code=404, detail="Plan not found.")
+    result = db.table("saved_plans").select("pathway_id").eq("id", plan_id).execute()
+    rows = cast("list[dict[str, Any]]", result.data)
+    if not rows:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+    return cast("str", rows[0]["pathway_id"])
 
 
 def _row_to_claim(row: dict[str, Any]) -> Claim:
@@ -397,6 +468,18 @@ class AskFactCardOut(BaseModel):
     value: FieldValueOut
 
 
+class NextStepActionOut(BaseModel):
+    """One `app.ai.actions.NextStepAction`, JSON-shaped — AI-18. Always
+    present as a key on `AskResponse` (possibly empty), same
+    always-present-possibly-empty convention `ai_sentences`/`ai_citations`
+    already use, never omitted for a non-`next_steps` template."""
+
+    text: str
+    claim_id: str
+    source_authority: str | None
+    source_url: str | None
+
+
 class AskResponse(BaseModel):
     template_id: str
     prompt: str
@@ -425,6 +508,12 @@ class AskResponse(BaseModel):
     """Structured citations for `ai_sentences`, same order, same
     "answered-only" rule -- plain data (`app.ai.guards.citation_for_record`'s
     own shape), never prose."""
+    next_step_actions: list[NextStepActionOut]
+    """AI-18. Populated ONLY for `template_id == "next_steps"` and only
+    when the additive AI layer returned `AIAnswerStatus.answered` -- same
+    "answered-only" rule as `ai_sentences`/`ai_citations` above, plus the
+    template check (this module's own docstring's "AI-18" section). Empty
+    for every other template, always, never omitted."""
 
 
 @router.get("/ask", response_model=AskResponse)
@@ -432,16 +521,27 @@ def ask(
     template: str = Query(...),
     pathway_id: str | None = Query(default=None),
     career_id: str | None = Query(default=None),
+    plan_id: str | None = Query(default=None),
     db: Client = Depends(get_db_client),
 ) -> AskResponse:
     """`?template=<id>&pathway_id=<uuid>` (or `&career_id=<uuid>` instead
-    of `pathway_id`) — see module docstring. An unknown `template_id`
-    404s with a fixed, generic message that never reflects the raw value
-    back (avoid any reflected-value surface) — the id is deliberately
-    left out of `detail` entirely, not merely escaped."""
+    of `pathway_id`, or -- `next_steps` only -- `&plan_id=<uuid>` instead
+    of `pathway_id`; see module docstring's "AI-18" section) — see module
+    docstring. An unknown `template_id` 404s with a fixed, generic message
+    that never reflects the raw value back (avoid any reflected-value
+    surface) — the id is deliberately left out of `detail` entirely, not
+    merely escaped."""
     ask_template = ASK_TEMPLATES.get(template)
     if ask_template is None:
         raise HTTPException(status_code=404, detail="We don't recognise that question.")
+
+    if ask_template.id == "next_steps" and plan_id is not None and pathway_id is None:
+        # AI-18: resolve BEFORE entity_kind_and_id runs, so a plan that
+        # does not resolve 404s here rather than falling through to the
+        # generic 422 the other three templates already use for "neither
+        # id given". Only ever consulted for next_steps -- see module
+        # docstring; the other three templates never see a plan_id.
+        pathway_id = _pathway_id_for_plan(db, plan_id)
 
     resolved = entity_kind_and_id(pathway_id, career_id)
     if resolved is None:
@@ -458,20 +558,37 @@ def ask(
     ai_answer = _pipeline_answer(
         db, ask_template, entity_kind=entity_kind, entity_id=entity_id, as_of=as_of
     )
+    next_step_action_objs: tuple[NextStepAction, ...] = ()
     if ai_answer is not None and ai_answer.status == AIAnswerStatus.answered:
         ai_sentences = list(ai_answer.sentences)
         ai_citations = list(ai_answer.citations)
+        if ask_template.id == "next_steps":
+            # AI-18: the model's role was only to select and order which
+            # of the pathway's verified facts survive two-pass grounding
+            # (ai_answer.citations, unchanged pipeline output) -- turning
+            # a surviving citation into actual action text is entirely
+            # app.ai.actions's job, never this route's and never the
+            # model's (see that module's own docstring).
+            next_step_action_objs = next_step_actions_from_citations(ai_answer.citations)
     else:
         # Every other status (including "the pipeline was never called at
         # all", ai_answer is None) -- render nothing extra, per this
         # module's docstring: the response is exactly what the AI-off
-        # path already produces, plus these two always-present, possibly
+        # path already produces, plus these always-present, possibly
         # -empty lists.
         ai_sentences = []
         ai_citations = []
 
     settings = get_settings()
-    show_fallback = not (settings.ai_enabled and settings.ai_configured) or not answer.fact_cards
+    # `next_step_action_objs` is always `()` for the three original
+    # templates (it is only ever assigned for `next_steps`, above), so
+    # this is exactly the original expression for them -- AI-18 adds a
+    # second way for a template to have "something to show" without
+    # changing what that meant for pathway_overview/cost_breakdown/
+    # eligibility_gap.
+    show_fallback = not (settings.ai_enabled and settings.ai_configured) or not (
+        answer.fact_cards or next_step_action_objs
+    )
 
     return AskResponse(
         template_id=ask_template.id,
@@ -494,4 +611,13 @@ def ask(
         missing_information=list(answer.missing_field_labels),
         ai_sentences=ai_sentences,
         ai_citations=ai_citations,
+        next_step_actions=[
+            NextStepActionOut(
+                text=action.text,
+                claim_id=action.claim_id,
+                source_authority=action.source_authority,
+                source_url=action.source_url,
+            )
+            for action in next_step_action_objs
+        ],
     )
