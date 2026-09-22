@@ -23,13 +23,40 @@ from supabase import Client
 
 from app.api.plans import MAX_EXPENSES, MAX_NOTES_LENGTH
 from app.main import app
-from tests.db.conftest import run_name
+from tests.db.conftest import admit_student, run_name
 
 http = TestClient(app)
 
 
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+# CONSENT-4 (0012): every test in this file exercises a real, RLS-scoped
+# write to saved_plans, which now also requires is_admitted(auth.uid()).
+# Overriding conftest.py's `student_a`/`student_b` fixtures HERE (a
+# documented pytest pattern: a fixture may request another fixture of the
+# SAME NAME from a higher scope) admits both once, centrally, instead of
+# repeating `admit_student()` in every one of this file's test functions.
+# See conftest.py's `admit_student()` for why this is needed at all —
+# `is_admitted()` fails CLOSED for a user with no `student_accounts` row,
+# unlike `account_active()`, which fails open for that same case.
+@pytest.fixture
+def student_a(
+    student_a: tuple[str, Client], admin_client: Client
+) -> tuple[str, Client]:
+    user_id, client = student_a
+    admit_student(admin_client, user_id)
+    return user_id, client
+
+
+@pytest.fixture
+def student_b(
+    student_b: tuple[str, Client], admin_client: Client
+) -> tuple[str, Client]:
+    user_id, client = student_b
+    admit_student(admin_client, user_id)
+    return user_id, client
 
 
 @pytest.fixture
@@ -297,12 +324,25 @@ class TestCrossStudentIsolation:
     def test_a_guest_sees_no_actions_at_all(
         self, student_a: tuple[str, Client], guest_client: Client, pathways: list[str]
     ) -> None:
+        """Migration-owner fix round, 0014_account_active_grant_fix.sql: a
+        guest's SELECT on `plan_actions` is now refused at the GRANT level
+        (42501 'permission denied for function account_active'), not
+        merely filtered to an empty result -- `plan_actions_own_row`'s
+        USING clause references `account_active(auth.uid())` via its
+        `saved_plans` EXISTS check, and `anon` lost EXECUTE on that
+        function entirely (see that migration's own header for the
+        live-verified cross-user-oracle finding this closes;
+        tests/db/access_matrix.py's `plan_actions`/SELECT/`guest` cell
+        documents the same shape). A stronger 'zero rows visible' than
+        before, not a weaker one."""
         a_id, a_client = student_a
         plan_id = _save(a_client, a_id, pathways[0])
         a_client.table("plan_actions").insert(
             {"plan_id": plan_id, "action_key": "check_entry_requirements"}
         ).execute()
-        assert guest_client.table("plan_actions").select("*").execute().data == []
+        with pytest.raises(APIError) as exc_info:
+            guest_client.table("plan_actions").select("*").execute()
+        assert exc_info.value.code == "42501"
 
     def test_a_reviewer_sees_no_actions_either(
         self,

@@ -3,10 +3,20 @@ consent request, and enforcing it at sign-in. Backs
 `db/migrations/0004_guardian_consent.sql`; see that file's own
 docstring for the schema/RLS reasoning this module relies on.
 
-Used by `app/api/auth.py`'s `sign_up()` (creates the request immediately
-when a session is available) and `authenticate()` (the actual
-enforcement point — see `enforce_guardian_consent_gate`'s docstring for
-exactly where and why).
+Also holds `ensure_active_student_account` (CONSENT-4 admission-axis
+companion, added by adversarial review, this session) — the ADULT
+counterpart to `create_guardian_consent_request` below: backs
+`db/migrations/0012_admission_axis.sql`'s `is_admitted()`/
+`redeem_invite()`, which both need a `student_accounts` row to exist at
+all for an account to ever become admitted.
+
+Used by `app/api/auth.py`'s `sign_up()` (creates the guardian-consent
+request immediately when a session is available for a minor, or the
+adult admission-axis row immediately for an adult) and `authenticate()`
+(the actual guardian-consent enforcement point — see
+`enforce_guardian_consent_gate`'s docstring for exactly where and why —
+which also bootstraps the adult admission-axis row on first sign-in for
+an account whose sign-up returned no session).
 
 ## Where "under 18" is decided, and the one deliberately-trusted source
 `date_of_birth` is self-declared by the student at sign-up — docs/
@@ -242,6 +252,58 @@ def create_guardian_consent_request(
     sender.send(to=guardian_email, subject=subject, body=body)
 
 
+def ensure_active_student_account(
+    client: Client, *, student_id: str, date_of_birth: date
+) -> None:
+    """Creates the `student_accounts` row for an ADULT account
+    (`account_status='active'` from the first moment it exists) — never
+    called for a self-declared minor, whose own row is created as
+    `pending_guardian_consent` by `create_guardian_consent_request` above.
+
+    **Why this exists (adversarial review finding, this session, HIGH,
+    live-reproduced against db/migrations/0012_admission_axis.sql):**
+    `is_admitted()`/`redeem_invite()` (0011) both require a
+    `student_accounts` row to exist at all — `redeem_invite()` reads
+    `account_status` for the caller's own row, and NULL (no row) makes
+    `v_account_active is not true` true, so it returns `false` before
+    ever touching a real invite code. Before this function existed,
+    NOTHING in this codebase ever created that row for an adult (only a
+    self-declared minor's sign-up did, via `create_guardian_consent_request`)
+    — meaning every real adult account, forever, had no path to becoming
+    admitted no matter how valid an invite code they held. `admitted_at`
+    itself is never set here (that stays `redeem_invite()`'s job alone,
+    per docs/CONSENT.md section 3) — this only creates the row
+    `redeem_invite()` needs to have something to check and stamp.
+
+    Best-effort and idempotent, matching `_migrate_pending_plan`'s own
+    "never fail the caller's real request over this" convention: a
+    duplicate call (e.g. sign-up already created it, and a later sign-in
+    bootstrap races or repeats) is expected, not an error — caught by the
+    same unique-violation code `create_guardian_consent_request` already
+    handles for `guardian_consents`. `student_accounts` has an own-row
+    SELECT policy (0004), unlike `guardian_consents`, so this can be a
+    plain `.insert()` — no RPC/RETURNING-through-REST problem to route
+    around here."""
+    try:
+        client.table("student_accounts").insert(
+            {
+                "id": student_id,
+                "date_of_birth": date_of_birth.isoformat(),
+                "account_status": "active",
+            }
+        ).execute()
+    except APIError as exc:
+        if exc.code != _UNIQUE_VIOLATION:
+            logger.warning(
+                "ensure_active_student_account failed for student_id=%s: %s "
+                "(sign-up/sign-in still succeeds; this account will remain "
+                "unable to redeem an invite code until this row exists).",
+                student_id,
+                exc,
+                exc_info=True,
+            )
+
+
 _PENDING_MESSAGE = (
     "This account is waiting on a guardian's confirmation before it can "
     "be used. Ask your guardian to check the email you gave at sign-up "
@@ -329,6 +391,18 @@ def enforce_guardian_consent_gate(
         return
 
     if not is_minor(date_of_birth, as_of=date.today()):
+        # CONSENT-4 admission-axis bootstrap (adversarial review finding,
+        # this session): this is the FIRST successful sign-in for an
+        # adult whose sign-up never returned a session (Supabase's own
+        # email-confirmation setting withheld one — see
+        # app.api.auth.sign_up's `result.session is None` branch), so
+        # `ensure_active_student_account` was never called at sign-up
+        # time either. Bootstrap it here, the same "first sign-in creates
+        # the row" pattern this function already uses for a minor's
+        # `guardian_email` below — otherwise this account would have no
+        # `student_accounts` row until some OTHER sign-in path created
+        # one, and `redeem_invite()` (0011) has nothing to admit.
+        ensure_active_student_account(client, student_id=user.id, date_of_birth=date_of_birth)
         return
 
     guardian_email = metadata.get("guardian_email")

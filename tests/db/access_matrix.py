@@ -228,6 +228,17 @@ TABLE_TARGETS: dict[str, str] = {
     "guest_sessions": "a guest session row (unreachable by any API role, so never actually seeded)",
     "guest_plans": "a guest plan row (unreachable by any API role, so never actually seeded)",
     "_schema_migrations": "the migration-bookkeeping row for 0001_init.sql",
+    "consents": (
+        "a withdrawal consent row for student A (student_id = student A, action='withdrawn')"
+    ),
+    "pilot_invites": (
+        "an unused, unexpired invite row (unreachable by any API role directly, so never "
+        "actually a target any role can see)"
+    ),
+    "safeguarding_staff": (
+        "the safeguarding-staff identity row of a throwaway user who is NOT the acting role"
+    ),
+    "safeguarding_flags": "a flag row concerning student A, raised under a placeholder category",
 }
 
 
@@ -489,15 +500,28 @@ _STUDENT_VAULT: tuple[Cell, ...] = (
     *_row(
         "student_profiles",
         SELECT,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=ALLOW,
         student_b=EMPTY,
         reviewer=EMPTY,
         why=(
-            "0004's student_profiles_own_row: `using (auth.uid() = id and "
-            "account_active(auth.uid()))`. Student A owns the row; a guest has no auth.uid() "
-            "at all; student B and the reviewer are not A. docs/SECURITY.md: the reviewer "
-            "role governs the knowledge base, never the vault."
+            "0012's student_profiles_select_own (split off the old `for all` "
+            "student_profiles_own_row by CONSENT-4 — see 0012's own header for why: `for "
+            "all` cannot be narrowed to 'write only', so gating writes on is_admitted() "
+            "without touching read meant splitting SELECT into its own, unchanged policy): "
+            "`using (auth.uid() = id and account_active(auth.uid()))`. Student A owns the "
+            "row; student B and the reviewer are not A, so their read matches nothing. "
+            "`guest` is DENY_ERROR, not DENY_EMPTY (migration-owner fix round, "
+            "0014_account_active_grant_fix.sql): account_active() — pre-existing on "
+            "already-merged 0004, closed here for a cross-user identity-oracle finding, see "
+            "that migration's own header — lost its EXECUTE grant from `anon`. Postgres "
+            "checks EXECUTE privilege on every function referenced anywhere in a policy's "
+            "USING/WITH CHECK at query-analysis time, regardless of whether the row-matching "
+            "would have short-circuited to zero rows at runtime — same shape as "
+            "is_admitted()'s own DENY_ERROR cells elsewhere in this table. `authenticated` "
+            "(student_b, reviewer) keeps its own EXECUTE grant, so their read still just "
+            "matches nothing, no error. docs/SECURITY.md: the reviewer role governs the "
+            "knowledge base, never the vault."
         ),
     ),
     *_row(
@@ -508,43 +532,65 @@ _STUDENT_VAULT: tuple[Cell, ...] = (
         student_b=ERROR,
         reviewer=ERROR,
         why=(
-            "Same policy's WITH CHECK. The row inserted is always OWNED BY A (id = student "
-            "A's user id), so B and the reviewer are attempting to create a profile for "
-            "somebody else and are refused (42501)."
+            "0012's student_profiles_insert_own: `with check (auth.uid() = id and "
+            "account_active(auth.uid()) and is_admitted(auth.uid()))` — CONSENT-4 ANDs "
+            "is_admitted() into the write side of the old student_profiles_own_row policy "
+            "(docs/CONSENT.md section 7, 'the gap CONSENT-4 must close'). Student A's ALLOW "
+            "here depends on the access-matrix fixture seeding her an ACTIVE, ADMITTED "
+            "student_accounts row first (tests/db/test_access_matrix.py's "
+            "`_Seeds.admitted_account_id()`) — without that seed this cell would now be "
+            "DENY, which is exactly the regression test_admission.py's own dedicated, "
+            "NOT-YET-ADMITTED student proves separately. B and the reviewer are refused "
+            "regardless (42501) because the row inserted is always OWNED BY A."
         ),
     ),
     *_row(
         "student_profiles",
         UPDATE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=ALLOW,
         student_b=EMPTY,
         reviewer=EMPTY,
         why=(
-            "Same policy's USING clause: A's row is invisible to everyone else, so their "
-            "update matches nothing."
+            "0012's student_profiles_update_own: same is_admitted()-ANDed shape as INSERT, "
+            "in both the USING and WITH CHECK clauses. A's row is invisible to everyone "
+            "else, so their update matches nothing. `guest` is DENY_ERROR, not DENY_EMPTY "
+            "(adversarial-review fix, this session): Postgres checks EXECUTE privilege on "
+            "every function referenced anywhere in a policy's USING/WITH CHECK — including "
+            "is_admitted(), now revoked from `anon` (0012's own comment on that function) — "
+            "at query-analysis time, regardless of whether the row-matching short-circuits "
+            "to zero rows at runtime. `authenticated` (student_b, reviewer) keeps its own "
+            "EXECUTE grant, so their update still just matches nothing, no error."
         ),
     ),
     *_row(
         "student_profiles",
         DELETE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=ALLOW,
         student_b=EMPTY,
         reviewer=EMPTY,
-        why="Same policy, DELETE side — `for all` covers it.",
+        why=(
+            "0012's student_profiles_delete_own — same is_admitted()-ANDed USING clause. "
+            "`guest` is DENY_ERROR for the same reason as the UPDATE row directly above — "
+            "see that row's `why` for the full reasoning."
+        ),
     ),
     *_row(
         "saved_plans",
         SELECT,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=ALLOW,
         student_b=EMPTY,
         reviewer=EMPTY,
         why=(
-            "0004's saved_plans_own_row (originally 0002): `using (auth.uid() = student_id "
-            "and account_active(auth.uid()))`. A saved plan is exactly as private as the "
-            "profile it hangs off."
+            "0012's saved_plans_select_own (split off the old `for all` saved_plans_own_row "
+            "by CONSENT-4, same reasoning as student_profiles_select_own above): `using "
+            "(auth.uid() = student_id and account_active(auth.uid()))`. A saved plan is "
+            "exactly as private as the profile it hangs off. `guest` is DENY_ERROR, not "
+            "DENY_EMPTY — same 0014_account_active_grant_fix.sql reasoning as "
+            "student_profiles_select_own's cell directly above (account_active() lost its "
+            "EXECUTE grant from `anon`)."
         ),
     ),
     *_row(
@@ -554,37 +600,55 @@ _STUDENT_VAULT: tuple[Cell, ...] = (
         student_a=ALLOW,
         student_b=ERROR,
         reviewer=ERROR,
-        why="Same policy's WITH CHECK; the plan inserted always carries student_id = student A.",
+        why=(
+            "0012's saved_plans_insert_own: `with check (auth.uid() = student_id and "
+            "account_active(auth.uid()) and is_admitted(auth.uid()))` — the other half of "
+            "'the gap CONSENT-4 must close'. Same admitted-fixture dependency as "
+            "student_profiles' INSERT row above."
+        ),
     ),
     *_row(
         "saved_plans",
         UPDATE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=ALLOW,
         student_b=EMPTY,
         reviewer=EMPTY,
-        why="Same policy's USING clause.",
+        why=(
+            "0012's saved_plans_update_own — same is_admitted()-ANDed USING/WITH CHECK. "
+            "`guest` is DENY_ERROR — same adversarial-review reasoning as "
+            "student_profiles' UPDATE row above (EXECUTE on is_admitted() revoked from "
+            "`anon`, checked at query-analysis time regardless of row match)."
+        ),
     ),
     *_row(
         "saved_plans",
         DELETE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=ALLOW,
         student_b=EMPTY,
         reviewer=EMPTY,
-        why="Same policy, DELETE side.",
+        why=(
+            "0012's saved_plans_delete_own — same is_admitted()-ANDed USING clause. `guest` "
+            "is DENY_ERROR for the same reason as the UPDATE row directly above."
+        ),
     ),
     *_row(
         "plan_actions",
         SELECT,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=ALLOW,
         student_b=EMPTY,
         reviewer=EMPTY,
         why=(
             "0010 plan_actions_own_row: ownership is inherited from the parent plan — "
             "`exists (select 1 from saved_plans p where p.id = plan_actions.plan_id and "
-            "p.student_id = auth.uid() and account_active(auth.uid()))`."
+            "p.student_id = auth.uid() and account_active(auth.uid()))`. `guest` is "
+            "DENY_ERROR, not DENY_EMPTY (0014_account_active_grant_fix.sql: account_active() "
+            "lost its EXECUTE grant from `anon` — same query-analysis-time reasoning as "
+            "student_profiles_select_own/saved_plans_select_own above). `authenticated` "
+            "(student_b, reviewer) keeps its own EXECUTE grant, so their read still just "
+            "matches nothing, no error."
         ),
     ),
     *_row(
@@ -594,25 +658,36 @@ _STUDENT_VAULT: tuple[Cell, ...] = (
         student_a=ALLOW,
         student_b=ERROR,
         reviewer=ERROR,
-        why="Same policy's WITH CHECK; the action inserted always hangs off student A's plan.",
+        why=(
+            "Same policy's WITH CHECK; the action inserted always hangs off student A's "
+            "plan. `guest` was ALREADY DENY_ERROR before 0014 (a WITH CHECK violation is "
+            "always a 42501, never an empty result — there is no 'insert zero rows' "
+            "outcome), so account_active()'s grant change is a no-op for this cell."
+        ),
     ),
     *_row(
         "plan_actions",
         UPDATE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=ALLOW,
         student_b=EMPTY,
         reviewer=EMPTY,
-        why="Same policy's USING clause.",
+        why=(
+            "Same policy's USING clause. `guest` is DENY_ERROR — same "
+            "0014_account_active_grant_fix.sql reasoning as the SELECT cell above."
+        ),
     ),
     *_row(
         "plan_actions",
         DELETE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=ALLOW,
         student_b=EMPTY,
         reviewer=EMPTY,
-        why="Same policy, DELETE side.",
+        why=(
+            "Same policy, DELETE side. `guest` is DENY_ERROR — same "
+            "0014_account_active_grant_fix.sql reasoning as the SELECT/UPDATE cells above."
+        ),
     ),
 )
 
@@ -788,6 +863,197 @@ _SEALED: tuple[Cell, ...] = (
             "application tables."
         ),
     ),
+    *_no_api_access(
+        "pilot_invites",
+        why=(
+            "0012: RLS enabled with NO policy, AND `revoke all on table pilot_invites from "
+            "anon, authenticated` — the same belt-and-suspenders shape 0007/0009 use for "
+            "app_settings/guest_sessions/guest_plans, chosen here because docs/CONSENT.md "
+            "section 7 treats a live invite code as 'credential-like': there is no "
+            "legitimate direct read (even filtered) or write of this table by any client "
+            "role. invite_is_valid()/redeem_invite() are SECURITY DEFINER and bypass this "
+            "entirely via their owner's privileges, exactly as confirm_guardian_consent() "
+            "(0004) bypasses guardian_consents' own lack of a SELECT policy."
+        ),
+    ),
+)
+
+
+# =====================================================================
+# CONSENT-4 — the admission axis's own tables + safeguarding
+# (db/migrations/0012_admission_axis.sql, 0013_safeguarding_schema.sql)
+# =====================================================================
+_CONSENT_4: tuple[Cell, ...] = (
+    *_row(
+        "consents",
+        SELECT,
+        guest=EMPTY,
+        student_a=ALLOW,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why=(
+            "0013 consents_select_own: `for select using (auth.uid() = student_id)`. "
+            "docs/CONSENT.md section 6: students read their OWN consent history; 'other "
+            "people's consents' — student B's and the reviewer's read of student A's "
+            "withdrawal row — are refused, and the reviewer role has no override here any "
+            "more than it does over the rest of the vault."
+        ),
+    ),
+    *_row(
+        "consents",
+        INSERT,
+        guest=ERROR,
+        student_a=ERROR,
+        student_b=ERROR,
+        reviewer=ERROR,
+        why=(
+            "0013 adds no INSERT policy at all, deliberately — not even for the owning "
+            "student: 'one row per grant or withdrawal' (append-only) is enforced by there "
+            "being NO client-reachable write path whatsoever, the same way "
+            "guardian_consents' token column is protected by omission rather than a check. "
+            "The only writer is withdraw_account(), a SECURITY DEFINER function that "
+            "bypasses RLS via its owner's privileges, not a grant — so even student A, "
+            "inserting a row for themselves, is refused (42501) through the ordinary API."
+        ),
+    ),
+    *_row(
+        "consents",
+        UPDATE,
+        guest=EMPTY,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why=(
+            "0013 adds no UPDATE policy (a FOR SELECT policy does not extend to UPDATE's "
+            "own row-visibility check) — same 'no applicable policy' shape "
+            "guardian_consents' UPDATE cells already document: the row is filtered to "
+            "nothing for this operation, so the update matches zero rows rather than "
+            "erroring. Append-only in practice: nothing can ever change a consents row "
+            "once written."
+        ),
+    ),
+    *_row(
+        "consents",
+        DELETE,
+        guest=EMPTY,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why="0013, DELETE side — same reasoning as UPDATE above.",
+    ),
+    *_row(
+        "safeguarding_staff",
+        SELECT,
+        guest=EMPTY,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why=(
+            "0013: RLS enabled with NO policy at all, mirroring `reviewers` (0001) exactly "
+            "— 'only is_safeguarding_staff() touches it'. Zero matching policies means zero "
+            "rows for every role, including a role that happens to itself be safeguarding "
+            "staff reading someone ELSE's row (this matrix's four canonical roles never "
+            "include a safeguarding-staff member, the same scope limit already true for "
+            "`reviewers`' own target row)."
+        ),
+    ),
+    *_row(
+        "safeguarding_staff",
+        INSERT,
+        guest=ERROR,
+        student_a=ERROR,
+        student_b=ERROR,
+        reviewer=ERROR,
+        why=(
+            "0013, no policy: an INSERT with no permissive policy fails the RLS check "
+            "outright (42501). Self-promotion to safeguarding staff is impossible through "
+            "the API — only the service role can add a row, same as `reviewers`."
+        ),
+    ),
+    *_row(
+        "safeguarding_staff",
+        UPDATE,
+        guest=EMPTY,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why="0013, no policy: nothing is visible to update.",
+    ),
+    *_row(
+        "safeguarding_staff",
+        DELETE,
+        guest=EMPTY,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why="0013, no policy: nothing is visible to delete.",
+    ),
+    *_row(
+        "safeguarding_flags",
+        SELECT,
+        guest=ERROR,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why=(
+            "0013 safeguarding_flags_select_staff: `for select using "
+            "(is_safeguarding_staff())`. Staff-only, docs/CONSENT.md section 6: 'students "
+            "AND content reviewers read ZERO rows of safeguarding_flags'. The target row "
+            "concerns student A herself, and even SHE is denied — this is deliberately "
+            "narrower than the rest of the student vault (student_profiles/saved_plans), "
+            "where the OWNING student is always the one role that IS allowed. `guest` is "
+            "DENY_ERROR, not DENY_EMPTY, since the adversarial-review fix that closed "
+            "is_safeguarding_staff()'s anon-key admission/staff oracle (0013's own comment "
+            "on that function) revoked its EXECUTE grant from `anon` entirely — an anon "
+            "caller now gets 'permission denied for function is_safeguarding_staff' (42501) "
+            "evaluating this policy's USING clause, a stronger deny than the previous "
+            "'filtered to zero rows'. `authenticated` (student_a/b, reviewer) keeps its own "
+            "EXECUTE grant, so their RLS check still just filters to zero rows as before."
+        ),
+    ),
+    *_row(
+        "safeguarding_flags",
+        INSERT,
+        guest=ERROR,
+        student_a=ERROR,
+        student_b=ERROR,
+        reviewer=ERROR,
+        why=(
+            "0013 adds no INSERT policy: the Phase-2 distress-keyword detection logic that "
+            "will someday write these rows is not built by this task (docs/CONSENT.md "
+            "section 6) and gets its own write path when it exists. No permissive policy "
+            "means 42501 for every role today, including a safeguarding-staff member."
+        ),
+    ),
+    *_row(
+        "safeguarding_flags",
+        UPDATE,
+        guest=ERROR,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why=(
+            "0013, no UPDATE policy — same 'FOR SELECT does not extend to UPDATE' reasoning "
+            "as consents above: filtered to zero rows, not an error for `authenticated` "
+            "roles (student_a/b, reviewer). `guest` is the one exception, DENY_ERROR not "
+            "DENY_EMPTY (adversarial-review fix, this session, live-observed): PostgREST's "
+            "UPDATE still touches this table's own (only) policy, "
+            "safeguarding_flags_select_staff — `using (is_safeguarding_staff())` — while "
+            "planning the request, and `anon` lost EXECUTE on is_safeguarding_staff() "
+            "entirely (0013's own comment on that function), so the guest role gets a flat "
+            "42501 'permission denied for function' rather than reaching the 'no UPDATE "
+            "policy' zero-match case at all."
+        ),
+    ),
+    *_row(
+        "safeguarding_flags",
+        DELETE,
+        guest=EMPTY,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why="0013, DELETE side — same reasoning as UPDATE above.",
+    ),
 )
 
 
@@ -831,6 +1097,7 @@ MATRIX: tuple[Cell, ...] = (
     *_REVIEWERS,
     *_STUDENT_VAULT,
     *_CONSENT_GATE,
+    *_CONSENT_4,
     *_SEALED,
     *_UNBUILT,
 )
