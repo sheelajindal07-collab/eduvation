@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{# UI-3 -- the front door. Three plain starting choices, zero JavaScript,
+   no account wall: a guest can reach Explore, the quick-start flow, or
+   just browse, all from one screen (docs/UI.md "Guest sessions"). #}
+{% from "_states.html" import alert %}
+{% block title %}Find your next step &mdash; BCION Lite{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-2">Find your next step</h1>
+  <p class="text-neutral mb-6">
+    Pick whichever fits you right now. You can change your mind at any time,
+    and nothing here needs an account.
+  </p>
+
+  <div class="space-y-6">
+    <section class="card">
+      <h2 class="text-lg font-semibold text-charcoal mb-2">I have a career in mind</h2>
+      <p class="text-sm text-neutral mb-3">
+        Go straight to it in the full list.
+      </p>
+      {% if careers %}
+        <ul class="space-y-1">
+          {% for career in careers %}
+            <li>
+              <a href="/explore#career-{{ career.id }}" class="text-accent underline">
+                {{ career.name }}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        {% call alert("No careers published yet.", variant="neutral") %}
+          <a href="/explore" class="underline">Browse Explore instead</a>.
+        {% endcall %}
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2 class="text-lg font-semibold text-charcoal mb-2">I'm not sure yet</h2>
+      <p class="text-sm text-neutral mb-3">
+        Answer a few quick questions. Skip any question you'd rather not answer.
+      </p>
+      <a href="/start" class="btn-primary">Start</a>
+    </section>
+
+    <section class="card">
+      <h2 class="text-lg font-semibold text-charcoal mb-2">Just show me everything</h2>
+      <p class="text-sm text-neutral mb-3">
+        Browse every published career and pathway yourself.
+      </p>
+      <a href="/explore" class="btn-secondary">Browse Explore</a>
+    </section>
+  </div>
+{% endblock %}

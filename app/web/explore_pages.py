@@ -1,5 +1,10 @@
-"""GET / and GET /explore — docs/UI.md "Career explorer" screen (UI-2's
-split of the former monolithic `app/web/pages.py`).
+"""GET /explore — docs/UI.md "Career explorer" screen (UI-2's split of
+the former monolithic `app/web/pages.py`).
+
+UI-3: `GET /` used to live here as a bare redirect to `/explore`. It is
+now its own screen (`app/web/landing_pages.py`, "Find your next step"),
+so this module goes back to owning exactly the one route its docstring
+already named alongside the redirect -- `/explore` itself, unchanged.
 """
 
 from __future__ import annotations
@@ -7,18 +12,12 @@ from __future__ import annotations
 from typing import Any, cast
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import RedirectResponse
 from supabase import Client
 
 from app.api.deps import get_db_client
 from app.web.templating import templates
 
 router = APIRouter(include_in_schema=False)  # HTML pages, not the JSON API surface
-
-
-@router.get("/")
-def home() -> RedirectResponse:
-    return RedirectResponse(url="/explore")
 
 
 @router.get("/explore")

@@ -107,10 +107,17 @@ def two_pathways(
 
 
 class TestExplorePage:
-    def test_home_redirects_to_explore(self) -> None:
+    def test_home_is_the_landing_page(self) -> None:
+        """UI-3: `/` used to be a bare redirect to `/explore`; it is now
+        its own "Find your next step" landing screen
+        (`app/web/landing_pages.py`) with links onward to Explore and to
+        the new `/start` quick-start flow -- no redirect, no account
+        wall."""
         response = client.get("/", follow_redirects=False)
-        assert response.status_code == 307
-        assert response.headers["location"] == "/explore"
+        assert response.status_code == 200
+        assert "Find your next step" in response.text
+        assert 'href="/explore"' in response.text
+        assert 'href="/start"' in response.text
 
     def test_static_css_is_served(self) -> None:
         response = client.get("/static/css/app.css")
