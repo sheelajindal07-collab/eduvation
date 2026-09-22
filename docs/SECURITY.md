@@ -84,6 +84,92 @@ unrecognised code renders a generic message. Nothing a stranger puts in
 that URL is rendered, escaped or otherwise — the query parameter is used
 as a dict key and never as content.
 
+## Rate limiting (SEC-3)
+
+Two independent layers, neither a substitute for the other. No Redis, no
+in-app/Python-level limiter anywhere in either layer — consistent with the
+stack decision (no Redis/broker).
+
+### Layer 1 — nginx, per-IP, in front of the app
+
+`deploy/nginx/ratelimit.conf` is a config **snippet**, not a running
+deployment: there is no nginx in front of this app yet in dev (the app
+runs directly). It is meant to be `include`d into a future site's `http {}`
+block by whoever stands up nginx (DEPLOY-4/DEPLOY-7); its own header
+comment has the exact wiring instructions. It protects, per client IP:
+`/auth/*` (`POST /auth/sign-up`, `POST /auth/sign-in`) and
+`/reviewer/sign-in` together, `/plans` write methods, and `GET /ask` (the
+current, confirmed route for the "Ask BCION" canned-prompt answer — read
+`app/api/ask.py` if this ever changes; it is deterministic-only today, no
+model call, but is the route the DPR's Tier-0/Tier-1 AI spend-control
+language is aimed at).
+
+**Thresholds chosen** (a judgement call for the owner to review, not a
+measured fact — reasoning in full in `deploy/nginx/ratelimit.conf`'s own
+header, since that is where anyone actually deploying this will look):
+
+| Zone | Protects | Sustained rate | Burst | Why |
+| --- | --- | --- | --- | --- |
+| `bcion_auth` | `/auth/*`, `/reviewer/sign-in` | 30 requests/minute per IP | 20, nodelay | Highest-value target for credential stuffing/enumeration. 30/min is far below any real human's retry pace; the 20-request burst absorbs a school/carrier NAT sending many independent students' sign-ins within the same couple of seconds without a false 429. |
+| `bcion_plans_write` | `/plans` writes (POST/PATCH/DELETE, and PUT on the actions sub-route — see the scope note in the config file) | 60 requests/minute per IP | 30, nodelay | Authenticated, everyday traffic — looser than auth. A lab of students saving plans concurrently needs a bigger burst; 60/min sustained is still well above normal per-user pace. |
+| `bcion_ask` | `GET /ask` | 30 requests/minute per IP | 15, nodelay | Canned templates only today, but the route future AI work deepens. 15-request burst covers several students' pages each firing 2-3 canned prompts on one shared IP. |
+| `bcion_perip_conn` | all three groups above | n/a (concurrent connections, not a rate) | 20 simultaneous connections per IP per protected location | Bounds connection-exhaustion abuse without touching normal multi-tab, multi-student-per-IP browsing. |
+
+The core tension driving every one of these numbers: a school or carrier
+NAT can put many real students behind one public IP, and that is exactly
+who this pilot is for — thresholds have to tolerate a burst of genuinely
+simultaneous, independent humans on one IP without meaningfully slowing a
+real automated attack down. Rejections return **429** (nginx's own default
+for both `limit_req`/`limit_conn` is 503, explicitly overridden here — a
+misconfigured server error is the wrong signal for "you're being
+throttled"), served with the friendly static page `app/static/429.html`
+(no template engine — nginx serves it directly off disk, not proxied, so
+it still works even when the app or DB is what is under load).
+
+**Verification of this config in this session:** `nginx -t` is not
+runnable directly in this dev environment (no nginx binary installed), so
+the config was checked in a local `nginx:stable` Docker container instead
+— both `nginx -t` syntax validation and a full live functional test (real
+concurrent request bursts against every protected location, confirming
+the exact pass/reject counts the burst values above predict, and the 429
+page's body actually being returned on rejection). Live `nginx -t` against
+whatever real site file eventually `include`s this snippet is still
+DEPLOY-4/DEPLOY-7's job at actual deploy time — this only proves the
+snippet itself is syntactically and functionally correct in isolation.
+
+### Layer 2 — Supabase Auth's own rate limiting (independent, not this app's to configure)
+
+Supabase Auth enforces its own server-side rate limits on the auth
+endpoints this app calls (sign-up, sign-in, and related), entirely
+independent of anything in this repository or Layer 1 above — nginx
+throttling a request before it reaches this app does not know or care
+about these, and these do not know or care about nginx. **Confirmed live
+in this codebase, 2026-09-19** (`app/api/auth.py`): Supabase returns a
+structured `429` with `AuthApiError.code` set to `over_email_send_rate_limit`
+(email-sending limits, e.g. confirmation emails on sign-up) or
+`over_request_rate_limit` (general request-rate limits), and this app
+propagates the provider's real HTTP status and message for both rather
+than flattening them to a generic 400 (`sign_up`) or the generic
+anti-enumeration 401 (`authenticate`, shared by `POST /auth/sign-in` and
+the reviewer console) — see `_RATE_LIMIT_ERROR_CODES` in that module for
+the exact, deliberately narrow allow-list, and its surrounding comment for
+why only these two codes are ever allowed to escape the generic 401.
+
+The exact current numeric thresholds behind those two error codes are
+**configurable per Supabase project** (Authentication → Rate Limits in the
+dashboard) and change over time on Supabase's side — this file does not
+assert a specific requests-per-hour figure as fact, because nobody
+re-verified one against Supabase's current documentation or this
+project's actual dashboard settings in this session, and this project's
+own non-negotiable is that an unverified number is not a fact. What is
+verified is the *behaviour*: these limits exist, they bite in practice,
+and this app already surfaces them correctly rather than masking them.
+**Action for the owner:** confirm the current thresholds for this
+project's Supabase instance in its dashboard, and keep Layer 1's `nginx`
+numbers above generous enough that a legitimate shared-IP burst hits
+nginx's own, more forgiving limits first rather than needlessly forcing
+real users into Supabase's stricter, provider-side wall.
+
 ## Consent & safeguarding (a launch gate, not a checkbox)
 Real accounts for minors stay **disabled** until this workflow is built and
 reviewed by a person (not model review alone):

@@ -160,7 +160,7 @@ links.
   concurrently on the shared stack, not a Phase 1a change). Wave 2 is
   fully verified end to end.
 
-**Wave 3, AI-6 and AI-20 merged (2026-09-22), AI-14 still running.**
+**Wave 3, AI-6, AI-14 and AI-20 all merged (2026-09-22).**
 BCI-015 (AI-6, AI-14, AI-20) dispatched as three parallel worktree
 agents; two finished and were merged as soon as they were ready,
 without waiting for the third - **AI-6**: `app/ai/pipeline.py`'s
@@ -177,12 +177,32 @@ model-authored text - 30 passed, full unit suite 1203 at merge time.
 - translation pass, then a *separate* back-translation-check pass,
 token-overlap agreement scored and flagged (never silently accepted),
 writes a CSV for a human Hindi reviewer, hash-proven to never write
-`en.json`/`hi.json` or touch the database - 25 passed. Both merged
-clean, no file conflicts; full unit suite re-run after both: **1228
-passed**. **BCI-016 (AI-14, reviewer claim extraction) still running.**
+`en.json`/`hi.json` or touch the database - 25 passed. **AI-14**:
+`app/ai/extraction.py` - a pasted-document extraction pass proposing
+`field/value/quoted_span` triples, then a separate adversarial
+verification pass, then a mechanical verbatim-substring re-check in
+code that never trusts the model's own verification answer alone.
+Correctly found two of its card's assumptions were stale (`claims_forms.py`
+and `sources.py`, named as reusable, are actually empty stubs) and
+adapted using the closest already-established pattern instead of
+guessing - the new `/reviewer/extract` page calls `app/api/claims.py`'s
+existing `create_claim()` directly (the same pattern `queue.py` already
+uses for its own actions, since the real `POST /claims` route is
+Bearer-only and a plain form can't attach that header), so no new
+database write path exists; every write still goes through the
+existing, already-tested claims API and its maker-checker enforcement.
+Wired into the running app as the lead's own one-line fix (`app/web/
+reviewer/__init__.py` now includes the new router under the existing
+`reviewer_pages` slot - `app/main.py` itself needed no change, since
+that file only ever imports one combined router per console package).
+23 unit + 16 live db tests pass through the actually-wired app, not
+just its own standalone test harness. **All three merged clean, no
+file conflicts. Full unit suite: 1251 passed.**
 
-Next: merge AI-14 when it finishes; relaunch AI-4 once `consent-4`
-merges.
+Next: relaunch AI-4 once `consent-4` merges; open wave 4 (AI-7 wires
+the pipeline into the Ask BCION route; AI-8 the AI-off regression;
+AI-18/AI-19 the next-steps and what-changed templates) once AI-7's
+dependency (AI-6, now merged) clears it to start.
 
 ## Development plan — Wave 1 done, Wave 2's migration/eligibility lanes done (2026-09-21)
 `docs/DEVELOPMENT-PLAN.md` is being executed for real. `tasks/INDEX.md`
@@ -400,6 +420,38 @@ skipped, 0 failed, run live before the unrelated WIP above existed.
 Docker is confirmed healthy again as of this session (the owner
 restarted it) — full `tests/db` also independently re-confirmed clean
 at 592 passed after the fix, on the real local stack.
+
+**`SEC-3` merged** — nginx per-IP rate limiting, `deploy/nginx/
+ratelimit.conf`: four zones (`bcion_auth` 30r/m burst 20 for
+`/auth/*`+`/reviewer/sign-in`; `bcion_plans_write` 60r/m burst 30 for
+`/plans` writes, via a `map $request_method` empty-key exclusion for
+GET/HEAD rather than `limit_except` — nginx rejects `limit_req` inside
+`limit_except`, found live against a local `nginx:stable` Docker
+container, not assumed; `bcion_ask` 30r/m burst 15 for `GET /ask`; a
+shared `bcion_perip_conn` 20-connection cap) plus `app/static/429.html`
+and a new `docs/SECURITY.md` section documenting this as Layer 1
+alongside Supabase Auth's own independent Layer 2 rate limiting. **This
+is a documented config snippet only — no nginx deployment exists yet**
+(this app has no public domain/reverse proxy in front of it — see
+"Needs your input" below); DEPLOY-4/7 wires it into a real site file
+when that work starts. Live-tested with real request bursts against a
+local Docker nginx (not just `nginx -t` syntax check): confirmed the
+GET/HEAD exclusion passes unlimited, a `POST /plans` burst passes
+exactly 31 requests before 429s, `GET /ask` passes exactly 16 — and one
+real bug in the *test stub itself* was caught this way (a `return 200`
+stand-in finalizes in nginx's REWRITE phase, before PREACCESS-phase
+rate limiters ever run; switching to a content-phase `try_files` stub
+fixed it — the production `proxy_pass` directives were never at risk).
+**Open question for the owner**: the task card named POST/PATCH/DELETE
+for `/plans`; the merged config excludes GET/HEAD instead, which also
+covers `PUT /plans/{id}/actions/{action_key}`, a write the card didn't
+name — flagging for confirmation that's the intended scope. Purely
+additive (`3 files changed, 370 insertions(+)`, no existing file logic
+changed except the `docs/SECURITY.md` addition). Verified before merge:
+ruff clean, mypy clean (81 files), `pytest tests/unit -q` 1251 passed;
+CI green on `main` post-push (build-image, lint-typecheck-test
+including live DB/RLS tests against the real staging project,
+secret-scan).
 
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
