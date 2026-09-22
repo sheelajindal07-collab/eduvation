@@ -14,10 +14,15 @@ For a given UTC date range, reports:
     answer said);
   * the TWO-PASS DISAGREEMENT RATE (see "DERIVING TWO-PASS DISAGREEMENT"
     below);
-  * spend against each of the three `ai_usage_caps` ceilings, via
-    `app.ai.alerts.fetch_fresh`/`snapshots_from_caps_row` (shared with
-    that module rather than reimplemented here — one source of truth for
-    "what counts as used against a cap");
+  * spend against each of the three `ai_usage_caps` ceilings: the global
+    daily and global monthly caps via `app.ai.alerts.fetch_fresh`/
+    `snapshots_from_caps_row` (shared with that module rather than
+    reimplemented here — one source of truth for "what counts as used
+    against a cap"), and the per-identity daily cap via
+    `fetch_per_identity_daily_cap`/`busiest_identity_daily_usage` (see
+    `SpendReport.busiest_identity_daily_used`'s own docstring for why
+    that is reported as "the busiest identity's own utilisation",
+    never a per-identity breakdown and never which identity);
   * requests per identity-hash bucket — a count per already-hashed
     `ai_usage.identity_hash`, NEVER the raw account id or guest-session
     token the hash was built from (see "NO CLAIM OR ANSWER CONTENT, NO
@@ -138,7 +143,7 @@ import sys
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 
 from supabase import Client, create_client
@@ -218,8 +223,21 @@ class SpendReport:
     #: identity_hash (a digest — see module docstring) -> request count.
     requests_by_identity_hash: dict[str, int]
 
-    #: "Right now", not scoped to [start, end) — see app.ai.alerts.
+    #: "Right now" (today's/this month's UTC window), not scoped to
+    #: [start, end) — the global daily/monthly caps, via app.ai.alerts.
     cap_snapshots: list[CapSnapshot]
+
+    #: The THIRD cap `ai_usage_caps` defines — per-identity, daily.
+    #: Reported as "how close is the single busiest identity today",
+    #: never as a per-identity breakdown and never naming which
+    #: identity_hash it was: app.ai.alerts deliberately never ALERTS on
+    #: this cap (one student's cap is expected and self-healing — see
+    #: that module's "WHICH CAPS, AND WHY"), but a report still needs to
+    #: answer "is anyone close to hitting their own ceiling", which
+    #: these two fields give without singling anyone out. `None` when
+    #: not supplied (e.g. a caller building a report with no DB access).
+    per_identity_daily_cap: int | None = None
+    busiest_identity_daily_used: int | None = None
 
 
 def build_report(
@@ -228,11 +246,15 @@ def build_report(
     start: date,
     end: date,
     cap_snapshots: Sequence[CapSnapshot] = (),
+    per_identity_daily_cap: int | None = None,
+    busiest_identity_daily_used: int | None = None,
 ) -> SpendReport:
-    """Pure: every number comes only from `rows` and `cap_snapshots`, no
-    network call — exercised directly by tests without a live stack.
+    """Pure: every number comes only from `rows`, `cap_snapshots` and the
+    two already-computed `..._daily_*` arguments — no network call, so
+    this is exercised directly by tests without a live stack.
     `tests/db/test_ai_spend_report.py` additionally exercises the real
-    query path (`fetch_usage_rows`) that produces `rows` in practice."""
+    query path (`fetch_usage_rows`, `busiest_identity_daily_usage`) that
+    produces those in practice."""
     calls_reserved_total = sum(r.calls_reserved for r in rows)
     calls_made_total = sum(r.calls_made for r in rows)
     rows_by_status = dict(Counter(r.status for r in rows))
@@ -272,6 +294,8 @@ def build_report(
         disagreement_rate=disagreement_rate,
         requests_by_identity_hash=requests_by_identity_hash,
         cap_snapshots=list(cap_snapshots),
+        per_identity_daily_cap=per_identity_daily_cap,
+        busiest_identity_daily_used=busiest_identity_daily_used,
     )
 
 
@@ -314,6 +338,40 @@ def fetch_usage_rows(client: Client, *, start: date, end: date) -> list[UsageRow
     return [_row_from_raw(row) for row in raw]
 
 
+def fetch_per_identity_daily_cap(client: Client) -> int:
+    """The `ai_usage_caps.per_identity_daily_calls` ceiling itself. Needs
+    a service-role client for the same reason as everything else in this
+    script — see "WHY SERVICE ROLE, NOT A REVIEWER LOGIN" above."""
+    rows = cast(
+        "list[dict[str, Any]]", client.table("ai_usage_caps").select("*").execute().data
+    )
+    if not rows:
+        raise SpendReportUnavailableError(
+            "ai_usage_caps holds no configuration row — is "
+            "db/migrations/0011_ai_usage.sql applied to this database?"
+        )
+    return int(rows[0]["per_identity_daily_calls"])
+
+
+def busiest_identity_daily_usage(rows: Sequence[UsageRow]) -> int:
+    """The largest single identity-hash's cost among `rows` — same cost
+    formula `ai_reserve`/`app.ai.alerts` use (a row costs what it
+    reserved until it settles, then what it actually made). Call this
+    with rows already scoped to TODAY (UTC) — `fetch_usage_rows(client,
+    start=today, end=tomorrow)` — matching the window the per-identity
+    DAILY cap itself governs; a report built over some other range would
+    answer a different question than "is anyone close to their cap right
+    now". Returns 0 for an empty `rows`. Never reveals WHICH identity —
+    see `SpendReport.busiest_identity_daily_used`'s own docstring for why
+    that is enough for "is anyone close to their cap" without singling
+    anyone out."""
+    totals: dict[str, int] = {}
+    for row in rows:
+        cost = row.calls_reserved if row.status == "reserved" else row.calls_made
+        totals[row.identity_hash] = totals.get(row.identity_hash, 0) + cost
+    return max(totals.values(), default=0)
+
+
 def _format_rate(rate: float | None) -> str:
     return "n/a (no resolved rows)" if rate is None else f"{rate:.1%}"
 
@@ -336,6 +394,17 @@ def _print_report(report: SpendReport) -> None:
         print(  # noqa: T201
             f"  cap[{cap.name}] {cap.period_key}: {cap.used}/{cap.limit} "
             f"({cap.fraction:.1%})"
+        )
+    if report.per_identity_daily_cap is not None and report.busiest_identity_daily_used is not None:
+        pct = (
+            report.busiest_identity_daily_used / report.per_identity_daily_cap
+            if report.per_identity_daily_cap > 0
+            else 0.0
+        )
+        print(  # noqa: T201
+            f"  cap[per_identity_daily] busiest identity today: "
+            f"{report.busiest_identity_daily_used}/{report.per_identity_daily_cap} ({pct:.1%}) "
+            "— never which identity"
         )
 
 
@@ -369,7 +438,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     client = build_service_client()
     rows = fetch_usage_rows(client, start=args.start, end=args.end)
     caps = fetch_fresh(client)
-    report = build_report(rows, start=args.start, end=args.end, cap_snapshots=caps)
+
+    today = datetime.now(UTC).date()
+    todays_rows = fetch_usage_rows(client, start=today, end=today + timedelta(days=1))
+    report = build_report(
+        rows,
+        start=args.start,
+        end=args.end,
+        cap_snapshots=caps,
+        per_identity_daily_cap=fetch_per_identity_daily_cap(client),
+        busiest_identity_daily_used=busiest_identity_daily_usage(todays_rows),
+    )
     _print_report(report)
 
     if args.check_alerts:

@@ -52,7 +52,14 @@ from app.ai.alerts import (
 )
 from app.ai.budget_db import GUEST, AIRequestBudgetDB, identity_digest
 from app.notifications.logging_sender import LoggingEmailSender
-from scripts.ai_spend_report import SpendReport, UsageRow, build_report, fetch_usage_rows
+from scripts.ai_spend_report import (
+    SpendReport,
+    UsageRow,
+    build_report,
+    busiest_identity_daily_usage,
+    fetch_per_identity_daily_cap,
+    fetch_usage_rows,
+)
 from tests.db.conftest import RUN_ID, _require_live
 
 TEMPLATE_ID = f"ai13-test-{RUN_ID}"
@@ -267,6 +274,37 @@ class TestNoRawIdentityOrAnswerContentEverAppears:
         assert by_hash.get(beta_hash) == 1
         assert by_hash.get(gamma_hash) == 1
         assert by_hash.get(delta_hash) == 1
+
+
+class TestPerIdentityDailyCapReporting:
+    """The third cap `ai_usage_caps` defines (per-identity, daily) —
+    reported as "the busiest identity's own utilisation today", never a
+    per-identity breakdown and never naming which identity_hash it was
+    (see `scripts.ai_spend_report.SpendReport.busiest_identity_daily_
+    used`'s own docstring)."""
+
+    def test_fetch_per_identity_daily_cap_matches_the_live_caps_row(
+        self, admin_client: Client
+    ) -> None:
+        caps = _caps(admin_client)
+        assert fetch_per_identity_daily_cap(admin_client) == int(caps["per_identity_daily_calls"])
+
+    def test_busiest_identity_daily_usage_reflects_the_largest_bucket(
+        self, admin_client: Client, usage: list[str]
+    ) -> None:
+        raw_identities: list[str] = []
+        _seed_scenario(usage, raw_identities)  # alpha alone costs 2 calls today
+
+        today = date.today()
+        tomorrow = today + timedelta(days=1)
+        rows = _own_rows(fetch_usage_rows(admin_client, start=today, end=tomorrow))
+        busiest = busiest_identity_daily_usage(rows)
+
+        assert busiest >= 2, "alpha alone made 2 settled calls today"
+        assert isinstance(busiest, int), "a bare count — structurally incapable of naming anyone"
+
+    def test_busiest_identity_daily_usage_is_zero_for_no_rows(self) -> None:
+        assert busiest_identity_daily_usage([]) == 0
 
 
 class TestFetchFreshReflectsLiveUsage:
