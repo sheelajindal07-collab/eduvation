@@ -5,6 +5,67 @@ never deleted.
 
 ---
 
+## 2026-09-22 — RULES-16: a real date of birth on the requirements screen
+**Event:** The requirements screen gets a real `date_of_birth` field —
+POST-only like every other personal input there, never stored, never
+logged, never echoed into a link (verified live: every `href` in the
+response grepped for the literal DOB value; `caplog` checked around a real
+submission). Plain `age` stays as a fallback for a criterion built from a
+pathway's own claims (no DOB-cutoff concept), not removed. A malformed,
+future, or implausibly-old DOB degrades to a friendly message, matching
+this screen's existing `age`/`marks_percentage` convention — never a raw
+422 or 500.
+Also surfaces the rest of RULES-8's response for the first time: cycle and
+jurisdiction shown once near the results; `rule_version` added to
+`_trust_badge.html`'s `evidence_line()` as one more additive, optional
+trailing argument (existing arguments untouched); a "Not checked here" list
+for RULES-8's `NotChecked` entries; a combined stale-evidence warning when
+either the rule set's own cycle has ended or a backing claim is overdue for
+recheck. `app/api/eligibility.py` itself was read-only for this task.
+**A real, independent finding along the way (not this task's own bug):**
+verifying this branch's merge exposed a live bug in unrelated, still-
+uncommitted work in progress elsewhere in the same session (`_ask.html`'s
+`ask_bcion()` macro renders its link unconditionally, leaking a raw
+pathway UUID for an unresolved pathway on Compare — the exact bug class
+UI-5 already fixed for `pathway_detail_link` two macro calls away).
+Flagged to that work's own owner before it was committed, not fixed here.
+**Verified live:** `tests/db/test_web_pages.py` 35 → 46 tests; full
+`tests/db` suite 590 passed, 8 xfailed, 0 skipped, 0 failed (run before the
+unrelated WIP above existed); `tests/unit` unchanged (no unit-test surface
+touched).
+
+## 2026-09-22 — `forbid_publishing_synthetic_claims()` refuses every role, including service role; a live-only test fixture bug found this
+**Event:** AI-5's own agent (BCI-013) could not reach the shared local
+Docker/Supabase stack in its worktree and correctly said so rather than
+claiming a pass. Running `tests/db/test_ai_retrieval_live.py` myself
+against the real stack, after merging, surfaced a genuine fixture bug:
+its `retrieval_pathway` fixture tried to `admin_client.table("claims")
+.insert(...)` a row with `status="published"` and a synthetic source's
+id, on the stated assumption that this trigger "should prevent" that
+state "in practice" - but the insert itself failed immediately
+(`APIError: A claim sourced from a synthetic Source can never be
+published`), because the trigger fires on the write for every role,
+including the service-role `admin_client` this fixture used. The whole
+fixture setup crashed before any of the six dependent tests ran.
+**Decision:** Fixed by removing the impossible insert from the shared
+fixture and adding a dedicated, passing test
+(`TestSyntheticSourceCanNeverBePublishedLive`) that asserts the refusal
+directly - a stronger proof than the original intent, since it confirms
+the non-negotiable ("synthetic fixtures ... never published") is
+enforced at the database layer, not only inferred from a docstring.
+`app.ai.retrieval`'s own Python-level re-filter for this exact case
+stays covered where it already was, in `tests/unit/test_ai_retrieval.py`'s
+fake-client tests - the only place that state can actually be
+constructed, since a real database now refuses to hold it.
+**What this changes:** A migration-owner or implementer writing a live
+fixture that needs a "published + synthetic" row to test a defence
+against it must not seed it directly, even as `admin_client` - assert
+the insert is refused instead. `tests/db/test_ai_retrieval_live.py` +
+`tests/db/test_ask_view.py`: 18 passed, 0 errors after the fix.
+**Status:** Done, merged to `main`, verified live in this session.
+
+---
+
 ## 2026-09-22 — UI-3 and UI-5: landing/quick-start and the pathway detail page
 **UI-3.** `GET /` is a real "Find your next step" landing page now (three
 choices — career in mind, not sure yet, show me everything), replacing the

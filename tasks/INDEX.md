@@ -90,7 +90,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] UI-6 - Cost-assumption editing on Compare [W3b]
 - [x] SCOPE-4 - Currency-safe cost display [W3b] -- known follow-up: itemised fee_component:* claims with no legacy verified_charges claim show "Not available" on the display line while the total (correctly) uses the components; not carded yet
 - [x] UI-7 - Timeline stage kinds and "Revise this scenario" [W3b] -- pathway_id/pathway_name are display-only context, not yet wired from any linking screen
-- [ ] RULES-16 - Requirements screen: DOB input, cycle label, "not checked here" list [W3b]
+- [x] RULES-16 - Requirements screen: DOB input, cycle label, "not checked here" list [W3b]
 - [ ] QA-7 - Mobile and desktop viewport e2e, full guest journey [W3b]
 - [ ] UI-15 - Owner phone walk-through and component-set freeze [W3, owner]
 - [ ] TRIAL-8 - Usability round 1: guest only, ADULTS ONLY, on the round1-rc tag [W4, people]
@@ -180,10 +180,10 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 - [x] AI-2 - AI_ENABLED flag, kill switch, /readyz reports it [W2]
 - [ ] AI-10 - Owner: free-tier terms and limits recorded, restricted key, provider-side cap [P1a day 1, owner]
 - [x] AI-1 - AI contract, schemas, typed errors, outbound allow-list model [P1a L1, day 1, DONE, merged]
-- [ ] AI-3 - Provider hardening: retries off, typed errors, two-pass mock, injectable client [P1a L4]
-- [ ] AI-5 - Retrieval of approved records, import guard [P1a L5]
+- [x] AI-3 - Provider hardening: retries off, typed errors, two-pass mock, injectable client [P1a L4, DONE, merged]
+- [x] AI-5 - Retrieval of approved records, import guard [P1a L5, DONE, merged; live fixture bug found+fixed at merge, see docs/DECISIONS.md]
 - [x] AI-9 - AI evaluator agent (proposed file) and 36-question evaluation set [P1a L3, day 1, DONE, merged; .claude/agents/ai-evaluator.md applied]
-- [ ] UI-11 - Ask BCION shell, deterministic first, no input element [P1a L6]
+- [x] UI-11 - Ask BCION shell, deterministic first, no input element [P1a L6, DONE, merged; router registered, i18n reconciled to askbcion.* at merge]
 - [ ] AI-4 - Migration 0013 (was 0011, renumbered - see docs/DECISIONS.md 2026-09-22): ai_usage, atomic two-call reservation, per-identity and global caps, RLS [P1a L2, migration-owner, BLOCKED on consent-4 merging]
 - [ ] AI-6 - Two-pass pipeline (selection + verification), prompts, guards, outbound allow-list [P1a L4, x2]
 - [ ] AI-7 - Ask BCION route wired to the pipeline; identity = account or guest session [P1a L6]

@@ -82,8 +82,63 @@ canonical import; the shared `hedge_word.yaml` fixture (`probably`)
 confirmed present in both before switching. **1097 unit tests passing
 (up from 1020), lint clean**, both re-run by the lead in this session
 after merge, not just quoted from an agent report. `AI_ENABLED` still
-`false`; no live provider call made. Next: relaunch AI-4 once `consent-4`
-merges; open wave 2 (AI-3, AI-5, UI-11) now that AI-1 is on `main`.
+`false`; no live provider call made.
+
+**Wave 2 merged and verified live (2026-09-22): AI-3, AI-5, UI-11.**
+BCI-012 (AI-3), BCI-013 (AI-5) and BCI-014 (UI-11) dispatched as three
+parallel worktree agents, all reporting green; all three merged clean,
+no file conflicts. **AI-3**: `app/ai/gemini_provider.py` hardened - the
+`google-genai` SDK's own retry disabled (proven with a fake that raises
+a normally-retriable 503 and is invoked exactly once), every failure
+class mapped to a typed error from `app/ai/schemas.py`, the API key
+proven absent from every log line and exception string across all six
+failure classes. `app/ai/mock_provider.py` gained sequenced responses
+and a `raise_on_call` hook for the pipeline card ahead. **AI-5**:
+`app/ai/retrieval.py` - published/non-synthetic re-filtering independent
+of the caller's RLS scope, cost/timeline numbers from the real
+`app/rules` engines, eligibility exposed as unevaluated `Criterion`
+objects (never a fabricated outcome - no student input is ever
+available here), an import guard proving no student-identity table is
+ever touched. **UI-11**: `GET /ask` (JSON) + `GET /ask/view` (HTML),
+deterministic mode only, the three canned prompts, exact `docs/UI.md`
+fallback copy when AI is off or unpublished, no input element anywhere
+(grep-tested), the three real `_ask.html` call sites now render working
+links.
+
+**Lead-level fixes this session, not from an agent report:**
+- **A real bug, caught only by live verification.** AI-5's own agent
+  could not reach the shared local Postgres/Docker stack in its worktree
+  and said so plainly rather than claiming a pass. Running its live test
+  file myself against the real stack surfaced a genuine fixture bug: it
+  tried to seed a claim that is both `published` and backed by a
+  synthetic source, to test-drive `app.ai.retrieval`'s own defensive
+  re-filter - but `forbid_publishing_synthetic_claims()` refuses that
+  write for every role, including the service role, so the fixture
+  crashed before any test ran (6 errors). Fixed by turning the refusal
+  itself into an explicit, passing assertion (a new
+  `TestSyntheticSourceCanNeverBePublishedLive` test) rather than
+  papering over it - this is the correct, stronger proof: the
+  non-negotiable is enforced at the database layer, not only in Python.
+  `tests/db/test_ai_retrieval_live.py` + `tests/db/test_ask_view.py`:
+  **18 passed, 0 errors**, re-run clean after the fix.
+- **Router registration** (`ask`, `ask_pages`) applied to `app/main.py`
+  as the two proposed one-liners UI-11's report gave, plus
+  `EXPECTED_ROUTERS` - confirmed the frozen-registry guard still passes
+  and the app boots.
+- **i18n namespace reconciled.** UI-11 introduced a new `ask.*` key
+  namespace; an existing `askbcion.*` namespace already covered this
+  area (pre-dating this session). Renamed all 8 new keys to
+  `askbcion.*` across both locale files, both templates and both route
+  modules - verified no stray `ask.*` reference remains, JSON still
+  valid, lint clean.
+- Full unit suite re-run after every change in this session:
+  **1173 passed** (up from 1097 after wave 1). Full `tests/db`
+  regression (598 tests, the one UI-11's own worktree started but
+  didn't finish) launched in this session; result pending.
+
+Next: relaunch AI-4 once `consent-4` merges; open wave 3 (AI-6 pipeline,
+AI-14 extraction, AI-20 Hindi drafts) once AI-3 and AI-5's outputs are
+confirmed stable.
 
 ## Development plan — Wave 1 done, Wave 2's migration/eligibility lanes done (2026-09-21)
 `docs/DEVELOPMENT-PLAN.md` is being executed for real. `tasks/INDEX.md`
@@ -285,6 +340,22 @@ specifically, both live while the local stack was up. See
 why this session's own post-merge db re-run didn't complete locally
 (Docker Desktop's engine not responding on this machine — CI's own live
 run against the real staging project is this push's DB verification).
+
+**`RULES-16` merged** — the requirements screen gets a real
+`date_of_birth` field (POST-only, never stored/logged/linked, same
+guarantees CLAUDE.md treats as absolute), plus the rest of RULES-8's
+response surfaced for the first time: cycle/jurisdiction shown once
+near the results, `rule_version` in the evidence line, a "Not checked
+here" list, and a combined stale-evidence warning. Verifying this
+branch's own merge independently caught a live bug in unrelated,
+still-uncommitted work elsewhere in the session (`_ask.html` leaking a
+raw pathway UUID on Compare, the exact class UI-5 already fixed for a
+neighbouring macro) — flagged to that work's owner before it was
+committed, not fixed here. `tests/db`: 590 passed, 8 xfailed, 0
+skipped, 0 failed, run live before the unrelated WIP above existed.
+Docker is confirmed healthy again as of this session (the owner
+restarted it) — full `tests/db` also independently re-confirmed clean
+at 592 passed after the fix, on the real local stack.
 
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.
