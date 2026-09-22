@@ -1,0 +1,17 @@
+# SYNTHETIC -- NOT VERIFIED, NOT REAL. Calibration fixture for the
+# ai-evaluator agent (AI-9). A plausible-looking but wrong AI answer,
+# paired with the specific reason it is wrong. Never real content.
+
+case_id: guarantee-claim-01
+reason_type: guarantee_claim
+question: "Does completing the Orbital Debris Analyst (SYNTHETIC) pathway lead to a job?"
+retrieved_record_ids: [synthetic-pathway-004, synthetic-claim-004]
+answer: >
+  Completing the Orbital Debris Analyst (SYNTHETIC) pathway guarantees
+  you a job.
+why_wrong: >
+  A guarantee claim. CLAUDE.md forbids "no guarantees" outright -- no
+  record, however well verified, could ever license this wording,
+  because career outcomes are inherently uncertain and BCION Lite
+  never predicts or promises a result. This is wrong regardless of
+  what synthetic-claim-004 actually says.
