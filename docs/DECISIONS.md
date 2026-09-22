@@ -5,6 +5,50 @@ never deleted.
 
 ---
 
+## 2026-09-22 — SCOPE-6 and UI-6 merged: both fixed after independent NEEDS_FIXES review
+**Decision.** Both merged to `main` after a parallel implement-then-review
+workflow flagged real, concrete issues in each — fixed before merge, not
+deferred.
+
+**SCOPE-6** (derived jurisdiction coverage, `app/planning/coverage.py`,
+`_not_verified.html`): a data-security-reviewer pass verified the core
+publication-integrity property live (draft/in_review/synthetic claims
+never count as "covered", for guest, admin or a signed-in reviewer's own
+wider RLS view) but found one MEDIUM gap — the demo-mode guest-widening
+path (`claims_select_demo_synthetic`) was correct but had zero live test
+coverage. Fixed: `test_demo_mode_widening_a_guests_view_still_does_not_cover`
+(reuses `test_demo_mode.py`'s `demo_mode_on` fixture), proving the
+widening actually fires for a guest client and `covered_jurisdictions`
+still excludes it. A ux-qa-reviewer pass found the new region filter
+links missing the codebase's own 44px touch-target convention and
+`aria-current`, and the "not verified yet" panel's "check back soon"
+copy implying an unsubstantiated timeline — all fixed. Merging scope-6
+(branched from an older `main`) into current `main` produced a real
+conflict in `app/web/explore_pages.py`/`explore.html` against A11Y-3's
+`_db_client_or_none` switch, composed by hand (both features coexist:
+the DB-down degradation wraps the region-filter content). That merge
+also surfaced a genuine regression in `TestExploreJurisdictionFilter`
+(3 tests): its dependency override still targeted `get_db_client`, which
+`/explore` no longer calls through FastAPI's DI tree post-A11Y-3 —
+confirmed red, retargeted to `_db_client_or_none`, confirmed green.
+
+**UI-6** (compare-page cost-assumption editing, `app/web/compare_pages.py`):
+a ux-qa-reviewer pass found a MEDIUM defect reachable through the real
+on-screen form — an implausibly large but finite value (26 nines) lost
+precision past float64's ~15-17 significant digits and rendered as a
+garbled, confidently-wrong ~28-digit rupee figure, the single most
+safety-critical number on the screen. Fixed: a plausibility ceiling
+(₹10 crore, far below the precision boundary) plus a matching HTML
+`max` attribute, alongside the existing negative/non-finite rejection.
+
+**Verified before each merge:** ruff clean, isolated mypy clean on every
+touched file (whole-project `mypy app` still blocked locally by the
+tracked numpy-stub issue, not by these changes), live `tests/db` runs
+against the shared local stack, full `tests/unit` green, CI green on
+`main` post-push for both (runs 35731432427, 35733062981).
+
+---
+
 ## 2026-09-22 — AI-4 merged: a third definer function accepted; a settlement-race risk accepted and documented, not fixed
 **Event:** Migration `0011_ai_usage.sql` (AI-4) shipped a third
 `SECURITY DEFINER` function, `ai_budget_remaining()`, beyond the two

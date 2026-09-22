@@ -69,7 +69,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] I18N-3 - Extract strings from existing templates, split by file; string-lint merges last [W3a]
 - [x] UI-3 - Landing page and stateless quick start [W3a]
 - [x] UI-4 - Suggestion rule and "why am I seeing this" [W3a]
-- [ ] SCOPE-6 - Derived coverage and "not verified yet" states [W3b]
+- [x] SCOPE-6 - Derived coverage and "not verified yet" states [W3b, DONE, merged; fix round: demo-mode security test, 44px touch targets, aria-current, honest copy]
 - [ ] I18N-4 - Language switch with a prod flag [P2]
 
 ## Step 7 Compare and calculators (M2) + usability round 1 - PARTIAL (screens exist; no exam modules)
@@ -87,7 +87,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] UI-5 - Career card and pathway detail page [W3a]
 - [x] RULES-8 - Wire RuleSets into the eligibility API [W3a] -- invented the "rule_key" claim-field convention (no prior one existed; see docs/DECISIONS.md 2026-09-22); non-IN pathway display-only gate still not implemented on the fallback path
 - [x] RULES-9 - Timeline seeding from stage claims (session 1 W3a, session 2 W3b) -- invented the "stage:<order>:*" claim convention (no prior one existed; see docs/DECISIONS.md 2026-09-22)
-- [ ] UI-6 - Cost-assumption editing on Compare [W3b]
+- [x] UI-6 - Cost-assumption editing on Compare [W3b, DONE, merged; fix round: implausible-value plausibility ceiling]
 - [x] SCOPE-4 - Currency-safe cost display [W3b] -- its disclosed follow-up (itemised fee_component:* claims with no legacy verified_charges claim showed "Not available" on the display line while the total used the components) is now closed: merged b75f939 (2026-09-22)
 - [x] UI-7 - Timeline stage kinds and "Revise this scenario" [W3b] -- pathway_id/pathway_name are display-only context, not yet wired from any linking screen
 - [x] RULES-16 - Requirements screen: DOB input, cycle label, "not checked here" list [W3b]

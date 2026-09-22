@@ -1412,6 +1412,49 @@ contention (two full local Supabase stacks — `bcion-lite-test` and
 work) rather than a real regression. Not investigated further — out of
 scope for this task; worth a look if it recurs.
 
+## SCOPE-6 and UI-6 merged (2026-09-22) — both fixed after NEEDS_FIXES review
+A parallel implement-then-review workflow (UI-4/SCOPE-6/UI-6, each its
+own worktree, each independently reviewed) came back with UI-4
+`SAFE_TO_MERGE` (already merged separately by a peer session) but
+**SCOPE-6 and UI-6 both `NEEDS_FIXES`** — real, concrete findings, fixed
+directly rather than shipped as-is.
+
+**SCOPE-6** (`app/planning/coverage.py`, "not verified yet" panel on
+Explore/Requirements): data-security-reviewer's one MEDIUM — the
+demo-mode guest-widening RLS path (`claims_select_demo_synthetic`) was
+verified correct live but had zero test coverage, so a future regression
+there would ship silently. Fixed with a new live test reusing
+`test_demo_mode.py`'s own `demo_mode_on` fixture. ux-qa-reviewer's
+findings — the new region-filter links missing this codebase's 44px
+touch-target convention and `aria-current`, and "check back soon" copy
+implying an unsubstantiated timeline — also fixed. **Merging this
+older-based branch into current `main` produced a real conflict** in
+`app/web/explore_pages.py`/`explore.html` against A11Y-3's
+`_db_client_or_none` switch (composed by hand — both the DB-down
+degradation and the region filter now coexist correctly), which in turn
+surfaced a genuine regression: `TestExploreJurisdictionFilter`'s
+dependency override still targeted `get_db_client`, which `/explore` no
+longer calls through FastAPI's DI tree after A11Y-3 — confirmed red,
+retargeted to `_db_client_or_none`, confirmed green (3 tests).
+
+**UI-6** (`app/web/compare_pages.py`, cost-assumption editing on
+Compare): ux-qa-reviewer's one MEDIUM was a real bug reachable through
+the actual form — typing an implausibly large but finite number (26
+nines) lost float64 precision and displayed a garbled, confidently-wrong
+~28-digit rupee figure, on the single most safety-critical number on
+that screen. Fixed with a plausibility ceiling (₹10 crore, well below
+the precision boundary where corruption starts) plus a matching HTML
+`max` attribute.
+
+**Verified before each merge**: ruff clean, isolated mypy clean on every
+touched file, live `tests/db` runs against the shared local stack (75
+passed for scope-6's own files, 68 for ui-6's), full `tests/unit` green
+(1360 passed), CI green on `main` post-push for both (runs
+35731432427, 35733062981). Whole-project `mypy app` is still blocked
+locally by the tracked numpy-stub environment issue (unrelated to these
+changes, see `docs/TESTING.md`) — CI's clean, lockfile-only run is the
+authoritative full-project check.
+
 ## Concurrent sessions — multiple sessions worked this repo today
 This session shared the repo with at least one other active Claude
 session for a significant stretch (same machine, same working
