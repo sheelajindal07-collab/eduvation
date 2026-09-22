@@ -83,6 +83,26 @@
     @apply bg-white rounded-lg shadow-sm border border-neutral/20 p-5;
   }
 
+  /* UI-7 -- a stage's own kind (app/rules/timeline.py's `Stage.kind`/
+     `display_kind`): required vs optional vs user assumption
+     (docs/UI.md "Timeline & cost"). A different, three-value vocabulary
+     from every badge above, so it gets its own component rather than
+     overloading one of them with a meaning it wasn't designed for. Same
+     "text + icon, never colour alone" rule -- the icon glyph lives in
+     timeline_calculator.html, not here. */
+  .stage-kind-badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .stage-kind-badge--required {
+    @apply bg-accent/10 text-accent-dark;
+  }
+  .stage-kind-badge--optional {
+    @apply bg-neutral-bg text-neutral;
+  }
+  .stage-kind-badge--user_assumption {
+    @apply bg-neutral-bg text-neutral italic;
+  }
+
   /* Reviewer console (app/web/reviewer_pages.py, docs/UI.md "Component
      set"): the same input treatment for every plain HTML form field in
      this project -- one style, not a per-page choice.

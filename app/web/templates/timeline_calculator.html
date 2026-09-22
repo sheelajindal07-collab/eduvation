@@ -1,13 +1,45 @@
 {% extends "base.html" %}
 {% from "_states.html" import alert %}
 {% block title %}Timeline calculator &mdash; BCION Lite{% endblock %}
+
+{# UI-7 -- the three stage kinds this page can show (docs/UI.md "Timeline
+   & cost": "required vs optional stages vs user assumptions are visually
+   distinguished"), sourced from app/rules/timeline.py's
+   `Stage.display_kind`. Local to this template (no other screen shows a
+   per-stage list yet) -- text + icon, never colour alone, same rule
+   `_trust_badge.html`'s badges already follow. #}
+{% macro stage_kind_badge(kind) %}
+  {% if kind == "required" %}
+    <span class="stage-kind-badge stage-kind-badge--required">
+      <span aria-hidden="true">&#10003;</span> Required
+    </span>
+  {% elif kind == "user_assumption" %}
+    <span class="stage-kind-badge stage-kind-badge--user_assumption">
+      <span aria-hidden="true">&#8776;</span> Your assumption
+    </span>
+  {% else %}
+    <span class="stage-kind-badge stage-kind-badge--optional">
+      <span aria-hidden="true">&#9675;</span> Optional
+    </span>
+  {% endif %}
+{% endmacro %}
+
 {% block content %}
   <h1 class="text-2xl font-semibold text-charcoal mb-2">Timeline calculator</h1>
-  <p class="text-neutral mb-6">
-    A standalone what-if calculator &mdash; not tied to any one pathway. Add the stages of your
-    own plan below, in weeks, to see the total time. Adjust anything and recalculate as often as
-    you like.
-  </p>
+
+  {% if pathway_id %}
+    <p class="text-neutral mb-6">
+      Planning around <span class="font-medium text-charcoal">{{ pathway_name or "this pathway" }}</span>
+      &mdash; add its stages below, in weeks, to see the total time. Adjust anything and
+      recalculate as often as you like.
+    </p>
+  {% else %}
+    <p class="text-neutral mb-6">
+      A standalone what-if calculator &mdash; not tied to any one pathway. Add the stages of your
+      own plan below, in weeks, to see the total time. Adjust anything and recalculate as often as
+      you like.
+    </p>
+  {% endif %}
 
   {% if error %}
     {{ alert(error, variant="caution", class_names="mb-6") }}
@@ -34,11 +66,28 @@
           <p class="text-sm text-neutral mt-2">Add at least one stage with a duration below.</p>
         {% endif %}
       {% endif %}
+
+      {% if result.stages %}
+        <h3 class="text-sm font-semibold text-charcoal mt-4 mb-2">Stages in this plan</h3>
+        <ul class="space-y-2">
+          {% for stage in result.stages %}
+            <li class="flex flex-wrap items-center gap-2 text-sm">
+              <span class="text-charcoal font-medium">{{ stage.name }}</span>
+              <span class="text-neutral">
+                {% if stage.duration_weeks is not none %}{{ stage.duration_weeks }} weeks{% else %}duration not filled in yet{% endif %}
+              </span>
+              {{ stage_kind_badge(stage.display_kind) }}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
     </section>
   {% endif %}
 
   <section class="card">
     <form method="post" action="/timeline/view" class="space-y-8">
+      <input type="hidden" name="pathway_id" value="{{ pathway_id or '' }}" />
+      <input type="hidden" name="pathway_name" value="{{ pathway_name or '' }}" />
       <div>
         <h2 class="text-lg font-semibold text-charcoal mb-1">Stages</h2>
         <p class="field-hint mb-3">
@@ -133,7 +182,60 @@
         </div>
       </div>
 
-      <button type="submit" class="btn-primary">Calculate timeline</button>
+      <div>
+        <h2 class="text-lg font-semibold text-charcoal mb-1">Extra attempts</h2>
+        <p class="field-hint mb-3">
+          An extra attempt at an exam, a gap year or another try is a normal, expected part of
+          planning &mdash; never a setback. Add one and see how it changes the total; each one is
+          shown as {{ stage_kind_badge("user_assumption") }} above, since it's your own plan, not
+          a published requirement.
+        </p>
+        {% if extra_rows %}
+          <div class="space-y-4">
+            {% for row in extra_rows %}
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 border-b border-charcoal/10 pb-4">
+                <div class="sm:col-span-2">
+                  <label class="field-label" for="stage_extra_name_{{ loop.index }}">
+                    Extra attempt {{ loop.index }} name
+                  </label>
+                  <input
+                    class="field-input" type="text"
+                    id="stage_extra_name_{{ loop.index }}" name="stage_extra_name_{{ loop.index }}"
+                    value="{{ row.name }}"
+                  />
+                </div>
+                <div>
+                  <label class="field-label" for="stage_extra_duration_weeks_{{ loop.index }}">
+                    Duration (weeks)
+                  </label>
+                  <input
+                    class="field-input" type="number" min="0"
+                    id="stage_extra_duration_weeks_{{ loop.index }}"
+                    name="stage_extra_duration_weeks_{{ loop.index }}"
+                    value="{{ row.duration_weeks }}"
+                  />
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+        <input type="hidden" name="num_extra_rows" value="{{ num_extra_rows }}" />
+        <button
+          type="submit" name="action" value="revise" class="btn-secondary"
+          {% if num_extra_rows >= max_extra_rows %}disabled{% endif %}
+        >
+          Revise this scenario
+        </button>
+        {% if num_extra_rows >= max_extra_rows %}
+          <p class="field-hint mt-2">
+            You've added the most extra attempts this calculator supports ({{ max_extra_rows }}).
+          </p>
+        {% endif %}
+      </div>
+
+      <button type="submit" name="action" value="calculate" class="btn-primary">
+        Calculate timeline
+      </button>
     </form>
   </section>
 {% endblock %}

@@ -22,6 +22,14 @@ invite (docs/SECURITY.md: "rounding" is its own listed test case).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
+
+StageKind = Literal["required", "optional", "user_assumption"]
+"""Build Pack §6 ("required stages, optional stages ... distinguished")
+plus docs/UI.md "Timeline & cost": "required vs optional stages vs user
+assumptions are visually distinguished" — the three-way vocabulary a
+screen shows next to each stage. Purely a display label, same spirit as
+`Stage.required` below: `compute_timeline()` never reads it."""
 
 
 @dataclass(frozen=True)
@@ -46,6 +54,21 @@ class Stage:
     since that would mean a stage overlapping a period longer than it (or
     the previous stage) actually lasts — a content-authoring error to
     catch in tests, not a student input to degrade gracefully on.
+
+    `kind` (UI-7) is the explicit, three-way form of the same idea
+    `required` already carried two-way. `None` — every `Stage` built
+    before this field existed, including the JSON API's `StageIn`/
+    `StageOut` in `app/api/timeline.py`, which this field deliberately
+    does not touch — falls back to `required` via `display_kind` below,
+    so nothing that reads `TimelineResult.stages` today breaks or needs
+    to change. Set explicitly to `"user_assumption"` for a stage the
+    STUDENT added themselves as a hypothetical addition (an extra
+    attempt, a gap year — `app/web/timeline_pages.py`'s "Revise this
+    scenario"), regardless of `required`'s own value: a self-added
+    assumption is never also "required" or "optional" in the
+    published-requirement sense those two words carry for every other
+    stage in this module. Like `required`, purely a display label —
+    `compute_timeline()` never reads it, so it can never change a total.
     """
 
     name: str
@@ -53,6 +76,17 @@ class Stage:
     required: bool = True
     overlap_weeks_with_previous: int = 0
     source_claim_id: str | None = None
+    kind: StageKind | None = None
+
+    @property
+    def display_kind(self) -> StageKind:
+        """The three-way kind to show next to this stage: `kind` when a
+        caller set it explicitly, otherwise derived from `required` so
+        every `Stage` built before this field existed still gets a
+        sensible two-way answer with zero code changes anywhere else."""
+        if self.kind is not None:
+            return self.kind
+        return "required" if self.required else "optional"
 
 
 @dataclass(frozen=True)
