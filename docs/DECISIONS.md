@@ -5,6 +5,27 @@ never deleted.
 
 ---
 
+## 2026-09-22 — Owner lifts the wave concurrency cap: "launch everything that's unblocked"
+**Decision.** `docs/DEVELOPMENT-PLAN.md` section 8.8's wave table caps concurrent
+writing lanes at 6 (3 of them DB-touching), specifically so the lead session's
+own verify-and-merge step — reading every diff, running the real test suite
+live, watching CI — stays possible per lane. Asked directly whether to raise
+it, the owner chose **no cap: launch everything currently unblocked**, over
+either keeping 6 or a modest raise to ~10-12.
+**What does not change:** the hard technical constraints stay in force
+regardless of this cap — one open migration at a time (a schema-safety rule,
+not a throughput knob), never two lanes with overlapping file ownership,
+every merge still gets read and live-tested by the lead before pushing. What
+changes is lane COUNT, not review rigor per lane, though at higher lane
+counts the lead leans more on each task's own dedicated reviewer agent(s)
+and less on independently re-deriving every finding by hand — a real,
+named trade-off, not a free speedup, and the owner was told this before
+choosing.
+**Reason:** asked directly ("can we do more work together") after the owner
+found the pace slow; walked through the actual bottlenecks (a real Docker
+outage, a session restart, deliberately-thorough live DB verification, and
+this cap) and asked which lever to pull.
+
 ## 2026-09-22 — `compare.html`'s Ask BCION links now guarded on a resolved pathway id, closing a raw-uuid leak
 **Event:** The first full `tests/db` run after merging UI-11 (wave 2)
 found 2 failures in `tests/db/test_web_pages.py`, a Phase 1 file no
