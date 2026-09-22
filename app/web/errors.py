@@ -173,7 +173,14 @@ def _render_error_page(request: Request, status_code: int) -> Response:
     return response
 
 
-async def _handle_http_exception(request: Request, exc: StarletteHTTPException) -> Response:
+async def _handle_http_exception(request: Request, exc: Exception) -> Response:
+    # Starlette's own `ExceptionHandler` type is `Callable[[Request,
+    # Exception], ...]` regardless of which exc_class a handler is
+    # registered for (contravariant in the exception parameter) -- the
+    # narrower `StarletteHTTPException` parameter mypy needs below is only
+    # ever actually true at runtime because `register_error_handlers`
+    # registers this exact function for that exact class.
+    assert isinstance(exc, StarletteHTTPException)
     if _wants_html(request):
         return _render_error_page(request, exc.status_code)
     # Byte-for-byte FastAPI's own default (fastapi.exception_handlers.
