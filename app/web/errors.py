@@ -58,6 +58,9 @@ convention `_states.html`'s own `session_expired()` macro already uses).
 
 from __future__ import annotations
 
+from collections.abc import Callable, Coroutine
+from typing import Any, cast
+
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import http_exception_handler
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -199,5 +202,19 @@ def register_error_handlers(app: FastAPI) -> None:
     """Wires the two handlers above into `app` — called once from
     `create_app()` (see this module's docstring for why this is not a
     `MiddlewareSlot`/`RouterSlot`)."""
-    app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
+    # `Starlette.add_exception_handler`'s own stub wants a handler typed
+    # for the general `Exception`, not the specific subclass it is being
+    # registered against — Starlette only ever calls this handler for a
+    # `StarletteHTTPException` instance (matching the class it's keyed on
+    # below), so this is safe at runtime; mypy just can't express "this
+    # handler's second argument type is bound to the registered class"
+    # without the cast. Same pattern already used elsewhere in this
+    # codebase for a narrower-than-declared handler/callback type.
+    app.add_exception_handler(
+        StarletteHTTPException,
+        cast(
+            "Callable[[Request, Exception], Coroutine[Any, Any, Response]]",
+            _handle_http_exception,
+        ),
+    )
     app.add_exception_handler(Exception, _handle_uncaught_exception)

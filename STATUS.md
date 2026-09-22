@@ -231,10 +231,32 @@ locked or `claude/*` session worktree left alone. CI on `3f6d75b`: all
 three jobs green. Left behind: an empty `.claude/worktrees/ui-4/` folder
 git has already unregistered — some process holds it as its cwd, delete
 when free; `.claude/worktrees/agent-ae56e118d8993f401` (sec-3) is merged
-and clean, left for the Phase 1 lead. A read-only ux-qa pass on the
-merged `/start` suggestion screen was launched; its result is recorded
-below this paragraph when it lands. Both peer lead sessions were messaged
-before and after; the AI lead confirmed and pushed its own pending commit
+and clean, left for the Phase 1 lead. **Coordination miss, disclosed:** the
+Phase 1 lead's "hold ui-4, my reviewer pass is still in flight" reply
+arrived after the merge had landed (this session's stated 10-minute
+silence window had passed). The merge is green and verified as above,
+so it was not reverted unasked; the lead was given the full facts, the
+revert offer, and the review below as its fix-round input, and its
+`ui-4` worktree — which the removal emptied — is recoverable from
+`3beb763`/`9414085`. **Read-only ux-qa pass on the merged `/start`
+screen (TestClient + Playwright 360 px, JS off):** PASS on the
+non-negotiables — no rank/"suited"/personality/guarantee/hedge language
+in any new string; the all-skipped state is honest ("not enough
+published pathway data") with Explore/Start-again links; zero-JS forms
+work, no cookie, `no-store`; no overflow at 360 px. Open findings for
+the lane owner: MEDIUM `app/planning/suggest.py:186` "Matches what
+matters most to you: Affordable" asserts a pathway property with no
+claim reference (latent — candidates are empty today — but `Suggestion`
+carries no source, so `_why.html`'s "traceable to a published record"
+is unenforced once tags exist); MEDIUM "Change what matters most to
+you" (`_components.html:236`) sends the student back to Q1 with all four
+answers cleared; MEDIUM ~10 new strings have no `en.json`/`hi.json` key
+(I18N-3 backlog grew); LOW `start_results.html:22` "Nothing here is
+scored or ranked" while `suggest.py:264` sorts by score — say "Nothing
+here scores you"; LOW tap targets under 44 px (skip/start-again 24 px,
+pathway links 21 px, change 19 px); LOW "You didn't tell us enough yet"
+mildly blames the student. Both peer lead sessions were messaged before
+and after; the AI lead confirmed and pushed its own pending commit
 first.
 
 ## Development plan — Wave 1 done, Wave 2's migration/eligibility lanes done (2026-09-21)
