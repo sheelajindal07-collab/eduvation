@@ -8,7 +8,7 @@
 {% from "_save.html" import save_action %}
 {% from "_why.html" import why_am_i_seeing_this %}
 {% from "_components.html" import pathway_detail_link %}
-{% from "_states.html" import alert %}
+{% from "_states.html" import alert, empty_state %}
 {% block title %}Compare pathways &mdash; BCION Lite{% endblock %}
 {% block content %}
   <h1 class="text-2xl font-semibold text-charcoal mb-6">Compare</h1>
@@ -18,6 +18,55 @@
       <a href="/explore" class="underline">Back to explore</a>.
     {% endcall %}
   {% else %}
+    {# UI-6: "assumption editing" (Lite Build Pack §6, docs/UI.md
+       "Timeline & cost") -- the override mechanism itself
+       (`estimated_additional_expenses_override`) already existed on
+       `assemble_comparisons()`/`GET /compare`; this form is the missing
+       HTML side, wired through `app/web/compare_pages.py`'s own safe
+       parser. One shared GET form, not one per pathway card below --
+       the query param already applies to every pathway in this
+       comparison (`app/api/compare.py`'s own Query() description), so a
+       single edit here updates every card's total at once. pathway_id
+       travels as hidden fields so submitting this form keeps comparing
+       the same pathways. GET, not POST: this value is never personal
+       data (unlike requirements.html's age/marks/DOB, SEC-5's POST-only
+       rule does not apply here) and Build Pack §6 already treats it as
+       a shareable/bookmarkable query param on the JSON route.
+
+       Only a RESOLVED pathway_id (one with a real name in
+       `pathway_names`) gets a hidden field -- same guard already used
+       everywhere else on this screen (the pathway-overview/cost
+       ask_bcion entry points, the "See requirements" link) specifically
+       so a stale/garbled/nonexistent id from the incoming URL is never
+       echoed back into the rendered page, hidden field or not
+       (regression caught live by
+       tests/db/test_web_pages.py::test_nonexistent_pathway_id_gives_a_friendly_heading_not_the_raw_uuid,
+       which this form's first version broke). Dropping an unresolved id
+       from the resubmitted comparison is the right degrade -- there is
+       nothing useful to keep comparing it against. #}
+    <section class="card mb-6">
+      <form method="get" action="/compare/view" class="space-y-3">
+        {% for c in comparisons if c.pathway_id in pathway_names %}
+          <input type="hidden" name="pathway_id" value="{{ c.pathway_id }}" />
+        {% endfor %}
+        <div>
+          <label class="field-label" for="estimated_additional_expenses">
+            Your assumption for extra expenses
+          </label>
+          <input
+            class="field-input" type="number" min="0" max="100000000" step="1" inputmode="numeric"
+            id="estimated_additional_expenses" name="estimated_additional_expenses"
+            value="{{ estimated_additional_expenses if estimated_additional_expenses is not none else '' }}"
+          />
+          <p class="field-hint">
+            Your own guess for costs like travel or books &mdash; not a published figure.
+            Change it and the total below updates for every pathway shown here.
+          </p>
+        </div>
+        <button type="submit" class="btn-primary">Update totals</button>
+      </form>
+    </section>
+
     {# docs/UI.md "Comparison screen": "Desktop: side-by-side columns.
        Mobile: stacked sections ... never a sideways-scrolling table."
        ux-qa-reviewer finding, 2026-09-19: the previous version set
@@ -55,8 +104,9 @@
              -> work realities -> alternatives -> evidence. Funding
              (confirmed vs potential, beyond what's in Cost below), work
              realities and alternatives have no data source yet
-             (app/api/compare.py's own COMPARISON_FIELDS comment) --
-             skipped rather than faked; location was previously rendered
+             (app/api/compare.py's own COMPARISON_FIELDS comment) -- each
+             now shows an explicit "no data yet" note (UI-6) rather than
+             being silently skipped; location was previously rendered
              BEFORE cost, which this fixes (ux-qa-reviewer finding). #}
           <div class="space-y-4">
             <div>
@@ -94,12 +144,38 @@
                 </div>
                 <div>
                   <p class="text-xs text-neutral mb-1">Estimated additional expenses</p>
-                  {{ field_value(c.cost_breakdown.estimated_additional_expenses, money=true) }}
-                  {% if c.cost_breakdown.estimated_additional_expenses.value == 0 %}
-                    <p class="text-xs text-neutral mt-1">
-                      No estimate has been entered for this pathway yet -- this is not a
-                      claim that there are no extra costs.
+                  {# UI-6: when the student has supplied their own override
+                     for this request (the form above), this line must show
+                     THEIR figure without a "checked" or "Estimate" trust
+                     badge next to it -- it is a guess they typed in, not a
+                     published fact or a system-computed estimate, and
+                     `_trust_badge.html`'s `trust_badge()` has no vocabulary
+                     entry that means "unverified student input" (every one
+                     of its five labels reads as some form of confidence).
+                     Rendered directly (not through `field_value()`, which
+                     always calls `trust_badge()`) for exactly that reason.
+                     `c.cost_summary.additional_expenses_override` (RULES-10
+                     /app/rules/cost.py) is `None` unless this request's
+                     override parsed to a real, non-negative number
+                     (app/web/compare_pages.py's own safe parser) -- the
+                     computed-estimate branch below is completely unchanged
+                     for every other case. #}
+                  {% if c.cost_summary.additional_expenses_override is not none %}
+                    <p class="text-charcoal font-medium">
+                      {{ c.cost_summary.additional_expenses_override.amount
+                         | money(c.cost_summary.additional_expenses_override.currency) }}
                     </p>
+                    <p class="text-xs text-neutral mt-1">
+                      Your assumption &mdash; not a published or verified figure.
+                    </p>
+                  {% else %}
+                    {{ field_value(c.cost_breakdown.estimated_additional_expenses, money=true) }}
+                    {% if c.cost_breakdown.estimated_additional_expenses.value == 0 %}
+                      <p class="text-xs text-neutral mt-1">
+                        No estimate has been entered for this pathway yet -- this is not a
+                        claim that there are no extra costs.
+                      </p>
+                    {% endif %}
                   {% endif %}
                 </div>
                 <div>
@@ -157,11 +233,48 @@
               </div>
             </div>
 
+            {# UI-6: docs/UI.md's field order for this screen names
+               funding, work realities and alternatives as their own rows,
+               beyond what Cost above already shows -- none of the three
+               has a data source yet (this screen's own top-of-loop
+               comment). Previously skipped outright; this card asks for
+               an explicit "no data yet" note instead, through the shared
+               `empty_state()` macro (role="status": nothing failed, this
+               content simply doesn't exist yet) rather than silently
+               dropping the row, so a short field list here never reads as
+               "these are all the fields there are" (docs/UI.md: a missing
+               section says "Not available", never dropped silently). #}
+            <div>
+              <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
+                Funding
+              </h3>
+              {{ empty_state(
+                   "Funding information (confirmed and potential, beyond the cost figures "
+                   "above) isn't published for this pathway yet."
+              ) }}
+            </div>
+
             <div>
               <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
                 Location
               </h3>
               {{ field_value(c.fields["location"]) }}
+            </div>
+
+            <div>
+              <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
+                Work realities
+              </h3>
+              {{ empty_state("Work-reality information isn't published for this pathway yet.") }}
+            </div>
+
+            <div>
+              <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
+                Alternatives if plans change
+              </h3>
+              {{ empty_state(
+                   "Alternative-pathway information isn't published for this pathway yet."
+              ) }}
             </div>
 
             {# A student finishing a 3-way comparison must be able to
