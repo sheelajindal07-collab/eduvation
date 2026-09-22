@@ -20,7 +20,7 @@ How to read it:
 
 Migration ledger (Phase 1 order): 0007 DATA-12, 0008 SCOPE-3, 0009 AUTH-4, 0010 AUTH-5, 0011 PUB-2, 0012 PUB-3, 0013 SEC-6, 0014 CONSENT-4. Phase 2: AUTH-7, AUTH-10, DATA-4, I18N-7, I18N-8, AUTH-15, OPS-6, TRIAL-5, AI-4. Owner apply batches: DATA-10a (through 0008), DATA-10b (through 0010), PUB-4 (through 0012), DATA-10c (through 0014). **PROVISIONAL — re-verify against `ls db/migrations/` before the migration lane opens**: 0004 and 0005 are already real, taken by another session's guardian-consent gate, not this plan's — that is why the ledger starts at 0007, not 0004 (see docs/DEVELOPMENT-PLAN.md section 16 for the two collisions that moved this).
 
-Lockboard (lead only): `RESET` line goes here before the shared local stack is reset. Currently: **APPLY PENDING (Phase 1a lead, 2026-09-22)** - migration `0011_ai_usage.sql` merged to `main`, not yet applied to the shared `bcion-lite-test` stack (additive, `scripts/apply_migrations.py`, no reset). Holding for "no run in flight" from whoever's running tests/db against that stack right now (own AI-8/AI-18 lanes plus at least one Phase 1 lane per cross-session coordination) - will post here again once applied.
+Lockboard (lead only): `RESET` line goes here before the shared local stack is reset. Currently: none. (Migration `0011_ai_usage.sql` was applied to `bcion-lite-test` 2026-09-22 evening, additively, no reset - `ai_usage`/`ai_usage_caps` now exist there for every lane's `tests/db` runs.)
 
 ---
 
