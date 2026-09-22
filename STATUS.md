@@ -33,6 +33,21 @@ sign-off (`docs/SECURITY.md`). 193 unit tests passing.
 CI green. **Hosting:** live on the Oracle VM (`eduvation.service`,
 verified healthy, talking to the real database).
 
+## Phase 1a — AI only (planned 2026-09-22, not started)
+Owner decision: an AI-only build runs alongside Phase 1 in its own
+lanes, touching no Phase 1 file, merged to `main` behind
+`AI_ENABLED=false`, and "added" by flipping the flag after its exit gate.
+Plan: `docs/plan/phase-1a-ai.md` (lead-only). 20 agent sessions across
+up to 6 lanes, about 9 working days of dev time, 4 data-security + 2
+ai-evaluator + 2 ux-qa passes. Every AI answer = two model passes
+(select, then verify) + code validation; the model never writes a
+sentence; free Gemini tier, so no student-typed text leaves the server
+(test-enforced). AI-4 takes migration **0011**; the Phase 1 ledger
+shifts by one. Waiting on the owner's "go" and five explicit yeses (plan
+section 8a) plus AI-10 (key, free-tier terms and limits) before any live
+call. `tasks/INDEX.md` Step 11 retagged `[P1a]`; four cards added
+(AI-14 un-dropped, AI-18, AI-19, AI-20). No code changed.
+
 ## Development plan — Wave 1 done, Wave 2's migration/eligibility lanes done (2026-09-21)
 `docs/DEVELOPMENT-PLAN.md` is being executed for real. `tasks/INDEX.md`
 finalised (DOCS-3a); `docs/CONTRACTS.md` fully frozen (all 7 Wave 1

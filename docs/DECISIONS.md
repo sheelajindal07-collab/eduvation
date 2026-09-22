@@ -5,6 +5,51 @@ never deleted.
 
 ---
 
+## 2026-09-22 — Phase 1a inserted: an AI-only build phase, with three rules on every AI card
+**Decision (owner, in chat, 2026-09-22):** "Phase 1a should only AI
+implementation"; "fast reliable quality, more work in less time"; "AI has
+to give correct answers, no speculation, no maybe"; "every AI call should
+be reviewed/verified two times"; "we are using free Gemini". The lead
+turned this into `docs/plan/phase-1a-ai.md` (lead-only) and a pointer
+section in `docs/DEVELOPMENT-PLAN.md` section 4.
+**What this changes:**
+- Phase 1a runs **alongside** Phase 1 (owner clarification, same day:
+  "start separately, without touching Phase 1, add it when ready"). AI
+  cards touch no Phase 1 file, merge to `main` behind `AI_ENABLED=false`
+  as each goes green, and the module is "added" by flipping the flag on
+  staging after the plan's exit gate (AI-12). The 6-lane cap is shared;
+  Phase 1's exit gate is unchanged and it loses at most the two AI-4
+  migration days. A long-lived integration branch was rejected: same
+  isolation, plus a big-bang merge.
+- The cuts-and-moves row "All AI tasks except AI-2 ... Phase 2" is
+  superseded. AI-14 (extraction drafts) is un-dropped — a D16 change; it
+  still can never publish (the DB rule from 0001/0003 stands).
+- Four cards added: AI-14 (rescheduled), AI-18 next-steps template, AI-19
+  what-changed summary, AI-20 Hindi content drafts. All run the same
+  two-pass shape and the same "code renders, model only selects" rule.
+- Migration ledger: AI-4 takes **0011**; PUB-2 0012, PUB-3 0013, SEC-6
+  0014, CONSENT-4 0015. Reserved at session open, as always.
+- Rule 1, correctness: the model never authors a sentence; a banned-phrase
+  unit test (hedges, guarantees, rank and personality language, in
+  English, Hindi and Hinglish) fails the build.
+- Rule 2, double verification: every runtime answer = a selection call +
+  an adversarial verification call over the selected ids only, then code
+  validation; disagreement → refusal. Reviewer-facing calls (extraction,
+  Hindi drafts) do the same and then go to a human.
+- Rule 3, free tier: accepted only because no student-typed text leaves
+  the server (enforced by an outbound allow-list test). The follow-up
+  field is not built until CONSENT-7 exists and a paid, no-training tier
+  is chosen. Quota errors = cap hit, no retry.
+**Still needs the owner's explicit yes (plan section 8a):** P1a-1 run it
+alongside under the shared cap, flag-gated; P1a-2 the 0011 slot; P1a-3 the free-tier acceptance with the
+AI-10 facts; P1a-4 live answers for guests on dev/staging keyed on the
+guest-session id; P1a-5 AI-14 un-dropped. Provisional 24-hour defaults
+(8b): flash model, caps, fixed prompts only, i18n-key Hindi, email
+alerts, SDK kept, pasted-text extraction.
+**Status:** Planned, not started. No code changed in this entry.
+
+---
+
 ## 2026-09-22 — RULES-9: a second invented claim convention (timeline stages), plus real database-backed prefill
 **Event:** `app/planning/timeline_assembly.py`'s `stages_from_claims()` reads a
 pathway's published timeline stages from claims for the first time. As with

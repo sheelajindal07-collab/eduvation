@@ -175,22 +175,27 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] SCOPE-9 - Human verification of the trial coverage set [P2, human]
 - [ ] CONTENT-11 - Cycle-roll recheck for tier-1 exam claims [P2, human]
 
-## Step 11 Bounded AI (M5) - GROUNDWORK ONLY (AI stays off in Phase 1)
+## Step 11 Bounded AI (M5) - PHASE 1a: AI ONLY, alongside Phase 1, merged behind the flag (owner decision 2026-09-22; plan in `docs/plan/phase-1a-ai.md`, lead-only)
+Every card here carries the three Phase 1a rules: answer or refuse, never guess; two model verifications plus code validation on every call; free Gemini tier, so no student-typed text ever leaves. AI-4 takes migration **0011**; the Phase 1 ledger above shifts by one (PUB-2 0012, PUB-3 0013, SEC-6 0014, CONSENT-4 0015). Production `AI_ENABLED` stays false; AI-17 stays a Phase 2 gate.
 - [x] AI-2 - AI_ENABLED flag, kill switch, /readyz reports it [W2]
-- [ ] AI-10 - Owner: provider terms, restricted key, provider-side cap [P1 weeks 2-3 prep, owner]
-- [ ] AI-1 - AI contract and schemas [P2]
-- [ ] AI-3 - Provider adapter [P2]
-- [ ] AI-5 - Retrieval of approved records [P2]
-- [ ] AI-9 - AI evaluator agent and evaluation set [P2]
-- [ ] UI-11 - Ask BCION shell, AI-off first [P2]
-- [ ] AI-4 - ai_usage migration, budget reservation, per-account and global caps [P2]
-- [ ] AI-6 - Pipeline, prompts, guards, outbound field allow-list [P2]
-- [ ] AI-7 - Ask BCION route and screen [P2]
-- [ ] AI-8 - AI-off journey regression [P2]
-- [ ] AI-11 - Capped live evaluation (owner-run) [P2]
-- [ ] AI-16 - Hindi-preferring person reviews Hindi answers [P2, human]
-- [ ] AI-12 - Fix round and enable AI on staging [P2]
-- [ ] AI-17 - Owner sign-off to enable AI (after AI-13) [P2, owner]
+- [ ] AI-10 - Owner: free-tier terms and limits recorded, restricted key, provider-side cap [P1a day 1, owner]
+- [ ] AI-1 - AI contract, schemas, typed errors, outbound allow-list model [P1a L1, day 1]
+- [ ] AI-3 - Provider hardening: retries off, typed errors, two-pass mock, injectable client [P1a L4]
+- [ ] AI-5 - Retrieval of approved records, import guard [P1a L5]
+- [ ] AI-9 - AI evaluator agent (proposed file) and 36-question evaluation set [P1a L3, day 1]
+- [ ] UI-11 - Ask BCION shell, deterministic first, no input element [P1a L6]
+- [ ] AI-4 - Migration 0011: ai_usage, atomic two-call reservation, per-identity and global caps, RLS [P1a L2, migration-owner, day 1]
+- [ ] AI-6 - Two-pass pipeline (selection + verification), prompts, guards, outbound allow-list [P1a L4, x2]
+- [ ] AI-7 - Ask BCION route wired to the pipeline; identity = account or guest session [P1a L6]
+- [ ] AI-8 - AI-off journey regression (flag off; mock failing) [P1a L6]
+- [ ] AI-11 - Capped evaluation runner; first run synthetic on the local stack, second on staging [P1a L3 script, owner-run]
+- [ ] AI-16 - Hindi-preferring person reviews Hindi answers and AI-20 drafts [P1a, human; needs I18N-6]
+- [ ] AI-12 - Fix round, enable on staging (or dev, recorded), kill-switch drill [P1a L4 + owner]
+- [ ] AI-17 - Owner sign-off to enable AI on production (after AI-13) [P2, owner - unchanged]
+- [ ] AI-14 - AI-assisted claim extraction drafts: paste text, extraction + verification pass, verbatim-span check, draft only [P1a L8, x2, un-dropped]
+- [ ] AI-18 - Next-steps template over a server-owned, claim-bound action catalogue [P1a L10, x2, new]
+- [ ] AI-19 - What-changed summary over the superseded_by diff [P1a L10, new]
+- [ ] AI-20 - Hindi content drafts, offline batch with back-translation check, CSV for the reviewer [P1a L9, new]
 
 ## Step 12 Hindi, accessibility, difficult states (M6) - OPEN
 - [x] A11Y-1 - Difficult-states and cache-class contract [W1, contract burst]
@@ -267,7 +272,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] TRIAL-19 - Recruit the expansion cohort [P3, owner]
 - [ ] OPS-12 - Expansion batch ops check script [P3]
 - [ ] TRIAL-6 - Pilot metrics script [P3]
-- [ ] AI-13 - Spend and fallback metrics, alert tested (before AI-17) [P2]
+- [ ] AI-13 - Spend, fallback and two-pass disagreement metrics; threshold alert via the email sender (before AI-17) [P1a L7]
 - [ ] CONSENT-12 - Under-18 school-mediated guardian consent route [P3]
 - [ ] CONSENT-14 - Human review and sign-off before real minor accounts [P3, human]
 - [ ] TRIAL-17 - Week-4 post-test [P3, human]
@@ -303,4 +308,4 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] AUTH-18 - Contingency fix session for review findings [P2, only if needed]
 
 ## Dropped for the pilot (19; decision D16 lists the build-pack deviations)
-A11Y-13, SCOPE-12, RULES-14, RULES-18, SEC-11, CONSENT-13, CONSENT-15, CONSENT-16, PUB-16, OPS-11, OPS-13, UI-16, AUTH-13 (banner substitute in AUTH-14), I18N-14 (Gujarati strings restored only for a Gujarati-medium cohort), AI-14, CONTENT-19, DEPLOY-14, DOCS-10 (its deny rules land with DOCS-1 on day 1, before any fan-out; DOCS-13 adds only the implementer allowlist), TRIAL-15.
+A11Y-13, SCOPE-12, RULES-14, RULES-18, SEC-11, CONSENT-13, CONSENT-15, CONSENT-16, PUB-16, OPS-11, OPS-13, UI-16, AUTH-13 (banner substitute in AUTH-14), I18N-14 (Gujarati strings restored only for a Gujarati-medium cohort), ~~AI-14~~ (un-dropped into Phase 1a, 2026-09-22), CONTENT-19, DEPLOY-14, DOCS-10 (its deny rules land with DOCS-1 on day 1, before any fan-out; DOCS-13 adds only the implementer allowlist), TRIAL-15.
