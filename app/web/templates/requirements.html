@@ -23,25 +23,67 @@
       meet each requirement. Leave anything blank to see just what's required.
     </p>
 
-    {# POST, not GET (SEC-5): age/marks/subjects/domicile are personal
-       inputs and must never end up in a URL, a Location header or
-       browser history (docs/CONTRACTS.md "Every personal input ... is
-       POST-only"). This route renders the result directly in its POST
-       response -- no redirect -- so submitting stays a single request
-       and the address bar never carries what was typed in. pathway_id
-       is the only value still safe to share/bookmark on its own (see
-       GET /requirements/view?pathway_id=... above), so it travels as a
-       plain hidden field here too, not re-derived from the URL. #}
+    {# RULES-16: date_of_birth is per-request only -- never stored, never
+       logged, never in a URL (see app/web/requirements_pages.py's own
+       docstring). A malformed value (garbage text, a future date, an
+       implausibly old one) degrades to this friendly notice rather than
+       a raw validation error or a 500; the shared alert() primitive
+       already used for this screen's other difficult states, not new
+       markup. #}
+    {% if dob_error %}
+      {{ alert(dob_error, variant="caution", class_names="mb-4") }}
+    {% endif %}
+
+    {# POST, not GET (SEC-5): age/marks/subjects/domicile/date_of_birth
+       are personal inputs and must never end up in a URL, a Location
+       header or browser history (docs/CONTRACTS.md "Every personal
+       input ... is POST-only"). This route renders the result directly
+       in its POST response -- no redirect -- so submitting stays a
+       single request and the address bar never carries what was typed
+       in. pathway_id is the only value still safe to share/bookmark on
+       its own (see GET /requirements/view?pathway_id=... above), so it
+       travels as a plain hidden field here too, not re-derived from the
+       URL. #}
     <section class="card mb-6">
       <form method="post" action="/requirements/view" class="space-y-4">
         <input type="hidden" name="pathway_id" value="{{ pathway_id }}" />
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label class="field-label" for="age">Age</label>
+            {# RULES-16: date of birth is the PRIMARY way to answer an
+               age-based requirement -- it is what a real DOB-cutoff rule
+               (e.g. "completed 17 years as on 31 December of the exam
+               year", app/rules/criteria_dates.py) needs, and the plain
+               Age field below cannot express. Its value is only ever
+               redisplayed back into this SAME form's own value="..."
+               attribute on the POST-and-render response the student
+               just submitted -- never a href, never a query string,
+               never stored, never logged. #}
+            <label class="field-label" for="date_of_birth">Date of birth</label>
+            <input
+              class="field-input" type="date" id="date_of_birth" name="date_of_birth"
+              value="{{ date_of_birth.isoformat() if date_of_birth else '' }}"
+              max="{{ today_iso }}"
+            />
+            <p class="field-hint">
+              Used for exact age-cutoff rules, e.g. "completed 17 years as on 31 December".
+              Not stored &mdash; used only to check this page's requirements.
+            </p>
+          </div>
+          <div>
+            {# RULES-16: kept as a fallback, not removed -- a criterion
+               built straight from a pathway's own published claims
+               (app/api/eligibility.py's minimum_age/maximum_age) is a
+               plain age, not a date-of-birth cutoff, and genuinely has
+               no use for a real DOB. #}
+            <label class="field-label" for="age">Age (only if date of birth above isn't available)</label>
             <input
               class="field-input" type="number" min="0" id="age" name="age"
               value="{{ age if age is not none else '' }}"
             />
+            <p class="field-hint">
+              Only used for a plain age requirement; date of birth above is used first when a
+              requirement needs an exact cutoff date.
+            </p>
           </div>
           <div>
             <label class="field-label" for="marks_percentage">Marks percentage</label>
@@ -93,6 +135,40 @@
       </form>
     </section>
 
+    {# RULES-8/RULES-16: cycle and jurisdiction are both None on the
+       pathway's-own-claims fallback path and both set together on the
+       named-rule-set path (app/api/eligibility.py's EligibilityResponse
+       docstrings) -- shown once, near the results, rather than repeated
+       per criterion. #}
+    {% if result.cycle or result.jurisdiction %}
+      <p class="text-sm text-neutral mb-4">
+        {% if result.cycle and result.jurisdiction %}
+          Checked against the <strong>{{ result.cycle }}</strong> cycle rules for
+          <strong>{{ result.jurisdiction }}</strong>.
+        {% elif result.cycle %}
+          Checked against the <strong>{{ result.cycle }}</strong> cycle rules.
+        {% else %}
+          Checked against rules for <strong>{{ result.jurisdiction }}</strong>.
+        {% endif %}
+      </p>
+    {% endif %}
+
+    {# RULES-16: result.stale is true when either the rule set's own
+       cycle has ended or a published fact behind a criterion is overdue
+       for a recheck (app/rules/ruleset.py's cycle_stale/evidence_stale,
+       combined on the wire as one flag). Can be true even when criteria
+       is non-empty -- shown independently of the criteria/empty-state
+       branch below, through the shared alert() primitive rather than
+       new markup. #}
+    {% if result.stale %}
+      {{ alert(
+        "This may be out of date: the admission cycle has ended or a published fact behind "
+        "it is overdue for a recheck. Confirm against the official notification before "
+        "relying on it.",
+        variant="caution", class_names="mb-4"
+      ) }}
+    {% endif %}
+
     {% if result.criteria %}
       <div class="mb-4">
         {{ eligibility_outcome_badge(result.outcome, overall=true) }}
@@ -115,13 +191,47 @@
               </div>
             </div>
             <p class="text-sm text-charcoal mt-2">{{ c.explanation }}</p>
-            {{ evidence_line(c.source_authority, c.source_url, c.verification_date) }}
+            {# RULES-16: rule_version travels in this SAME citation line,
+               not a second display of its own (_trust_badge.html's
+               evidence_line docstring) -- both new arguments render
+               nothing without a source_url, same known gap the cycle
+               argument already documents there. #}
+            {{ evidence_line(
+                 c.source_authority, c.source_url, c.verification_date,
+                 applicable_cycle=result.cycle, rule_version=result.rule_version
+            ) }}
             {{ ask_bcion("eligibility_gap", pathway_id=pathway_id) }}
           </section>
         {% endfor %}
       </div>
+    {% elif result.no_verified_rules %}
+      {{ empty_state(
+        "No verified rules for this pathway yet. Nothing here has been checked against a "
+        "reviewed rule set. Confirm the requirements with the official notification."
+      ) }}
     {% else %}
       {{ empty_state("No published eligibility requirements yet for this pathway.") }}
+    {% endif %}
+
+    {# RULES-16: real conditions the engine deliberately or unavoidably
+       did NOT evaluate (app/rules/criteria_extra.py's NotChecked) --
+       shown separately so a short criteria list never reads as "these
+       are all the requirements there are". Can appear whether or not
+       result.criteria is empty (e.g. an unreadable rule_key claim). #}
+    {% if result.not_checked %}
+      <section class="card mt-4">
+        <h2 class="text-base font-semibold text-charcoal">Not checked here</h2>
+        <ul class="list-disc list-inside text-sm text-charcoal mt-2 space-y-1">
+          {% for n in result.not_checked %}
+            {% set display_name = CRITERION_DISPLAY_NAMES.get(
+                 n.name,
+                 (n.name.replace("_", " ") | capitalize) if ("_" in n.name and " " not in n.name)
+                 else n.name
+            ) %}
+            <li><strong>{{ display_name }}:</strong> {{ n.note }}</li>
+          {% endfor %}
+        </ul>
+      </section>
     {% endif %}
 
     <p class="mt-8 text-center">

@@ -6,18 +6,37 @@ asserting on rendered HTML content instead of a JSON body.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from supabase import Client
 
+from app.api.eligibility import RULE_KEY_FIELD
 from app.main import app
 from tests.db.conftest import run_name
 
 client = TestClient(app)
+
+# RULES-16: the same registered, reviewed-in-git case table
+# tests/db/test_api_eligibility.py reads directly for its own `rule_key`
+# fixtures -- read independently here too (rather than importing that
+# file's own file-local helpers) so this module stays decoupled from
+# another test file's private conventions, matching
+# app/api/eligibility.py's own "kept file-local, not coupled over a few
+# lines" precedent for its near-identical helpers.
+_NEET_UG_CASE_TABLE = json.loads(
+    (Path(__file__).resolve().parents[2] / "tests/unit/rules/cases/neet_ug.json").read_text(
+        encoding="utf-8"
+    )
+)
+_NEET_UG_EXAM_KEY: str = _NEET_UG_CASE_TABLE["exam_key"]
+_NEET_UG_CYCLE: str = _NEET_UG_CASE_TABLE["cycle"]
+_NEET_UG_JURISDICTION: str = _NEET_UG_CASE_TABLE["jurisdiction"]
 
 # QA-3: these two literals are asserted verbatim further down (not read
 # back off the fixture's own returned dict, unlike every career/pathway
@@ -723,20 +742,26 @@ class TestRequirementsPage:
     def test_no_published_requirements_shows_the_empty_state_with_role_status(
         self, two_pathways: dict[str, Any]
     ) -> None:
-        """A11Y-2: requirements.html's own empty copy ("No published
-        eligibility requirements yet for this pathway") now renders
-        through _states.html's `empty_state()` macro, which must carry
+        """A11Y-2: requirements.html's own empty copy now renders through
+        _states.html's `empty_state()` macro, which must carry
         role="status" (informational -- nothing failed), not
         role="alert". `two_pathways["pathway_b"]` has zero claims of any
         kind (the fixture's only claim is on pathway_a), so this
         pathway's criteria list is deterministically empty regardless of
-        anything else in the shared local stack."""
+        anything else in the shared local stack.
+
+        RULES-16: an empty criteria list is ALWAYS `no_verified_rules`
+        (app/rules/ruleset.py's `evaluate_ruleset`: `no_verified_rules =
+        len(rule_set.criteria) == 0`) -- there is no engine state with
+        empty criteria and `no_verified_rules=False` -- so this scenario
+        now exercises requirements.html's `no_verified_rules`-specific
+        wording, not the old generic copy."""
         response = client.get(
             "/requirements/view",
             params={"pathway_id": two_pathways["pathway_b"]["id"]},
         )
         assert response.status_code == 200
-        assert "No published eligibility requirements yet for this pathway." in response.text
+        assert "No verified rules for this pathway yet." in response.text
         assert 'role="status"' in response.text
 
     def test_criteria_show_trust_label_alongside_the_eligibility_outcome(
@@ -957,6 +982,318 @@ class TestRequirementsPage:
         # criteria are still "insufficient_information", not an error
         # and not silently treated as some default value.
         assert "Not yet known" in response.text
+
+
+_NAMED_RULE_SOURCE_NAME = run_name("WEB UI NAMED RULE SET TEST SOURCE (fixture)")
+_STALE_CLAIM_SOURCE_NAME = run_name("WEB UI STALE CLAIM TEST SOURCE (fixture)")
+
+
+@pytest.fixture
+def named_rule_set_pathway(admin_client: Client) -> Iterator[dict[str, Any]]:
+    """A pathway whose published `rule_key` claim names the registered
+    NEET-UG rule set for its own cycle -- RULES-16's own fixture for the
+    cycle/jurisdiction label, the DOB-driven cutoff criterion and the
+    "not checked here" list, kept independent of
+    tests/db/test_api_eligibility.py's own file-local `_seed_rule_key_
+    pathway` helper (same "not coupling otherwise-unrelated files over a
+    few lines" convention app/api/eligibility.py documents for its own
+    near-identical row helpers)."""
+    source = (
+        admin_client.table("sources")
+        .insert(
+            {
+                "authority_name": _NAMED_RULE_SOURCE_NAME,
+                "official_url": "https://example.invalid/web-ui-rule-key-source",
+                "source_type": "official",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    career = (
+        admin_client.table("careers")
+        .insert({"name": run_name("Named rule set web UI test career (SYNTHETIC)")})
+        .execute()
+        .data[0]
+    )
+    pathway = (
+        admin_client.table("pathways")
+        .insert(
+            {
+                "career_id": career["id"],
+                "name": run_name("Named rule set web UI test pathway (SYNTHETIC)"),
+                "description": "Seeded by tests/db/test_web_pages.py",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    claim = (
+        admin_client.table("claims")
+        .insert(
+            {
+                "entity_type": "Pathway",
+                "entity_id": pathway["id"],
+                "field": RULE_KEY_FIELD,
+                "value": _NEET_UG_EXAM_KEY,
+                "source_id": source["id"],
+                "verification_date": "2026-09-01",
+                "verifier": run_name("test-fixture-reviewer"),
+                "status": "published",
+                "review_due_date": "2099-01-01",
+                "academic_cycle": _NEET_UG_CYCLE,
+                "jurisdiction": _NEET_UG_JURISDICTION,
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    yield {"career": career, "pathway": pathway, "source": source, "claim": claim}
+    admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+    admin_client.table("pathways").delete().eq("id", pathway["id"]).execute()
+    admin_client.table("careers").delete().eq("id", career["id"]).execute()
+    admin_client.table("sources").delete().eq("id", source["id"]).execute()
+
+
+@pytest.fixture
+def stale_requirements_pathway(admin_client: Client) -> Iterator[dict[str, Any]]:
+    """A pathway with one published `minimum_age` claim whose
+    `verification_date` is well past app/planning/comparison.py's
+    `DEFAULT_FRESHNESS_SLA_DAYS` (180 days) -- so `trust_label_for_claim`
+    reports `needs_rechecking` for it, and `check_eligibility`'s
+    `_evidence_stale` (which requirements.html's own `result.stale`
+    reads) is deterministically True regardless of anything the student
+    fills in."""
+    source = (
+        admin_client.table("sources")
+        .insert(
+            {
+                "authority_name": _STALE_CLAIM_SOURCE_NAME,
+                "official_url": "https://example.invalid/web-ui-stale-claim-source",
+                "source_type": "official",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    career = (
+        admin_client.table("careers")
+        .insert({"name": run_name("Stale claim web UI test career (SYNTHETIC)")})
+        .execute()
+        .data[0]
+    )
+    pathway = (
+        admin_client.table("pathways")
+        .insert(
+            {
+                "career_id": career["id"],
+                "name": run_name("Stale claim web UI test pathway (SYNTHETIC)"),
+                "description": "Seeded by tests/db/test_web_pages.py",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    claim = (
+        admin_client.table("claims")
+        .insert(
+            {
+                "entity_type": "Pathway",
+                "entity_id": pathway["id"],
+                "field": "minimum_age",
+                "value": "17",
+                "source_id": source["id"],
+                "verification_date": "2024-01-01",
+                "verifier": run_name("test-fixture-reviewer"),
+                "status": "published",
+                "review_due_date": "2099-01-01",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    yield {"career": career, "pathway": pathway, "source": source, "claim": claim}
+    admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+    admin_client.table("pathways").delete().eq("id", pathway["id"]).execute()
+    admin_client.table("careers").delete().eq("id", career["id"]).execute()
+    admin_client.table("sources").delete().eq("id", source["id"]).execute()
+
+
+class TestRequirementsPageDateOfBirth:
+    """RULES-16: the date-of-birth input, the cycle/jurisdiction label,
+    the "not checked here" list and the stale qualifier."""
+
+    def test_date_of_birth_field_is_present_and_age_is_labelled_as_fallback(
+        self, requirements_pathway: dict[str, Any]
+    ) -> None:
+        response = client.get(
+            "/requirements/view",
+            params={"pathway_id": requirements_pathway["pathway"]["id"]},
+        )
+        assert response.status_code == 200
+        assert '<label class="field-label" for="date_of_birth">Date of birth</label>' in (
+            response.text
+        )
+        assert 'type="date" id="date_of_birth" name="date_of_birth"' in response.text
+        # Age is kept -- not removed -- but relabelled as the fallback.
+        assert 'id="age" name="age"' in response.text
+        # Literal static markup in the template, not a {{ }} expression --
+        # never HTML-entity-escaped, unlike dob_error/pathway_name below,
+        # which really are Jinja variable interpolations.
+        assert "only if date of birth above isn't available" in response.text
+
+    def test_date_of_birth_drives_the_named_rule_sets_cutoff_criterion(
+        self, named_rule_set_pathway: dict[str, Any]
+    ) -> None:
+        """A real DOB-cutoff check (app/rules/criteria_dates.py), which
+        the plain integer `age` field cannot express -- proves the new
+        input really reaches the named rule set through
+        app/web/requirements_pages.py -> check_eligibility."""
+        response = client.post(
+            "/requirements/view",
+            data={
+                "pathway_id": named_rule_set_pathway["pathway"]["id"],
+                "date_of_birth": "2000-01-01",
+                "subjects_studied": "Physics,Chemistry,Biology",
+            },
+        )
+        assert response.status_code == 200
+        assert "You meet the published requirements" in response.text
+        assert "Meets this requirement" in response.text
+
+    def test_a_too_young_date_of_birth_shows_does_not_meet(
+        self, named_rule_set_pathway: dict[str, Any]
+    ) -> None:
+        response = client.post(
+            "/requirements/view",
+            data={
+                "pathway_id": named_rule_set_pathway["pathway"]["id"],
+                "date_of_birth": "2020-01-01",
+                "subjects_studied": "Physics,Chemistry,Biology",
+            },
+        )
+        assert response.status_code == 200
+        assert "Does not meet this requirement" in response.text
+
+    def test_get_ignores_date_of_birth_smuggled_into_the_query_string(
+        self, named_rule_set_pathway: dict[str, Any]
+    ) -> None:
+        """SEC-5: same guarantee the existing age/marks_percentage/
+        subjects_studied test pins down, now for date_of_birth -- GET
+        /requirements/view has no such route parameter to bind to."""
+        response = client.get(
+            "/requirements/view",
+            params={
+                "pathway_id": named_rule_set_pathway["pathway"]["id"],
+                "date_of_birth": "2000-01-01",
+            },
+        )
+        assert response.status_code == 200
+        assert "You meet the published requirements" not in response.text
+
+    def test_malformed_date_of_birth_shows_a_friendly_message_not_a_500(
+        self, requirements_pathway: dict[str, Any]
+    ) -> None:
+        response = client.post(
+            "/requirements/view",
+            data={
+                "pathway_id": requirements_pathway["pathway"]["id"],
+                "date_of_birth": "not-a-date",
+            },
+        )
+        assert response.status_code == 200
+        assert "doesn&#39;t look valid" in response.text
+
+    def test_a_future_date_of_birth_shows_a_friendly_message_not_a_500(
+        self, requirements_pathway: dict[str, Any]
+    ) -> None:
+        response = client.post(
+            "/requirements/view",
+            data={
+                "pathway_id": requirements_pathway["pathway"]["id"],
+                "date_of_birth": "2099-01-01",
+            },
+        )
+        assert response.status_code == 200
+        assert "can&#39;t be in the future" in response.text
+
+    def test_an_implausibly_old_date_of_birth_shows_a_friendly_message_not_a_500(
+        self, requirements_pathway: dict[str, Any]
+    ) -> None:
+        response = client.post(
+            "/requirements/view",
+            data={
+                "pathway_id": requirements_pathway["pathway"]["id"],
+                "date_of_birth": "1800-01-01",
+            },
+        )
+        assert response.status_code == 200
+        assert "too far in the past" in response.text
+
+    def test_date_of_birth_never_appears_in_logs_or_in_any_link(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        named_rule_set_pathway: dict[str, Any],
+    ) -> None:
+        """The absolute rule this whole task is built around: verified
+        directly against the actual captured log records and every
+        `href` in the rendered page, not just claimed."""
+        dob = "2000-01-01"
+        with caplog.at_level("DEBUG", logger="app"):
+            response = client.post(
+                "/requirements/view",
+                data={
+                    "pathway_id": named_rule_set_pathway["pathway"]["id"],
+                    "date_of_birth": dob,
+                    "subjects_studied": "Physics,Chemistry,Biology",
+                },
+            )
+        assert response.status_code == 200
+        logged = "\n".join(r.getMessage() for r in caplog.records)
+        assert dob not in logged
+        assert dob not in str(response.url)
+        for href in re.findall(r'href="([^"]*)"', response.text):
+            assert dob not in href
+
+    def test_named_rule_set_shows_the_cycle_and_jurisdiction_label(
+        self, named_rule_set_pathway: dict[str, Any]
+    ) -> None:
+        response = client.get(
+            "/requirements/view",
+            params={"pathway_id": named_rule_set_pathway["pathway"]["id"]},
+        )
+        assert response.status_code == 200
+        assert "Checked against the" in response.text
+        assert _NEET_UG_CYCLE in response.text
+        assert _NEET_UG_JURISDICTION in response.text
+        assert "cycle rules" in response.text
+
+    def test_not_checked_here_list_appears_for_the_named_rule_set(
+        self, named_rule_set_pathway: dict[str, Any]
+    ) -> None:
+        """The NEET-UG case table's own `not_checked` entries (marks
+        percentage, qualifying percentile, domicile/nationality for
+        state-quota seats) must all be visible, not just the two
+        criteria the rule set actually evaluates."""
+        response = client.get(
+            "/requirements/view",
+            params={"pathway_id": named_rule_set_pathway["pathway"]["id"]},
+        )
+        assert response.status_code == 200
+        assert "Not checked here" in response.text
+        for entry in _NEET_UG_CASE_TABLE["not_checked"]:
+            assert entry["name"] in response.text
+
+    def test_stale_evidence_shows_the_recheck_qualifier(
+        self, stale_requirements_pathway: dict[str, Any]
+    ) -> None:
+        response = client.get(
+            "/requirements/view",
+            params={"pathway_id": stale_requirements_pathway["pathway"]["id"]},
+        )
+        assert response.status_code == 200
+        assert "may be out of date" in response.text
+        assert "overdue for a recheck" in response.text
 
 
 class TestDbUnavailableDegradesGracefully:
