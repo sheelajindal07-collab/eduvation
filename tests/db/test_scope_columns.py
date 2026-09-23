@@ -508,13 +508,26 @@ class TestCrossUserAccess:
     def test_a_guest_cannot_either(
         self, guest_client: Client, published_claim: str
     ) -> None:
-        result = (
-            guest_client.table("claims")
-            .update({"currency": "INR"})
-            .eq("id", published_claim)
-            .execute()
-        )
-        assert result.data == []
+        """A guest's deny is now a flat 42501, not a silent empty update.
+
+        Before db/migrations/0016_grants_hardening.sql, `anon` still held
+        the SQL-standard default UPDATE/DELETE/etc. table privileges on
+        `claims` (this stack grants ALL SEVEN to anon by default; RLS
+        alone was the only thing filtering the row away, i.e. a
+        `DENY_EMPTY`). 0016 revokes every non-SELECT privilege on
+        `claims` from `anon` — the same grant-layer hardening
+        `tests/db/access_matrix.py`'s own `claims`/UPDATE/`guest` row
+        documents. A guest's request now never reaches RLS at all: it is
+        refused at the privilege check first, which is a STRONGER
+        guarantee than before (a dropped/misconfigured `claims` UPDATE
+        policy could no longer, on its own, hand a guest a write here),
+        not a weaker one.
+        """
+        with pytest.raises(APIError) as caught:
+            guest_client.table("claims").update({"currency": "INR"}).eq(
+                "id", published_claim
+            ).execute()
+        assert caught.value.code == "42501"
 
     def test_a_guest_cannot_write_a_pathway_jurisdiction(
         self, guest_client: Client, admin_client: Client
@@ -540,14 +553,15 @@ class TestCrossUserAccess:
                 .execute()
                 .data[0]["id"]
             )
-            assert (
-                guest_client.table("pathways")
-                .update({"jurisdiction": "GB"})
-                .eq("id", pathway_id)
-                .execute()
-                .data
-                == []
-            )
+            # A flat 42501, not a silent empty update — same
+            # db/migrations/0016_grants_hardening.sql reasoning as
+            # test_a_guest_cannot_either above: `anon` no longer holds
+            # UPDATE on `pathways` at all, so this never reaches RLS.
+            with pytest.raises(APIError) as caught:
+                guest_client.table("pathways").update({"jurisdiction": "GB"}).eq(
+                    "id", pathway_id
+                ).execute()
+            assert caught.value.code == "42501"
             still = (
                 guest_client.table("pathways")
                 .select("jurisdiction")

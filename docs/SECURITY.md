@@ -17,6 +17,59 @@ Source: `docs/BCION-Lite-Build-Pack.md` §3 (Decisions — Residency), §4
   Cross-user reads/writes must fail; tests must NOT run as the database
   owner (owner bypasses RLS and would hide a real bug).
 
+### Grants and exposure hardening (SEC-6, `db/migrations/0016_grants_hardening.sql`)
+RLS is enforced at the POLICY layer; the GRANT layer underneath it is a
+second, independent line of defence, and this Supabase stack's own
+defaults leave it wide open unless a migration explicitly narrows it —
+confirmed live before writing 0016, not assumed:
+- **Every table** gets ALL SEVEN privileges (SELECT/INSERT/UPDATE/
+  DELETE/TRUNCATE/REFERENCES/TRIGGER) granted to `anon` AND
+  `authenticated` by default. 0016 revokes every non-SELECT privilege
+  from `anon` on the public-knowledge tables (`sources`, `careers`,
+  `pathways`, `claims` — a guest may only ever read these) and ALL
+  privileges from `anon` on `student_profiles`, `saved_plans` and
+  `reviewers` (a guest has no legitimate reason to touch the student
+  vault or the reviewer-identity table at all). `authenticated` is
+  untouched — RLS, not the grant layer, is what scopes a signed-in
+  student to their own row.
+- **Every `SECURITY DEFINER` function** gets EXECUTE via TWO
+  independent defaults on this stack (the SQL-standard PUBLIC grant, and
+  this stack's own `alter default privileges` direct grant to
+  `anon`/`authenticated`) — see `db/migrations/README.md`'s "two
+  gotchas" entry. A bare `grant execute ... to authenticated` in an
+  older migration does NOT by itself stop `anon` from calling the same
+  function; 0016 revokes PUBLIC everywhere except `is_reviewer()`
+  (needed by every anon-readable RLS policy) and, function by function,
+  either confirms the existing `anon` grant is deliberate (guest
+  sessions, guardian-consent confirmation, invite validation, AI usage —
+  all restated explicitly rather than left default-shaped) or closes it
+  where it was never meant to exist. **Two functions were found
+  genuinely anon-callable despite never being meant to be**:
+  `my_guardian_consent_status()` and `create_guardian_consent_request()`
+  (both 0004/0005) — neither had ever revoked PUBLIC or `anon`, the
+  exact class of gap `is_admitted()`/`is_safeguarding_staff()`/
+  `redeem_invite()`/`withdraw_account()`/`account_active()` had each
+  already had fixed on their own turn. Both are `authenticated`-only now.
+- `search_path` is pinned explicitly on every function in this schema —
+  0016 closes the last two, `forbid_publishing_synthetic_claims()` and
+  `touch_updated_at()` (both ordinary trigger functions, not `SECURITY
+  DEFINER` — this app's only write path is PostgREST/RPC, which cannot
+  inject a raw `SET search_path`, so this is deliberate, cheap insurance
+  against a future direct-SQL access path rather than a closure of a
+  currently exploitable one).
+- `tests/db/test_exposure_catalogue.py` is a standing catalogue guard,
+  independent of the access matrix (`tests/db/test_access_matrix.py`,
+  which already separately guards "every table has RLS enabled" as part
+  of its own declarative coverage check): it additionally fails if ANY
+  view is not `security_invoker` — with one named, reviewed exception,
+  `ai_usage_daily_totals` (0011: a deliberate RLS bypass for a
+  reviewer-only aggregate, gated by its own internal `where
+  is_reviewer()` clause, the same design family as a SECURITY DEFINER
+  function) — or if ANY storage bucket lacks an RLS policy on
+  `storage.objects` naming it. Zero storage buckets exist in this pilot
+  today (`supabase/config.toml` leaves the Storage service off
+  entirely) — confirmed live by the test itself, not assumed.
+
 ## Web sessions & CSRF (SEC-2)
 
 The JSON API is Bearer-only and has no session cookie, so it has no CSRF

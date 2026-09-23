@@ -749,6 +749,34 @@ _ACCOUNT_ACTIVE_GRANT_FIX_SKIP_REASON = (
 )
 
 
+def _grants_hardening_migration_applied() -> bool:
+    """Same marker-function pattern as 0003-0015, for
+    0016_grants_hardening.sql (SEC-6: the anon table-grant reduction on
+    the public-knowledge and student-vault tables, the SECURITY DEFINER
+    PUBLIC/anon EXECUTE closure, and the two search_path pins). Gates
+    tests/db/test_exposure_catalogue.py — that file reads the live
+    catalogue directly over psycopg and would otherwise run (and likely
+    pass, since none of its three checks are specific to what 0016
+    changes) against a stack that has not had 0016 applied yet; this
+    keeps its skip behaviour consistent with every other file in this
+    directory rather than leaving it as the one exception."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("grants_hardening_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_GRANTS_HARDENING_SKIP_REASON = (
+    "db/migrations/0016_grants_hardening.sql not yet applied to this stack. "
+    "Run `make test-db-up` against a stack with 0016 applied; see "
+    "db/migrations/README.md. A stale PostgREST schema cache looks "
+    "identical — `make test-db-migrate` reloads it."
+)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Enforce the target guard before anything is collected or run.
 
@@ -871,6 +899,10 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         _mark_unavailable(
             _in(("test_account_active_oracle.py",)), _ACCOUNT_ACTIVE_GRANT_FIX_SKIP_REASON
         )
+
+    # Same pattern, for 0016_grants_hardening.sql (SEC-6).
+    if not _grants_hardening_migration_applied():
+        _mark_unavailable(_in(("test_exposure_catalogue.py",)), _GRANTS_HARDENING_SKIP_REASON)
 
 
 @pytest.fixture(scope="module")
