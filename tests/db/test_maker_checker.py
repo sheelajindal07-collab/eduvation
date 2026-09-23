@@ -396,3 +396,198 @@ class TestPublishedContentIsFrozen:
             # still-referenced replacement (Postgres default: NO ACTION).
             _cleanup(admin_client, claim_id)
             _cleanup(admin_client, replacement["id"])
+
+
+# =====================================================================
+# PUB-2 (db/migrations/0017_publishing_evidence.sql): identity binding,
+# the separate-steps rule, and the in-review auto-revert. These extend
+# the SAME maker-checker guarantee this file already tests -- not a new
+# concept -- so they live here rather than in tests/db/
+# test_publishing_evidence.py, which covers 0017's genuinely NEW schema
+# (content_hash, tier, source_versions, the sources identity freeze, the
+# storage bucket).
+# =====================================================================
+class TestIdentityBinding:
+    """0017: created_by and reviewed_by are never a client-supplied
+    value, even if one is sent -- forced to the caller's own auth.uid()
+    -- and created_by is frozen once a row exists."""
+
+    def test_created_by_is_forced_even_when_a_different_value_is_sent(
+        self, admin_client: Client, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        reviewer_id, reviewer_client = reviewer
+        spoofed = str(uuid.uuid4())
+        row = (
+            reviewer_client.table("claims")
+            .insert(_draft_payload(official_source, spoofed))
+            .execute()
+        )
+        claim_id = row.data[0]["id"]
+        try:
+            assert row.data[0]["created_by"] == reviewer_id
+            assert row.data[0]["created_by"] != spoofed
+        finally:
+            _cleanup(admin_client, claim_id)
+
+    def test_created_by_cannot_be_rewritten_after_insert(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        """The rewrite target is a REAL, existing user (the second
+        reviewer fixture), not a random UUID -- a random id would also
+        be rejected by the plain `claims_created_by_fkey` foreign key,
+        which would make this test pass for the wrong reason (revert-to-
+        prove caught exactly this: weakening ONLY the freeze check still
+        left this test green, because the FK alone was doing the
+        rejecting)."""
+        reviewer_id, reviewer_client = reviewer
+        second_id, _second_client = second_reviewer
+        draft = (
+            reviewer_client.table("claims")
+            .insert(_draft_payload(official_source, reviewer_id))
+            .execute()
+            .data[0]
+        )
+        claim_id = draft["id"]
+        try:
+            with pytest.raises(APIError):
+                reviewer_client.table("claims").update({"created_by": second_id}).eq(
+                    "id", claim_id
+                ).execute()
+        finally:
+            _cleanup(admin_client, claim_id)
+
+    def test_reviewed_by_is_forced_even_when_a_different_value_is_sent(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        maker_id, maker_client = reviewer
+        checker_id, checker_client = second_reviewer
+        draft = (
+            maker_client.table("claims")
+            .insert(_draft_payload(official_source, maker_id))
+            .execute()
+            .data[0]
+        )
+        claim_id = draft["id"]
+        try:
+            maker_client.table("claims").update({"status": "in_review"}).eq(
+                "id", claim_id
+            ).execute()
+            spoofed = str(uuid.uuid4())  # neither the maker's nor the checker's own id
+            published = (
+                checker_client.table("claims")
+                .update({"status": "published", "reviewed_by": spoofed})
+                .eq("id", claim_id)
+                .execute()
+                .data[0]
+            )
+            assert published["reviewed_by"] == checker_id
+            assert published["reviewed_by"] != spoofed
+        finally:
+            _cleanup(admin_client, claim_id)
+
+    def test_a_null_created_by_legacy_row_is_not_treated_as_self_approved_by_a_real_reviewer(
+        self, admin_client: Client, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        """NULL-safety, the half that stays reachable through the real API:
+        docs/CONTRACTS.md's `IS NOT DISTINCT FROM` check must not treat a
+        NULL created_by (a legacy/unknown-author row -- only the service
+        role can seed one at all now that 0017's own insert-time forcing
+        closes this for every real caller) as "the same identity" as a
+        real reviewer's own auth.uid(). A naive `=` comparison would also
+        happen not to raise here, but for the WRONG reason (NULL, not
+        FALSE) -- this test pins the intended behaviour (ALLOW), not just
+        the absence of an exception."""
+        draft = (
+            admin_client.table("claims")
+            .insert(_draft_payload(official_source, None, status="in_review"))
+            .execute()
+            .data[0]
+        )
+        claim_id = draft["id"]
+        reviewer_id, reviewer_client = reviewer
+        try:
+            published = (
+                reviewer_client.table("claims")
+                .update({"status": "published"})
+                .eq("id", claim_id)
+                .execute()
+                .data[0]
+            )
+            assert published["status"] == "published"
+            assert published["reviewed_by"] == reviewer_id
+            assert published["created_by"] is None
+        finally:
+            _cleanup(admin_client, claim_id)
+
+
+class TestValueChangeAndApprovalAreSeparateSteps:
+    def test_changing_value_in_the_same_update_that_publishes_is_rejected(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        maker_id, maker_client = reviewer
+        _checker_id, checker_client = second_reviewer
+        draft = (
+            maker_client.table("claims")
+            .insert(_draft_payload(official_source, maker_id))
+            .execute()
+            .data[0]
+        )
+        claim_id = draft["id"]
+        try:
+            maker_client.table("claims").update({"status": "in_review"}).eq(
+                "id", claim_id
+            ).execute()
+            with pytest.raises(APIError):
+                checker_client.table("claims").update(
+                    {"status": "published", "value": 999999}
+                ).eq("id", claim_id).execute()
+            still_in_review = (
+                admin_client.table("claims").select("*").eq("id", claim_id).execute().data[0]
+            )
+            assert still_in_review["status"] == "in_review"
+            assert still_in_review["value"] == 50000
+        finally:
+            _cleanup(admin_client, claim_id)
+
+
+class TestEditingDuringReviewReturnsToDraft:
+    def test_editing_value_while_in_review_drops_the_claim_back_to_draft(
+        self, admin_client: Client, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        reviewer_id, reviewer_client = reviewer
+        draft = (
+            reviewer_client.table("claims")
+            .insert(_draft_payload(official_source, reviewer_id))
+            .execute()
+            .data[0]
+        )
+        claim_id = draft["id"]
+        try:
+            reviewer_client.table("claims").update({"status": "in_review"}).eq(
+                "id", claim_id
+            ).execute()
+            # No `status` field sent at all -- an ordinary content edit,
+            # not an attempted approval.
+            edited = (
+                reviewer_client.table("claims")
+                .update({"value": 60000})
+                .eq("id", claim_id)
+                .execute()
+                .data[0]
+            )
+            assert edited["status"] == "draft"
+            assert edited["value"] == 60000
+        finally:
+            _cleanup(admin_client, claim_id)

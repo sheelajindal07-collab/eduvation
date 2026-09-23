@@ -52,6 +52,47 @@ an anon client and a different authenticated client — a bare "call it
 with no arguments as yourself" test cannot catch this class of bug at
 all.
 
+**Touching `storage.buckets`/`storage.objects`? Guard it with
+`to_regclass('storage.buckets') is not null`, and don't `alter table
+storage.objects enable row level security`** — live-verified,
+`0017_publishing_evidence.sql` (PUB-2), this project's first-ever
+Storage bucket. Two things this stack's own shape gets wrong if you
+assume the cloud/dashboard defaults: (1) Storage is a separate service
+this repo's SHARED test stack (`supabase/config.toml`) leaves entirely
+OFF — the `storage` schema does not exist there at all, so a bare
+`insert into storage.buckets ...` in a migration would hard-fail every
+future apply on that stack. Wrap any storage DDL in `do $$ begin if
+to_regclass('storage.buckets') is not null then ... end if; end $$;` so
+the same migration file is a clean no-op there and does real work on a
+stack that has Storage on (a migration owner's own dedicated copy of
+`supabase/config.toml`, `[storage] enabled = true`, edited on that
+untracked copy only — see that file's own header for how to make one).
+(2) RLS is already ON by default on a freshly-provisioned `storage`
+schema, and the plain `postgres` role `scripts/apply_migrations.py`
+connects as does not even OWN `storage.objects` — `alter table
+storage.objects enable row level security` fails outright with `must be
+owner of table objects`, live-reproduced. Only ADD policies; never
+touch that table's own RLS switch.
+
+**A migration that changes WHO ends up as `created_by`/`reviewed_by` on
+a row can break test teardown ordering that used to be safe** —
+live-reproduced, `0017_publishing_evidence.sql` forcing
+`claims.created_by` to the actual calling identity (rather than trusting
+whatever a test payload claimed) turned
+`tests/db/test_access_matrix.py`'s `claims-insert-reviewer-allow` cell
+red at teardown: `supabase_auth_admin ERROR: update or delete on table
+"users" violates foreign key constraint "claims_created_by_fkey"`. The
+reviewer fixture that row now (correctly) references is created LAZILY,
+inside the test body, i.e. AFTER the seeding fixture that was supposed
+to clean the row up — so pytest's LIFO teardown deleted the user before
+the row referencing it. Not a migration bug (the forcing is correct and
+required); fixed in the test file by cleaning up seeded rows explicitly
+before the test function returns, rather than trusting fixture-teardown
+order across two independent fixture systems. Worth checking for on any
+migration that starts binding a column to `auth.uid()` for the first
+time — a payload field a test used to control now silently does
+something else.
+
 ## Applying (on your own Supabase project — see `docs/DECISIONS.md`)
 1. Create a project at [supabase.com](https://supabase.com) (Mumbai /
    `ap-south-1` region recommended — see `docs/SECURITY.md`'s residency

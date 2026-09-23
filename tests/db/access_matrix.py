@@ -139,7 +139,11 @@ CORE_OPERATIONS: tuple[Operation, ...] = (
     Operation.DELETE,
 )
 
-UNBUILT_OPERATIONS: tuple[Operation, ...] = (Operation.EXPORT, Operation.STORAGE)
+#: STORAGE was here too until 0017_publishing_evidence.sql built the
+#: first Supabase Storage bucket this project has ever had — see
+#: `_STORAGE` below for its four real cells, replacing this placeholder.
+#: EXPORT remains genuinely unbuilt.
+UNBUILT_OPERATIONS: tuple[Operation, ...] = (Operation.EXPORT,)
 
 
 class Outcome(StrEnum):
@@ -248,6 +252,7 @@ TABLE_TARGETS: dict[str, str] = {
         "the safeguarding-staff identity row of a throwaway user who is NOT the acting role"
     ),
     "safeguarding_flags": "a flag row concerning student A, raised under a placeholder category",
+    "source_versions": "a seeded source_version row referencing the synthetic source",
 }
 
 
@@ -395,6 +400,71 @@ _PUBLIC_KB: tuple[Cell, ...] = (
         why=(
             "0001 pathways_write_reviewers, DELETE side. `guest` is DENY_ERROR — same "
             "0016_grants_hardening.sql reasoning as the UPDATE row directly above."
+        ),
+    ),
+)
+
+
+# =====================================================================
+# source_versions — insert-only evidence history (0017)
+# =====================================================================
+# World-readable (same public-trust category as `sources` itself), but
+# UNLIKE sources/careers/pathways, reviewer gets no UPDATE or DELETE at
+# all — 0017_publishing_evidence.sql deliberately adds no such policy,
+# for anyone: "A source_version is immutable once written"
+# (docs/CONTRACTS.md), made unconditional rather than
+# conditional-on-reference.
+_SOURCE_VERSIONS: tuple[Cell, ...] = (
+    *_row(
+        "source_versions",
+        SELECT,
+        guest=ALLOW,
+        student_a=ALLOW,
+        student_b=ALLOW,
+        reviewer=ALLOW,
+        why="0017 source_versions_select_all: `for select using (true)` — world-readable.",
+    ),
+    *_row(
+        "source_versions",
+        INSERT,
+        guest=ERROR,
+        student_a=ERROR,
+        student_b=ERROR,
+        reviewer=ALLOW,
+        why=(
+            "0017 source_versions_insert_reviewers: `for insert with check "
+            "(is_reviewer())`. A non-reviewer's insert fails the WITH CHECK outright "
+            "(42501); no other policy grants INSERT."
+        ),
+    ),
+    *_row(
+        "source_versions",
+        UPDATE,
+        guest=ERROR,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why=(
+            "0017 adds NO update policy on source_versions AT ALL, for any role — "
+            "`authenticated` (student_a/student_b/reviewer alike) still holds the raw "
+            "table UPDATE privilege by this stack's own default, so the request reaches "
+            "RLS and is filtered to zero matching rows there, rather than erroring. "
+            "`guest` is DENY_ERROR: `anon` has that privilege explicitly revoked below, "
+            "the same 0016_grants_hardening.sql-style defence in depth applied to every "
+            "other public table."
+        ),
+    ),
+    *_row(
+        "source_versions",
+        DELETE,
+        guest=ERROR,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why=(
+            "Same reasoning as the UPDATE row directly above, DELETE side — 0017 adds no "
+            "delete policy either. This IS the immutability guarantee: not even a "
+            "reviewer can change or remove a source_version once written."
         ),
     ),
 )
@@ -1245,8 +1315,43 @@ _UNBUILT: tuple[Cell, ...] = tuple(
 )
 
 
+#: 0017_publishing_evidence.sql's PRIVATE `source-evidence` bucket — the
+#: first Supabase Storage bucket this project has ever created.
+#: `storage.objects` is not a `public`-schema table (so it never appears
+#: in `TABLE_TARGETS`/`COVERED_TABLES`, and needs no probe function
+#: here), and STORAGE is a per-role capability check, not a
+#: select/insert/update/delete row — same one-cell-per-role shape as the
+#: former UNBUILT placeholder it replaces. tests/db/test_access_matrix.py
+#: has its own dedicated live test class for this (the Storage REST API,
+#: not PostgREST, is a different enough client shape that it does not fit
+#: the generic `_PROBE_BUILDERS` machinery).
+_STORAGE: tuple[Cell, ...] = (
+    *_row(
+        "storage.objects:source-evidence",
+        Operation.STORAGE,
+        guest=ERROR,
+        student_a=ERROR,
+        student_b=ERROR,
+        reviewer=ALLOW,
+        why=(
+            "0017 source_evidence_{select,insert,update,delete}_reviewers: every "
+            "storage.objects policy on this PRIVATE bucket is `bucket_id = "
+            "'source-evidence' and is_reviewer()` — reviewer-only, every operation. "
+            "There is no student-facing reason to read raw source-evidence documents "
+            "at all, unlike the world-readable sources/source_versions rows that "
+            "describe them. Non-reviewer ERROR is the upload/write half (a WITH CHECK "
+            "failure, a hard error via the Storage REST API); a non-reviewer's list() "
+            "is silently filtered to empty rather than erroring — the DENY_EMPTY shape "
+            "this file's own OUTCOME VOCABULARY already documents for a SELECT, live-"
+            "verified via the Storage API's own list() call."
+        ),
+    ),
+)
+
+
 MATRIX: tuple[Cell, ...] = (
     *_PUBLIC_KB,
+    *_SOURCE_VERSIONS,
     *_CLAIMS,
     *_REVIEWERS,
     *_STUDENT_VAULT,
@@ -1254,14 +1359,20 @@ MATRIX: tuple[Cell, ...] = (
     *_CONSENT_4,
     *_SEALED,
     *_AI_USAGE,
+    *_STORAGE,
     *_UNBUILT,
 )
 
 #: The cells that run against the live database.
 CORE_CELLS: tuple[Cell, ...] = tuple(c for c in MATRIX if c.operation in CORE_OPERATIONS)
 
-#: The export/storage placeholders.
+#: The export placeholder (storage is real now — see STORAGE_CELLS).
 UNBUILT_CELLS: tuple[Cell, ...] = tuple(c for c in MATRIX if c.expected is Outcome.UNBUILT)
+
+#: The four real per-role storage cells (0017) — tests/db/test_access_matrix.py's
+#: own dedicated live test class asserts each against the real Storage
+#: REST API, not the generic `_PROBE_BUILDERS`/PostgREST machinery.
+STORAGE_CELLS: tuple[Cell, ...] = tuple(c for c in MATRIX if c.operation is Operation.STORAGE)
 
 #: Every table the matrix claims to cover.
 COVERED_TABLES: frozenset[str] = frozenset(c.table for c in CORE_CELLS)

@@ -25,14 +25,20 @@ ASSERTIONS on behalf of a role; reading `pg_catalog` is not that).
 Every check below has been revert-to-proved in this file itself
 (`.claude/agents/migration-owner.md`'s own rule): weakened live, run
 red, restored, run green again — see each `TestRevertToProve*` class.
-The one exception is the storage-bucket check's revert-to-prove, which
-runs at the LOGIC level (`buckets_without_a_policy`, called directly
-with fabricated data) rather than against a real bucket: this pilot's
-local stack has the Storage service switched off entirely
-(`supabase/config.toml`), so there is no live bucket to create — see
-that class's own docstring, and this migration owner's completion
-report, for why that is the honest thing to say rather than skip the
-question.
+The storage-bucket check's own revert-to-prove is at the LOGIC level
+(`buckets_without_a_policy`, called directly with fabricated data)
+rather than against a real bucket, because this repo's SHARED test
+stack (`supabase/config.toml`) leaves the Storage service switched off
+entirely — see that class's own docstring for why that is the honest
+thing to say rather than skip the question. `db/migrations/
+0017_publishing_evidence.sql` (PUB-2) since built this project's first
+real bucket (`source-evidence`, PRIVATE) — proved LIVE, with a real
+weaken/red/restore/green pass, on this migration owner's own dedicated
+stack (`.supabase-migration-2/supabase/config.toml`, `[storage]
+enabled = true`), reported in that migration owner's own completion
+report rather than added as permanent test code here, since the SHARED
+stack this file normally runs against still has no bucket to exercise
+that pass against.
 """
 
 from __future__ import annotations
@@ -278,21 +284,42 @@ class TestRevertToProveViewSecurityInvokerCheck:
 # ---------------------------------------------------------------------
 # 3. Every storage bucket has at least one policy
 # ---------------------------------------------------------------------
+#: Every bucket this project has ever reviewed a storage.objects policy
+#: for. `db/migrations/0017_publishing_evidence.sql` (PUB-2) is the
+#: first entry — a PRIVATE, reviewer-only bucket for the raw evidence
+#: document behind a source_version. A bucket showing up here that is
+#: NOT in this set means somebody created it without this file (or the
+#: migration that should have named it) ever being updated — update this
+#: set deliberately, with the same review the existing entry got, rather
+#: than widening the check to tolerate it.
+_REVIEWED_BUCKETS: frozenset[str] = frozenset({"source-evidence"})
+
+
 class TestEveryStorageBucketHasAPolicy:
-    def test_zero_storage_buckets_exist_today(self, sql: psycopg.Connection[Any]) -> None:
-        """CONFIRMED, not assumed: a live query against this stack's own
-        `pg_catalog`, not a reading of `supabase/config.toml`'s
-        `[storage] enabled = false` line. If this ever fails, it means
-        Storage has actually been turned on somewhere — the next test
-        below is what then has to start doing real work."""
-        buckets = _storage_buckets(sql)
-        assert buckets == [], (
-            f"Expected zero storage buckets (this pilot has never used Supabase "
-            f"Storage — nothing under app/ imports a storage client, "
-            f"docs/SECURITY.md). Found: {buckets}. Before relying on this being "
-            "empty anywhere else, confirm every one of these has its own "
-            "storage.objects policy (see the test below) and update this "
-            "assertion deliberately — do not just delete it."
+    def test_only_reviewed_buckets_exist_today(self, sql: psycopg.Connection[Any]) -> None:
+        """This used to assert zero buckets outright — CONFIRMED, not
+        assumed, by a live query against this stack's own `pg_catalog`,
+        not a reading of `supabase/config.toml`'s `[storage] enabled =
+        false` line. `db/migrations/0017_publishing_evidence.sql` (PUB-2)
+        made that assertion false by building this project's first real
+        bucket, exactly as this test's own original docstring said would
+        happen one day — updated here, not silently widened: still fails
+        loudly for any bucket this file has not reviewed a policy for,
+        just no longer for the ONE bucket that now has one (see the test
+        below, which independently confirms that policy actually exists).
+        `_storage_buckets` returns `[]` on the SHARED test stack (Storage
+        service off, supabase/config.toml) regardless of migration state,
+        so this passes vacuously-but-correctly there and for real on a
+        stack with Storage on and 0017 applied."""
+        buckets = set(_storage_buckets(sql))
+        unreviewed = buckets - _REVIEWED_BUCKETS
+        assert not unreviewed, (
+            f"Unrecognised storage bucket(s), never reviewed here: {sorted(unreviewed)}. "
+            "Before relying on this test at all, confirm each one has its own "
+            "storage.objects policy (see the test below), then add it to "
+            "_REVIEWED_BUCKETS deliberately with the same reasoning "
+            "0017_publishing_evidence.sql recorded for `source-evidence` — do not just "
+            "widen this check to tolerate it."
         )
 
     def test_every_bucket_that_exists_has_at_least_one_matching_policy(
@@ -302,7 +329,7 @@ class TestEveryStorageBucketHasAPolicy:
         if not buckets:
             pytest.skip(
                 "zero storage buckets on this stack — see "
-                "test_zero_storage_buckets_exist_today, which is what actually "
+                "test_only_reviewed_buckets_exist_today, which is what actually "
                 "confirms that rather than assumes it"
             )
         uncovered = buckets_without_a_policy(buckets, _storage_object_policy_texts(sql))
@@ -317,7 +344,7 @@ class TestEveryStorageBucketHasAPolicy:
 class TestRevertToProveStorageBucketPolicyLogic:
     """This pilot's own local stack has the Storage service switched off
     entirely (`supabase/config.toml`; confirmed by
-    `test_zero_storage_buckets_exist_today` above), so there is no real
+    `test_only_reviewed_buckets_exist_today` above), so there is no real
     bucket anywhere on it to create for a live revert-to-prove drill —
     standing up the Storage service purely to prove this one check would
     mean editing this migration-owner's own throwaway stack's config

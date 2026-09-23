@@ -777,6 +777,28 @@ _GRANTS_HARDENING_SKIP_REASON = (
 )
 
 
+def _publishing_evidence_migration_applied() -> bool:
+    """Same marker-function pattern as 0003-0016, for
+    0017_publishing_evidence.sql (PUB-2: created_by/reviewed_by identity
+    binding, content_hash, source_versions, claim tier/critical-authorised,
+    the sources identity freeze, and the first storage bucket)."""
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("publishing_evidence_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_PUBLISHING_EVIDENCE_SKIP_REASON = (
+    "db/migrations/0017_publishing_evidence.sql not yet applied to this "
+    "stack. Run `make test-db-up` against a stack with 0017 applied; see "
+    "db/migrations/README.md. A stale PostgREST schema cache looks "
+    "identical — `make test-db-migrate` reloads it."
+)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Enforce the target guard before anything is collected or run.
 
@@ -903,6 +925,20 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     # Same pattern, for 0016_grants_hardening.sql (SEC-6).
     if not _grants_hardening_migration_applied():
         _mark_unavailable(_in(("test_exposure_catalogue.py",)), _GRANTS_HARDENING_SKIP_REASON)
+
+    # Same pattern, for 0017_publishing_evidence.sql (PUB-2).
+    # test_exposure_catalogue.py and test_access_matrix.py need no
+    # separate gate here: the former already gates on 0016 above (0017 is
+    # additive on top of that same stack-state check) and reads whatever
+    # buckets/columns actually exist rather than assuming; the latter's
+    # own coverage guard already reports an unapplied migration (a new,
+    # uncovered `source_versions` table) as a failure without a per-file
+    # marker, matching test_admission.py's own note above.
+    if not _publishing_evidence_migration_applied():
+        _mark_unavailable(
+            _in(("test_maker_checker.py", "test_publishing_evidence.py")),
+            _PUBLISHING_EVIDENCE_SKIP_REASON,
+        )
 
 
 @pytest.fixture(scope="module")

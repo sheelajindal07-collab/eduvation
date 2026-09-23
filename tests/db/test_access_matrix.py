@@ -66,11 +66,13 @@ import psycopg
 import pytest
 from postgrest.exceptions import APIError
 from postgrest.types import ReturnMethod
+from storage3.exceptions import StorageApiError
 from supabase import Client
 
 from app.ai.budget_db import identity_digest
 from tests.db.access_matrix import (
     CORE_CELLS,
+    STORAGE_CELLS,
     TABLE_TARGETS,
     UNBUILT_CELLS,
     Cell,
@@ -450,6 +452,20 @@ class _Seeds:
                     "authority_name": run_name("QA-6 ACCESS MATRIX — not a real authority"),
                     "official_url": "https://example.invalid/qa-6-access-matrix",
                     "source_type": "synthetic",
+                },
+            ),
+        )
+
+    def source_version_id(self) -> str:
+        return self._once(
+            "source_version",
+            lambda: self._insert(
+                "source_versions",
+                {
+                    "source_id": self.source_id(),
+                    "checked_on": "2026-01-01",
+                    "checked_by": run_name("qa-6-access-matrix"),
+                    "status": "confirmed",
                 },
             ),
         )
@@ -958,6 +974,22 @@ def _probe_ai_usage(operation: Operation, seeds: _Seeds) -> _Probe:
     )
 
 
+def _probe_source_versions(operation: Operation, seeds: _Seeds) -> _Probe:
+    checked_by = _unique("QA-6 matrix insert probe source_version")
+    return _Probe(
+        pk="id",
+        target=None if operation is Operation.INSERT else seeds.source_version_id(),
+        insert_payload={
+            "source_id": seeds.source_id(),
+            "checked_on": "2026-01-02",
+            "checked_by": checked_by,
+            "status": "confirmed",
+        },
+        update_payload={"status": "changed"},
+        insert_filter={"checked_by": checked_by},
+    )
+
+
 def _probe_ai_usage_caps(operation: Operation, seeds: _Seeds) -> _Probe:
     # The single row (`id boolean primary key check (id)`) is seeded by
     # the migration itself; nothing to create. `insert_filter` is None for
@@ -995,6 +1027,7 @@ _PROBE_BUILDERS: dict[str, Callable[[Operation, _Seeds], _Probe]] = {
     "safeguarding_staff": _probe_safeguarding_staff,
     "safeguarding_flags": _probe_safeguarding_flags,
     "app_settings": _probe_app_settings,
+    "source_versions": _probe_source_versions,
     "guest_sessions": _probe_guest_sessions,
     "guest_plans": _probe_guest_plans,
     "_schema_migrations": _probe_schema_migrations,
@@ -1118,6 +1151,28 @@ def test_access_matrix_cell(
             "actually written."
         )
 
+    # PUB-2 (db/migrations/0017_publishing_evidence.sql) real finding:
+    # `claims.created_by` is now FORCED to the ACTING client's own
+    # auth.uid() on every insert, never the payload's own `created_by`
+    # value — so a `claims-insert-reviewer-allow` cell's row now carries
+    # `created_by = <the reviewer fixture's own id>`, not
+    # `seeds.maker_id()`'s throwaway id as before. `_ClientPool.acting()`
+    # creates that reviewer LAZILY (`request.getfixturevalue`, inside
+    # THIS test body) — i.e. AFTER `seeds` has already been set up — so
+    # pytest's LIFO fixture teardown runs the reviewer's own conftest.py
+    # teardown (which deletes its `auth.users` row) BEFORE `seeds`'s own
+    # `cleanup()` gets a chance to delete the claim referencing it,
+    # tripping `claims_created_by_fkey` (0001_init.sql: no `on delete
+    # cascade` there, by design — a claim's authorship must survive the
+    # author's own account being removed). Reproduced live: `supabase_
+    # auth_admin ERROR: update or delete on table "users" violates
+    # foreign key constraint "claims_created_by_fkey"`. Fixed here, not
+    # in the migration (the forcing behaviour is correct and required) —
+    # clean up every row THIS cell created while every fixture it might
+    # reference is still alive, rather than leaving it to whichever
+    # teardown happens to run first.
+    seeds.cleanup()
+
 
 # --------------------------------------------------------------------
 # export / storage — not built, and loudly so
@@ -1161,3 +1216,110 @@ def test_unbuilt_capability_placeholder(cell: Cell, catalogue: Catalogue) -> Non
         f"No {cell.operation.value} capability exists yet, so there is nothing for the "
         f"{cell.role.value} row of the access matrix to assert. {cell.why}"
     )
+
+
+# --------------------------------------------------------------------
+# storage — the real cells (0017_publishing_evidence.sql), replacing the
+# xfail(strict=True) placeholder the moment a bucket actually existed.
+# --------------------------------------------------------------------
+# The Storage REST API is a genuinely different client (storage3, not
+# PostgREST) with its own error type, so this does not reuse
+# `_PROBE_BUILDERS`/`_execute`/`_observe` at all — a small, self-contained
+# live test instead, one per STORAGE_CELLS role.
+_BUCKET = "source-evidence"
+
+
+def _skip_if_no_storage(catalogue: Catalogue) -> None:
+    """Storage is switched off entirely on this repo's own SHARED test
+    stack (supabase/config.toml, `[storage] enabled = false`) — a clean,
+    expected skip there, not a failure. Real, non-skipped coverage runs
+    on this migration owner's own dedicated stack
+    (.supabase-migration-2/supabase/config.toml, `[storage] enabled =
+    true`), where 0017 actually created the bucket."""
+    if not catalogue.storage_bucket_count:
+        _unavailable(
+            "No storage bucket on this stack (Storage service off, or "
+            "db/migrations/0017_publishing_evidence.sql not applied where it's on) — "
+            "see db/migrations/README.md and supabase/config.toml's own storage-service "
+            "note. Run against a stack with `[storage] enabled = true` and 0017 applied "
+            "for live coverage."
+        )
+
+
+class TestStorageBucketAccessMatrix:
+    """One test per STORAGE_CELLS role — guest/student_a/student_b denied
+    every operation on the private `source-evidence` bucket, reviewer
+    allowed. Mirrors the declarative cell shape the rest of this file
+    uses, without forcing the Storage REST API through machinery built
+    for PostgREST."""
+
+    def _expected(self, role: Role) -> Outcome:
+        matches = [c for c in STORAGE_CELLS if c.role is role]
+        assert len(matches) == 1, f"expected exactly one STORAGE cell for {role}"
+        return matches[0].expected
+
+    def _assert_denied(self, client: Client, path: str) -> None:
+        """A denied WRITE is a hard error (the storage.objects INSERT
+        policy's WITH CHECK fails outright) — the same shape every other
+        INSERT-deny cell in this file already uses. A denied READ is
+        silent filtering, not an error (`.list()` runs a SELECT under the
+        hood; RLS filters rows away rather than raising) — the exact
+        DENY_EMPTY shape this file's own OUTCOME VOCABULARY already
+        documents for SELECT/UPDATE/DELETE, just reached through the
+        Storage REST API instead of PostgREST. Confirmed live before
+        writing this assertion, not assumed from the PostgREST-only
+        pattern the rest of this file uses."""
+        with pytest.raises(StorageApiError):
+            client.storage.from_(_BUCKET).upload(
+                path, b"%PDF-1.4 fixture", {"content-type": "application/pdf"}
+            )
+        assert client.storage.from_(_BUCKET).list() == [], (
+            "a role with no storage.objects SELECT policy match should see the bucket "
+            "as empty, not error and not see a real object"
+        )
+
+    def test_guest_is_denied_every_operation(
+        self, guest_client: Client, catalogue: Catalogue
+    ) -> None:
+        _skip_if_no_storage(catalogue)
+        assert self._expected(Role.GUEST) is Outcome.DENY_ERROR
+        self._assert_denied(guest_client, f"qa6-storage-guest-{uuid.uuid4().hex}.pdf")
+
+    def test_student_a_is_denied_every_operation(
+        self, student_a: tuple[str, Client], catalogue: Catalogue
+    ) -> None:
+        _skip_if_no_storage(catalogue)
+        assert self._expected(Role.STUDENT_A) is Outcome.DENY_ERROR
+        _student_id, client = student_a
+        self._assert_denied(client, f"qa6-storage-student-a-{uuid.uuid4().hex}.pdf")
+
+    def test_student_b_is_denied_every_operation(
+        self, student_b: tuple[str, Client], catalogue: Catalogue
+    ) -> None:
+        _skip_if_no_storage(catalogue)
+        assert self._expected(Role.STUDENT_B) is Outcome.DENY_ERROR
+        _student_id, client = student_b
+        self._assert_denied(client, f"qa6-storage-student-b-{uuid.uuid4().hex}.pdf")
+
+    def test_reviewer_can_upload_list_download_and_remove(
+        self, reviewer: tuple[str, Client], catalogue: Catalogue
+    ) -> None:
+        _skip_if_no_storage(catalogue)
+        assert self._expected(Role.REVIEWER) is Outcome.ALLOW
+        _reviewer_id, client = reviewer
+        path = f"qa6-storage-reviewer-{uuid.uuid4().hex}.pdf"
+        body = b"%PDF-1.4 fixture"
+        try:
+            client.storage.from_(_BUCKET).upload(
+                path, body, {"content-type": "application/pdf"}
+            )
+            names = [obj["name"] for obj in client.storage.from_(_BUCKET).list()]
+            assert path in names, (
+                f"reviewer's upload to {_BUCKET} was accepted, but {path!r} does not "
+                f"show up in the bucket's own listing: {names}"
+            )
+            assert client.storage.from_(_BUCKET).download(path) == body
+        finally:
+            client.storage.from_(_BUCKET).remove([path])
+        names_after = [obj["name"] for obj in client.storage.from_(_BUCKET).list()]
+        assert path not in names_after, "reviewer's own remove() did not actually delete the object"
