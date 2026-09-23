@@ -61,6 +61,8 @@
   "askbcion.prompt.cost_breakdown": "इसकी लागत क्या होगी?",
   "askbcion.prompt.pathway_overview": "इस रास्ते में क्या शामिल है?",
   "askbcion.prompt.eligibility_gap": "पात्र होने के लिए मुझे क्या चाहिए?",
+  "askbcion.prompt.next_steps": "मुझे आगे क्या करना चाहिए?",
+  "askbcion.prompt.what_changed": "क्या बदला?",
   "askbcion.fact_cards.heading": "अब तक हम जो जानते हैं",
   "askbcion.missing_information.heading": "अभी प्रकाशित नहीं",
   "askbcion.unknown_template.message": "हम उस सवाल को पहचान नहीं पाए।",

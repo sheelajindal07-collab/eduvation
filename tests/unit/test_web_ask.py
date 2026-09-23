@@ -22,9 +22,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.ai.schemas import AIAnswerStatus
+from app.ai.schemas import Answer as AIAnswer
+from app.ai.what_changed import RenderedDiffLine, WhatChangedAnswer
 from app.api.ask import router as ask_json_router
 from app.api.deps import get_db_client
 from app.core.config import get_settings
+from app.web import ask_pages as ask_pages_module
 from app.web import templating
 from app.web.ask_pages import router as ask_html_router
 from app.web.common import _db_client_or_none
@@ -35,6 +39,8 @@ _FALLBACK_COPY = "You can still compare routes and use the calculators."
 _PATHWAY_ID = "11111111-1111-1111-1111-111111111111"
 _CAREER_ID = "33333333-3333-3333-3333-333333333333"
 _SOURCE_ID = "22222222-2222-2222-2222-222222222222"
+_PLAN_ID = "44444444-4444-4444-4444-444444444444"
+_CLAIM_ID = "55555555-5555-5555-5555-555555555555"
 _FRESH_VERIFICATION_DATE = "2026-09-01"  # well within the 180-day SLA of "today" in tests
 
 
@@ -383,3 +389,197 @@ class TestAskViewPage:
         assert response.status_code == 200
         assert "Minimum age" in response.text
         assert "Domicile" in response.text
+
+
+class TestAskViewRendersAiSentencesAndCitations:
+    """BCI-025: `ai_sentences`/`ai_citations` were already threaded into
+    this page's template context (AI-7) but `ask.html` had no markup that
+    read either key -- this proves the actual rendered HTML now carries
+    the AI's own sentence text and its citation's source authority/link,
+    alongside the fact cards, never instead of them."""
+
+    def test_answered_sentences_and_citations_render_alongside_fact_cards(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        canned = AIAnswer(
+            status=AIAnswerStatus.answered,
+            sentences=["According to Test Authority: entry requirements is Class 12 pass."],
+            citations=[
+                {
+                    "record_id": "claim-entry_requirements",
+                    "field": "entry_requirements",
+                    "value": "Class 12 pass",
+                    "source_authority": "Test Authority",
+                    "source_url": "https://example.invalid/ai-sentence-source",
+                    "is_stale": False,
+                }
+            ],
+        )
+        monkeypatch.setattr(ask_pages_module, "_pipeline_answer", lambda *a, **k: canned)
+        tables = {
+            "claims": [_claim_row(field="entry_requirements", value="Class 12 pass")],
+            "sources": [_official_source_row()],
+            "pathways": [{"id": _PATHWAY_ID, "name": "Test Pathway"}],
+        }
+        client = _client_with_tables(tables)
+
+        response = client.get(
+            "/ask/view", params={"template": "pathway_overview", "pathway_id": _PATHWAY_ID}
+        )
+
+        assert response.status_code == 200
+        assert "According to Test Authority: entry requirements is Class 12 pass." in (
+            response.text
+        )
+        assert "https://example.invalid/ai-sentence-source" in response.text
+        # Alongside, never instead of -- the deterministic fact card (its own,
+        # DIFFERENT source URL) is still present too.
+        assert "https://example.invalid/test-source" in response.text
+
+    def test_no_ai_sections_render_when_ai_never_answered(self) -> None:
+        """AI is left at its pilot default (disabled) -- `_pipeline_answer`
+        is never even called, so `ai_sentences`/`next_step_actions`/
+        `what_changed_lines` are all empty and none of the new sections'
+        markup appears; only the one fact card's `<section class="card">`
+        renders."""
+        tables = {
+            "claims": [_claim_row(field="entry_requirements", value="Class 12 pass")],
+            "sources": [_official_source_row()],
+            "pathways": [{"id": _PATHWAY_ID, "name": "Test Pathway"}],
+        }
+        client = _client_with_tables(tables)
+
+        response = client.get(
+            "/ask/view", params={"template": "pathway_overview", "pathway_id": _PATHWAY_ID}
+        )
+
+        assert response.status_code == 200
+        assert response.text.count('<section class="card">') == 1  # the fact card only
+        assert '<li class="card">' not in response.text  # no actions, no diff lines
+
+
+class TestAskViewNextStepsResolvesPlanIdAndRendersActions:
+    """BCI-025: mirrors `app.api.ask.ask()`'s own `plan_id` resolution
+    (AI-18) -- a `next_steps` request naming a `plan_id`, with neither
+    `pathway_id` nor `career_id`, must resolve to that plan's pathway and
+    render the derived next-step actions, each with its own citation
+    link, alongside the (deliberately always-empty, `ASK_TEMPLATES
+    ["next_steps"].fields == ()`) fact cards."""
+
+    def test_plan_id_alone_resolves_and_renders_next_step_actions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        canned = AIAnswer(
+            status=AIAnswerStatus.answered,
+            sentences=["According to Test Authority: application window is 1 March 2027."],
+            citations=[
+                {
+                    "record_id": "claim-application_window",
+                    "field": "application_window",
+                    "value": "1 March 2027",
+                    "source_authority": "Test Authority",
+                    "source_url": "https://example.invalid/next-step-source",
+                    "is_stale": False,
+                }
+            ],
+        )
+        monkeypatch.setattr(ask_pages_module, "_pipeline_answer", lambda *a, **k: canned)
+        tables = {
+            "saved_plans": [{"id": _PLAN_ID, "pathway_id": _PATHWAY_ID}],
+            "pathways": [{"id": _PATHWAY_ID, "name": "Test Pathway"}],
+            "claims": [],
+            "sources": [],
+        }
+        client = _client_with_tables(tables)
+
+        response = client.get(
+            "/ask/view", params={"template": "next_steps", "plan_id": _PLAN_ID}
+        )
+
+        assert response.status_code == 200
+        assert "Register before 1 March 2027." in response.text
+        assert "https://example.invalid/next-step-source" in response.text
+        # claim_id is an id, never rendered directly.
+        assert "claim-application_window" not in response.text
+
+    def test_a_plan_id_that_does_not_resolve_is_a_404_matching_the_json_route(self) -> None:
+        """No `saved_plans` row at all for this id (a guest, another
+        identity's plan, or a plan that simply does not exist --
+        `_pathway_id_for_plan` treats all three identically, deliberately
+        never distinguishing "no such plan" from "not yours"). This route
+        does not catch `_pathway_id_for_plan`'s `HTTPException(404,
+        "Plan not found.")` -- it propagates unmodified, exactly like
+        `app.api.ask.ask()`'s own behaviour. Real, RLS-backed proof that a
+        guest/another student specifically cannot resolve someone else's
+        plan id lives in `tests/db/test_ask_view.py`
+        (`TestAskViewNextStepsPlanIdOwnershipAgainstTheRealStack`)."""
+        tables = {"saved_plans": [], "pathways": [], "claims": [], "sources": []}
+        client = _client_with_tables(tables)
+
+        response = client.get(
+            "/ask/view", params={"template": "next_steps", "plan_id": _PLAN_ID}
+        )
+
+        assert response.status_code == 404
+        assert "Plan not found." in response.text
+
+
+class TestAskViewWhatChangedResolvesClaimIdAndRendersDiffLines:
+    """BCI-025: mirrors `app.api.ask.ask()`'s own `claim_id` resolution
+    (AI-19) -- `what_changed` bypasses `entity_kind_and_id` entirely and
+    resolves directly by `claim_id`."""
+
+    def test_claim_id_alone_resolves_and_renders_what_changed_lines(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        canned = WhatChangedAnswer(
+            status=AIAnswerStatus.answered,
+            lines=(
+                RenderedDiffLine(
+                    attribute="value",
+                    old_value=80000,
+                    new_value=90000,
+                    text="The verified charges changed from 80000 to 90000.",
+                ),
+            ),
+            citations=[
+                {
+                    "record_id": f"{_CLAIM_ID}:value",
+                    "field": "value",
+                    "value": 90000,
+                    "source_authority": "Test Authority",
+                    "source_url": "https://example.invalid/what-changed-source",
+                    "is_stale": False,
+                }
+            ],
+        )
+        monkeypatch.setattr(ask_pages_module, "_what_changed_answer", lambda *a, **k: canned)
+        # Empty -- claim_id resolution bypasses entity_kind_and_id entirely
+        # and never queries pathways/careers for a name (entity_kind ==
+        # "claim"), and what_changed's own ASK_TEMPLATES.fields == () means
+        # assemble_ask_answer's claims/sources lookups never produce a fact
+        # card either way.
+        tables: dict[str, list[dict[str, Any]]] = {"claims": [], "sources": []}
+        client = _client_with_tables(tables)
+
+        response = client.get(
+            "/ask/view", params={"template": "what_changed", "claim_id": _CLAIM_ID}
+        )
+
+        assert response.status_code == 200
+        assert "The verified charges changed from 80000 to 90000." in response.text
+        assert "https://example.invalid/what-changed-source" in response.text
+
+    def test_missing_claim_id_degrades_to_the_friendly_invalid_request_page(self) -> None:
+        client = _client_with_tables({})
+        response = client.get("/ask/view", params={"template": "what_changed"})
+        assert response.status_code == 200
+        assert "Back to explore" in response.text
+
+    def test_malformed_claim_id_degrades_to_the_friendly_invalid_request_page(self) -> None:
+        client = _client_with_tables({})
+        response = client.get(
+            "/ask/view", params={"template": "what_changed", "claim_id": "not-a-uuid"}
+        )
+        assert response.status_code == 200
+        assert "Back to explore" in response.text

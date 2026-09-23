@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_trust_badge.html" import field_value %}
+{% from "_trust_badge.html" import field_value, evidence_line %}
 {% from "_states.html" import ai_unavailable, alert %}
 {#- UI-11 / BCI-014: deterministic-mode "Ask BCION" answer page.
 
@@ -60,6 +60,68 @@
           </section>
         {% endfor %}
       </div>
+    {% endif %}
+
+    {#- BCI-025: the AI's own contribution, shown alongside the fact cards
+       above, never instead of them, and only when non-empty -- mirrors
+       app/api/ask.py's AskResponse.ai_sentences/ai_citations/
+       next_step_actions/what_changed_lines, all always-present-possibly
+       -empty fields, one to one.
+
+       No new heading text is introduced anywhere below: app/i18n/en.json
+       and hi.json are append-only for this card (the two
+       `askbcion.prompt.*` keys only, nothing else -- this card's own
+       "Owned files" list), so these three blocks are distinguished
+       structurally (a dedicated `card` per item, same visual unit the
+       fact cards above already use) rather than by a heading this card
+       cannot add a translated string for. -#}
+    {% if ai_sentences %}
+      <div class="space-y-4 mb-6">
+        {% for sentence in ai_sentences %}
+          {% set citation = ai_citations[loop.index0] %}
+          <section class="card">
+            {#- ai_sentences[i]/ai_citations[i] are always the same length,
+               aligned by index (app.ai.pipeline.answer()'s own step 11:
+               both are built by iterating the same surviving-record-id
+               list) -- see app/api/ask.py's AskResponse.ai_citations
+               docstring ("same order"). -#}
+            <p class="text-charcoal">{{ sentence }}</p>
+            {{ evidence_line(citation.source_authority, citation.source_url, none) }}
+          </section>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if next_step_actions %}
+      <ul class="space-y-4 mb-6 list-none">
+        {% for action in next_step_actions %}
+          <li class="card">
+            {#- action.claim_id is an id, not a display value -- never
+               rendered here, per this card's own instruction. -#}
+            <p class="text-charcoal">{{ action.text }}</p>
+            {{ evidence_line(action.source_authority, action.source_url, none) }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% if what_changed_lines %}
+      <ul class="space-y-4 mb-6 list-none">
+        {% for line in what_changed_lines %}
+          {% set citation = ai_citations[loop.index0] %}
+          <li class="card">
+            {#- Chose the pre-composed `line.text` over a separate
+               attribute/old_value/new_value layout: `app.ai.what_changed.
+               _render_line` already formats old_value/new_value safely
+               (including the one attribute -- verification_date -- that is
+               a raw `date`, never JSON here so no `_json_safe` step is
+               needed either way) into that same text, so reusing it avoids
+               a second, template-side formatter for the same values. -#}
+            <p class="text-charcoal">{{ line.text }}</p>
+            {{ evidence_line(citation.source_authority, citation.source_url, none) }}
+          </li>
+        {% endfor %}
+      </ul>
     {% endif %}
 
     {% if missing_information %}
