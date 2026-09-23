@@ -61,7 +61,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from supabase import Client
 
 from app.ai.actions import NextStepAction, next_step_actions_from_citations
@@ -92,6 +92,7 @@ def ask_page(
     plan_id: str | None = Query(default=None),
     claim_id: str | None = Query(default=None),
     db: Client | None = Depends(_db_client_or_none),
+    authorization: str | None = Header(default=None),
 ) -> Any:
     """`?template=<id>&pathway_id=<uuid>` (or `&career_id=<uuid>` instead
     of `pathway_id`, or -- `next_steps` only -- `&plan_id=<uuid>` instead of
@@ -168,7 +169,7 @@ def ask_page(
                     "ask.html",
                     {"error": _DB_UNAVAILABLE_MESSAGE, "state": "db_unavailable"},
                 )
-            pathway_id = _pathway_id_for_plan(db, plan_id)
+            pathway_id = _pathway_id_for_plan(db, plan_id, is_guest=authorization is None)
 
         resolved = entity_kind_and_id(pathway_id, career_id)
         if resolved is None:

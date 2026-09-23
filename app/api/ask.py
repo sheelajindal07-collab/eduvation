@@ -136,13 +136,14 @@ direction is web imports api, never the reverse; see
 
 from __future__ import annotations
 
+import logging
 import uuid as uuid_module
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from functools import lru_cache
 from typing import Any, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from postgrest.exceptions import APIError
 from pydantic import BaseModel
 from supabase import Client
@@ -165,6 +166,8 @@ from app.planning.comparison import FieldValue, assemble_cost_breakdown, field_v
 router = APIRouter(tags=["ask"])
 ask_router = router
 """Alias — see this module's docstring's "Router registration" section."""
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -290,7 +293,7 @@ def entity_kind_and_id(pathway_id: str | None, career_id: str | None) -> tuple[s
     return entity_kind, entity_id
 
 
-def _pathway_id_for_plan(db: Client, plan_id: str) -> str:
+def _pathway_id_for_plan(db: Client, plan_id: str, *, is_guest: bool) -> str:
     """AI-18: `next_steps`'s `plan_id` -> its `pathway_id` — see this
     module's own docstring's "AI-18: `next_steps` and `plan_id`" section
     for the full ownership-check reasoning. Raises `HTTPException(404)`
@@ -315,6 +318,23 @@ def _pathway_id_for_plan(db: Client, plan_id: str) -> str:
         # instead. Same "not found" outcome either way -- a guest was
         # never going to see a real plan_id's pathway through this path.
         if exc.code == "42501":
+            if not is_guest:
+                # A SIGNED-IN caller hitting this path is not the
+                # expected shape at all -- for them this can only mean a
+                # grant misconfiguration (e.g. a future migration
+                # accidentally revoking `authenticated`'s own EXECUTE on
+                # account_active()), not "no saved_plans row". Silently
+                # folding that into the same 404 a guest gets would hide
+                # a real regression behind an identical, uninformative
+                # "Plan not found." -- log it so it surfaces, without
+                # changing the response a caller sees either way.
+                logger.warning(
+                    "account_active() permission-denied for an AUTHENTICATED "
+                    "caller resolving plan_id -> pathway_id (plan_id=%s) -- "
+                    "expected only for guests; check authenticated's own "
+                    "EXECUTE grant on account_active()",
+                    plan_id,
+                )
             raise HTTPException(status_code=404, detail="Plan not found.") from exc
         raise
     rows = cast("list[dict[str, Any]]", result.data)
@@ -656,6 +676,7 @@ def ask(
     plan_id: str | None = Query(default=None),
     claim_id: str | None = Query(default=None),
     db: Client = Depends(get_db_client),
+    authorization: str | None = Header(default=None),
 ) -> AskResponse:
     """`?template=<id>&pathway_id=<uuid>` (or `&career_id=<uuid>` instead
     of `pathway_id`, or -- `next_steps` only -- `&plan_id=<uuid>` instead
@@ -665,7 +686,13 @@ def ask(
     unknown `template_id` 404s with a fixed, generic message that never
     reflects the raw value back (avoid any reflected-value surface) — the
     id is deliberately left out of `detail` entirely, not merely
-    escaped."""
+    escaped.
+
+    `authorization` is read here (the same header `get_db_client` already
+    reads independently to build `db`) purely to tell
+    `_pathway_id_for_plan` whether this caller is a guest, for its own
+    warning-log distinction -- it has no other effect and never changes
+    what `db` itself resolves to."""
     ask_template = ASK_TEMPLATES.get(template)
     if ask_template is None:
         raise HTTPException(status_code=404, detail="We don't recognise that question.")
@@ -684,7 +711,7 @@ def ask(
             # generic 422 the other three templates already use for "neither
             # id given". Only ever consulted for next_steps -- see module
             # docstring; the other three templates never see a plan_id.
-            pathway_id = _pathway_id_for_plan(db, plan_id)
+            pathway_id = _pathway_id_for_plan(db, plan_id, is_guest=authorization is None)
 
         resolved = entity_kind_and_id(pathway_id, career_id)
         if resolved is None:
