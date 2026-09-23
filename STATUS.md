@@ -1779,3 +1779,39 @@ later a resource-leak bug each caught and fixed collaboratively, a
 second independent security-review pass run on request. See
 `docs/DECISIONS.md` for the full log. If you're running multiple
 sessions on purpose, this worked cleanly; if not, worth knowing.
+
+## AUTH-3, SCOPE-13, PUB-2 merged, each after a fix round (2026-09-23)
+**AUTH-3**: student sign-in/sign-up(flagged off)/sign-out pages, the
+first real caller of AUTH-2's session cookie. Review found
+`MINOR_ACCOUNTS_ENABLED` — the human-review gate CLAUDE.md requires for
+real minor accounts — was dead code; now fails closed. Disclosed, not
+fixed: sign-out has no discoverable link yet (no page sets
+`session_state="account"`), tracked for AUTH-6/AUTH-14, bounded today by
+`SIGNUP_ENABLED=false`.
+
+**SCOPE-13**: currency required on money-field claims, reviewer queue
+shows jurisdiction/cycle/currency plus a duplicate-published warning.
+Review found the AI-extraction flow — the only web UI that can create a
+claim — had no currency field and started permanently rejecting every
+fee/cost proposal; fixed by adding one to the extraction form.
+
+**PUB-2** (migration `0017`, real number — the planning doc's "0011" was
+six migrations stale by the time this got built): identity enforcement,
+content-hash trigger, immutable source versions, `claim_tier` with a
+critical-tier reviewer-authorisation gate, and this project's first
+private Storage bucket. Review found and closed a BLOCKING bypass: a
+non-critical-authorised reviewer could launder a critical-tier claim to
+publication by downgrading `tier` in the same call that publishes it.
+
+**A more fundamental gap surfaced only when the lead applied 0017 to the
+shared dev stack for real** (every prior verification, including both
+reviewers', used a `supabase db reset` clean rebuild from empty): the
+migration's `content_hash` backfill ran a bare `UPDATE` against every
+claims row, and the claims triggers unconditionally refuse to touch an
+already-published row — so this migration could never have been applied
+to a database that actually had a published claim in it, which a real
+pilot database will. Fixed by disabling the two claims triggers around
+that one backfill statement only. Worth remembering: a from-empty
+rebuild proves a migration's new mechanisms work, not that the migration
+can be *applied* where those same mechanisms already have rows to
+protect.

@@ -5,6 +5,90 @@ never deleted.
 
 ---
 
+## 2026-09-23 — AUTH-3, SCOPE-13, PUB-2 merged, each after a fix round; a migration-safety gap caught only during merge verification
+**AUTH-3 merged.** Zero-JS sign-in/sign-up(flagged off)/sign-out pages
+(`app/web/account_pages.py`), the first real caller of AUTH-2's session
+cookie. First review round found two HIGH gaps: (1) `MINOR_ACCOUNTS_ENABLED`
+— CLAUDE.md's own named human-review gate for real minor accounts — was
+dead code in `sign_up()`, so the new public `/sign-up` page's own passing
+test exercised a self-declared-minor sign-up with no check of that flag
+at all; (2) sign-out is currently unreachable (no page sets
+`session_state="account"` yet). Fix round closed (1) — `sign_up()` now
+fails closed (503) before Supabase Auth is ever touched when the flag is
+off, live-reproduced independently by both reviewers via a from-scratch
+curl repro plus a direct Supabase Auth admin-API check that no account
+was created. (2) is disclosed and tracked for AUTH-6/AUTH-14 rather than
+fixed here — bounded today by `SIGNUP_ENABLED=false` and the ~1h cookie
+lifetime, so no real student is exposed yet, but it must close before
+`SIGNUP_ENABLED` is ever flipped true.
+
+**SCOPE-13 merged.** `POST /claims` now rejects (422, server-side in the
+pydantic model) a money-field claim with no currency and a non-money
+claim carrying one; reviewer queue shows jurisdiction/cycle/currency and
+warns on a duplicate published claim for the same entity+field. First
+review round found both reviewers independently hit the same real
+regression: the AI-extraction flow — the *only* web UI that can create a
+claim at all — never collected a currency, so every fee/cost extraction
+proposal started permanently 422ing the moment this landed. Fix round
+added a reviewer-editable currency field (defaulted to INR) to the
+extraction template, satisfying the existing validator rather than
+loosening it; both reviewers independently reproduced the original
+regression via a targeted revert, then confirmed the fix closes it
+end-to-end through the real route.
+
+**PUB-2 merged** as `db/migrations/0017_publishing_evidence.sql` (real
+number — the planning doc's guessed "0011" had been stale for six
+migrations by the time this got built). Forces and freezes
+`created_by`/`reviewed_by` to the real caller, a NULL-safe self-approval
+check, a content-hash trigger, edit-during-review reverts to draft,
+`approved_draft_version`, immutable `source_versions`, frozen source
+identity once referenced by a published claim, `claim_tier`
+(critical/cycle/annual per `docs/DATA.md`) with a critical-tier
+reviewer-authorisation gate, and this project's first private Storage
+bucket (`source-evidence`, reviewer-only). Review found a BLOCKING,
+live-reproduced bypass: `tier` was excluded from the trigger's own
+freeze-during-publish protection (the same mechanism that already
+protects `value`/`source_id`/etc.), so a non-critical-authorised reviewer
+could launder a `tier='critical'` claim to publication by simply
+including `tier: 'cycle'` in the same update call that publishes it. Fix
+round closed this by adding `tier` to that same freeze check — no new,
+second mechanism — with a permanent regression test for the exact
+combined-field-change attack; independently re-reproduced by the
+reviewer via a live, RLS-scoped adversarial probe of their own before
+confirming it closed.
+
+**A real, more fundamental gap was caught only during the lead's own
+merge verification, after every reviewer had already signed off**: the
+migration's one-time `content_hash` backfill ran a bare
+`update claims set content_hash = ...` against every existing row. Two
+`claims` triggers fire on *any* update with no column scoping, and
+`enforce_claims_workflow()` unconditionally refuses to touch an
+already-published row at all — so this migration could never actually be
+applied to a database that already has a published claim in it. Every
+verification this migration received (the migration-owner's own, and
+both reviewers') used a `supabase db reset` clean rebuild from an empty
+database, which never has a published row to hit this on. It surfaced
+the moment the lead tried to apply 0017 for real to the shared dev
+stack, which has real accumulated data from this session's own testing.
+**Fixed by disabling both `claims` triggers around that one backfill
+statement only** (it changes no status, no source_id, no caller-supplied
+value, so neither trigger's real invariant is at risk), re-enabled
+immediately after, still inside the migration's one transaction.
+**Process note for future migration cards:** a from-empty clean rebuild
+proves a migration's own new mechanisms work: it does not prove the
+migration can be *applied* to a database that already has real rows of
+the kind that migration's own triggers protect. Migration-owners should
+apply their own migration to a stack seeded with at least one row in
+every workflow state their migration touches (draft/in_review/published,
+for anything near `claims`) before calling it done, not only to an empty
+one.
+
+**Storage stays off on the shared dev stack** (the migration's Storage
+section guards to a clean no-op there) pending a separate, deliberate
+decision to turn it on — until then nobody gets live storage-policy
+coverage against the shared stack, only against the migration-owner's
+own dedicated one. Not blocking; already disclosed and tracked.
+
 ## 2026-09-23 — Six lanes merged (AUTH-2, QA-7, SEC-6, CONSENT-8, CONSENT-10, QA-12); CONSENT-7 built but held for an owner decision
 **AUTH-2 merged.** `app/web/session.py` — a cookie-based student session
 (`bcion_student_session`, matching `docs/CONTRACTS.md`'s settled shape
