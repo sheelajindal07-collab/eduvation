@@ -5,6 +5,89 @@ never deleted.
 
 ---
 
+## 2026-09-23 — TRIAL-3 merged; CONTENT-8 merged with a fix round; CONTENT-7 correctly stopped, needs a decision
+**TRIAL-3 merged.** `docs/research/outcome-instrument.md` — a five-item
+open-recall decision-quality instrument (EN + draft HI), 0/2 rubric, T0/
+week-4 administration rules, anonymous-code response sheet. No score,
+label or personality framing is ever shown to a student anywhere in it.
+ux-qa-reviewer independently read the full document and found two
+MEDIUM, non-blocking gaps worth a small follow-up card before real
+administration: (1) item 2's cost-recall scoring has no stated ground
+truth against docs/UI.md's own three-separate-amounts display rule; (2)
+the item-5 "not scorable" (NS) flag isn't reconciled with a pre-existing
+sibling document, `docs/research/go-no-go-template.md`, whose own
+Pre/Post aggregate-score table has no rule for what NS means for a
+total — risking NS being silently treated as 0 by whoever fills that
+table in, exactly the failure mode this instrument's own honesty
+requirement was meant to prevent. Also flagged: the T0/week-4 two-point
+design has no matching consent-form coverage yet
+(`participant-info-consent.md` only covers a one-off session). None of
+this blocks merging a draft that self-gates with "Not approved for use
+with real students."
+
+**CONTENT-8 merged, after a real fix.** `scripts/content/coverage_report.py`
+— a read-only coverage/freshness/publication-integrity report, run under
+a genuine reviewer session (never service-role). data-security-reviewer
+found a real HIGH gap: the module's own docstring claimed `main()`
+verified the signed-in account was really a reviewer before trusting the
+fetched data; no such check existed. Live-reproduced: an ordinary,
+non-reviewer credential signed in fine, RLS correctly (silently)
+restricted it to published-only rows, and the report printed a falsely
+clean "nothing pending" picture with exit code 0 — precisely the
+"misleading status label" class of bug this tool exists to catch
+elsewhere. Fixed: `main()` now calls the existing `is_reviewer()` RPC
+(zero arguments, answers only for the caller) right after sign-in and
+refuses to proceed if it returns anything but `true`. The test suite's
+own AST-based "this script never writes" scanner treated any `.rpc()`
+call as a forbidden write by default; narrowed to a named allowlist of
+exactly that one function, with a new test proving a *different* rpc
+name is still caught (not a blanket "rpc is fine now" weakening).
+Revert-to-prove: reverted the fix alone, confirmed the new non-reviewer
+test failed (the report genuinely ran and printed real data), restored
+the fix, confirmed green. Separately, and not a CONTENT-8 defect: the
+finished tool's first real run against the shared local stack surfaced
+15 genuine `published_backed_by_bad_source_url` violations in existing
+AI-11 eval-fixture data (all citing a non-allow-listed placeholder
+domain) — pre-existing synthetic-data debt, not urgent, flagged for a
+follow-up rather than fixed here (out of scope for a read-only tool).
+
+**CONTENT-7 correctly stopped — nothing merged, needs a decision, not a
+build.** The card asks for per-source review packets including verbatim
+quotes and section references for each claim. Both the implementer and
+an independent reviewer confirmed, exhaustively: `claims`/`sources` have
+no `quote`/`section_ref`/`unit` column anywhere across all 15
+migrations, and no code path ever preserves one — even the AI extraction
+pipeline's own `ExtractionProposal.quoted_span` is captured only
+transiently and deliberately dropped before a claim is ever saved
+(confirmed by reading `app/ai/extraction.py` and
+`app/web/reviewer/extract.py`'s `reviewer_extract_create_claim`
+directly). A compliant, read-only DB script would therefore produce a
+packet whose core content — the one thing that lets a checker avoid a
+separate source lookup — is permanently blank for every claim, which
+both agents judged worse than no tool at all (it would either train the
+checker to tick boxes without checking wording, or force them back into
+the per-claim lookups the packet exists to eliminate). Worth noting: an
+existing, unrelated "Settled" contract in `docs/CONTRACTS.md` already
+documents quote/section-reference as part of a claim's frozen
+`content_hash` field list — a documentation/schema drift bug that
+predates this card and that CONTENT-7 merely surfaced. **Two options,
+neither chosen here:** (a) queue a real migration (adds
+`quote`/`section_ref`/`unit` to `claims`) plus the still-missing
+`import_claims.py` that would ever populate them from the curation CSV,
+then re-attempt CONTENT-7 after both land; or (b) formally rescope
+CONTENT-7 to drop verbatim-quote/section-reference from the packet
+(ids/values/entity names/source link/tick-boxes only — still useful,
+delivers less than originally pitched). Zero code was written or
+touched; the `content-7` worktree/branch was a true no-op, confirmed
+byte-identical to `main` by both agents, and has been removed.
+
+**Verified before each merge:** ruff/mypy clean, live `tests/db` runs
+(TRIAL-3 is docs-only, no tests apply; CONTENT-8's own 12 tests plus the
+full unit suite, 1491 passed), CI green on `main` post-push (runs
+35840099445, 35841060722).
+
+---
+
 ## 2026-09-23 — UI-4 and UI-6 backlog fixes merged, deliberately low-risk
 **Decision.** Merged two small, already-diagnosed cosmetic fix rounds,
 chosen specifically to carry no new database, auth, RLS or feature

@@ -164,11 +164,11 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] CONTENT-15 - Editor and checker handbook [W2-W3, mixed]
 - [x] CONTENT-6 - Importer session 1: validation, no DB writes [W2]
 - [ ] CONTENT-6b - Importer DB half after PUB-3: upsert, tier, source_version, hash [W4, new]
-- [ ] CONTENT-7 - Per-source review packets with hashes [W4]
+- [ ] CONTENT-7 - Per-source review packets with hashes [W4, STOPPED 2026-09-23, needs a lead/owner decision -- see docs/DECISIONS.md: claims/sources have no quote/section_ref/unit column anywhere, and no code path (including the AI extraction pipeline) ever preserves a quote past request time, so a read-only DB script cannot produce the packet's core content for any claim; not a CONTENT-7 defect]
 - [ ] CONTENT-9 - Content batch 0: one family end to end on staging, timed [W4-W5, people]
 - [ ] SCOPE-8 - Reviewer standard for non-Indian and state sources [W5 head start, else P2]
 - [ ] SCOPE-14 - Draft admission-rules profiles for the trial states [W5 head start, else P2]
-- [ ] CONTENT-8 - Coverage, freshness and integrity report [P2]
+- [x] CONTENT-8 - Coverage, freshness and integrity report [P2, DONE, merged; fix round: main() now actually verifies reviewer membership before trusting fetched data, closing a false-clean-report gap]
 - [ ] RULES-7 - NDA, SSC CGL, IBPS PO modules (only for exams with verified claims) [P2]
 - [ ] RULES-12 - Human review of each exam's rule case table [P2, human]
 - [ ] CONTENT-10 - Content batch 1: full trial subset verified and published [P2, human]
@@ -263,7 +263,7 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 ## Step 15 Ten-person trial - OPEN
 - [x] TRIAL-2 - Research pack: scripts, scoring sheet, adult consent sheet [W1]
 - [x] TRIAL-10 - Go/no-go template and batch expansion checklist [W2 filler]
-- [ ] TRIAL-3 - Decision-quality instrument, English draft [W4]; Hindi half [P2]
+- [x] TRIAL-3 - Decision-quality instrument, English draft [W4, DONE, merged]; Hindi half [P2, draft done, needs a fluent Hindi speaker's review before real use]; known follow-up not yet carded: I2's cost recall has no stated ground truth against docs/UI.md's three-separate-amounts rule; item-5's NS flag isn't reconciled with go-no-go-template.md's existing Pre/Post total columns
 - [ ] TRIAL-4 - Owner approves Step 15 gates and pause limits [end of P2, owner]
 - [ ] TRIAL-11 - Ten-person trial, round 2, instrument pre-test [P3, people]
 - [ ] DESIGN-16 - Round 2 script delta and scoring [P3]

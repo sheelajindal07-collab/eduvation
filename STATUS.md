@@ -1687,6 +1687,34 @@ the state-pattern table confirmed this), not just a look mismatch.
 Verified: ruff/mypy clean, live `tests/db` run for UI-6 (10 passed),
 full `tests/unit` after merge (1491 passed), CI green (run 35838097441).
 
+## TRIAL-3 and CONTENT-8 merged; CONTENT-7 stopped, needs a decision (2026-09-23)
+Three more low-risk lanes: **TRIAL-3** (a five-item decision-quality
+research instrument, EN + draft HI, `docs/research/outcome-instrument.md`
+— no score/label ever shown to a student) merged clean, two small
+follow-ups noted (cost-recall ground truth vs the three-amount display
+rule; the NS flag isn't yet reconciled with an existing sibling
+document's total-score table). **CONTENT-8** (`scripts/content/
+coverage_report.py`, a read-only integrity/freshness report) merged
+after a real fix: its own docstring claimed `main()` verified reviewer
+membership before trusting fetched data — it didn't, so a non-reviewer
+credential silently got a falsely clean report instead of a loud
+refusal. Fixed and proven with a revert-to-prove test. Its first real
+run also found 15 genuine (pre-existing, synthetic-data) integrity
+violations in the AI-11 eval fixtures — a real bonus finding, not
+this task's to fix.
+
+**CONTENT-7 needs your call, not a build.** Both the implementer and an
+independent reviewer confirmed `claims`/`sources` have no
+quote/section-reference column anywhere, and nothing in this codebase —
+not even the AI extraction pipeline — ever preserves a quote past
+request time. A compliant read-only script for this card would ship
+with every quote field permanently blank, which both agents judged
+worse than not building it. Nothing was written; the empty worktree was
+removed. Your call: add a migration (+ the still-missing
+`import_claims.py`) and re-attempt, or formally rescope the card to drop
+verbatim quotes from the packet. See `docs/DECISIONS.md`'s 2026-09-23
+entry for the full detail.
+
 ## Concurrent sessions — multiple sessions worked this repo today
 This session shared the repo with at least one other active Claude
 session for a significant stretch (same machine, same working
