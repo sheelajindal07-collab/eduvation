@@ -182,6 +182,67 @@ class TestSuggestPathwaysNoMatch:
         assert result.suggestions == ()
 
 
+class TestSuggestionUnknownChangeLabel:
+    """ux-qa-reviewer finding on UI-4: the "why am I seeing this" link
+    should name the ONE preference that is actually unknown/editable for
+    a given suggestion, never the generic catch-all, when there is
+    exactly one -- and must fall back to the generic (`None` here, which
+    the template turns into "Change what matters most to you") whenever
+    zero or more than one preference is unknown."""
+
+    def test_exactly_one_unknown_preference_is_named(self) -> None:
+        # NURSING matches goal + interest but carries no "priority:*" tag
+        # at all -- exactly one preference (priority) is unknown.
+        result = suggest_pathways(
+            QuickStartAnswers(goal="career", interest="healthcare", priority="affordable"),
+            [NURSING],
+        )
+        assert result.is_broadened is False
+        suggestion = result.suggestions[0]
+        assert suggestion.unknowns == ("Affordable",)
+        assert suggestion.unknown_change_label == "your priority"
+
+    def test_more_than_one_unknown_preference_falls_back_to_none(self) -> None:
+        # NURSING only matches "goal" here -- interest and priority are
+        # both unknown, so naming just one would be misleading.
+        result = suggest_pathways(
+            QuickStartAnswers(goal="career", interest="science_tech", priority="affordable"),
+            [NURSING],
+        )
+        suggestion = result.suggestions[0]
+        assert len(suggestion.unknowns) == 2
+        assert suggestion.unknown_change_label is None
+
+    def test_zero_unknown_preferences_falls_back_to_none(self) -> None:
+        result = suggest_pathways(
+            QuickStartAnswers(
+                goal="career", interest="science_tech", priority="start_work_sooner"
+            ),
+            [SOFTWARE],
+        )
+        suggestion = result.suggestions[0]
+        assert suggestion.unknowns == ()
+        assert suggestion.unknown_change_label is None
+
+    def test_broadened_suggestion_with_exactly_one_stated_preference_is_named(self) -> None:
+        result = suggest_pathways(QuickStartAnswers(interest="healthcare"), [FINE_ARTS])
+        assert result.is_broadened is True
+        suggestion = result.suggestions[0]
+        assert suggestion.unknown_change_label == "your interest"
+
+    def test_goal_labels_are_capitalized_like_interest_and_priority_labels(self) -> None:
+        # ux-qa-reviewer finding: a joined "What you told us" line must
+        # not mix a lowercase goal fragment into otherwise capitalised
+        # labels.
+        result = suggest_pathways(
+            QuickStartAnswers(goal="career", interest="science_tech", priority="affordable"),
+            [SOFTWARE],
+        )
+        suggestion = result.suggestions[0]
+        for label in suggestion.preferences:
+            assert label[0].isupper()
+
+
 class TestStartResultsLive:
     """`/start/results` via TestClient -- both real branches, live."""
 
@@ -251,3 +312,77 @@ class TestStartResultsLive:
         assert "Fine Arts (BFA)" in response.text
         assert "None of the published pathways matched" in response.text
         assert "Suggestions are not available yet" not in response.text
+
+    def test_single_unknown_preference_link_names_it(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """ux-qa-reviewer finding: with exactly one unknown preference
+        (NURSING matches goal + interest but has no "priority:*" tag),
+        the "change preferences" link names it rather than reading the
+        generic catch-all."""
+        import app.web.start_pages as start_pages_module
+
+        monkeypatch.setattr(
+            start_pages_module,
+            "_candidates_for_suggestions",
+            lambda: [NURSING],
+        )
+        response = client.get(
+            "/start/results",
+            params={"goal": "career", "interest": "healthcare", "priority": "affordable"},
+        )
+        assert response.status_code == 200
+        assert "Change your priority" in response.text
+        assert "Change what matters most to you" not in response.text
+
+    def test_multiple_unknown_preferences_link_stays_generic(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """With two preferences unknown for the one matching candidate,
+        naming just one would mislead -- the link keeps the generic
+        wording."""
+        import app.web.start_pages as start_pages_module
+
+        monkeypatch.setattr(
+            start_pages_module,
+            "_candidates_for_suggestions",
+            lambda: [NURSING],
+        )
+        response = client.get(
+            "/start/results",
+            params={"goal": "career", "interest": "science_tech", "priority": "affordable"},
+        )
+        assert response.status_code == 200
+        assert "Change what matters most to you" in response.text
+        assert "Change your priority" not in response.text
+        assert "Change your interest" not in response.text
+
+    def test_broadened_section_heading_reads_pathways_available(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """ux-qa-reviewer finding: `suggestions_broadened` was wired into
+        the template context but never rendered -- the section heading
+        must now say so, distinct from the tailored-match heading."""
+        import app.web.start_pages as start_pages_module
+
+        monkeypatch.setattr(
+            start_pages_module,
+            "_candidates_for_suggestions",
+            lambda: [FINE_ARTS],
+        )
+        response = client.get("/start/results", params={"interest": "healthcare"})
+        assert response.status_code == 200
+        assert "Pathways available" in response.text
+        assert "Suggested pathways" not in response.text
+
+    def test_real_match_section_heading_stays_suggested_pathways(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """The tailored-match heading is unchanged when suggestions are
+        real tag matches, not a broadened sample."""
+        import app.web.start_pages as start_pages_module
+
+        monkeypatch.setattr(
+            start_pages_module,
+            "_candidates_for_suggestions",
+            lambda: [NURSING, SOFTWARE, FINE_ARTS, ITI_ELECTRICIAN],
+        )
+        response = client.get(
+            "/start/results",
+            params={"goal": "career", "interest": "healthcare", "priority": "affordable"},
+        )
+        assert response.status_code == 200
+        assert "Suggested pathways" in response.text
+        assert "Pathways available" not in response.text

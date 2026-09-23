@@ -98,6 +98,17 @@ class Suggestion:
     reasons: tuple[str, ...]
     preferences: tuple[str, ...]
     unknowns: tuple[str, ...]
+    unknown_change_label: str | None = None
+    """What the "change preferences" link should name when there is
+    exactly ONE unknown preference for this suggestion -- e.g. "your
+    interest" so the link can read "Change your interest" instead of the
+    generic "Change what matters most to you" (ux-qa-reviewer finding on
+    UI-4: the link always named the same generic thing regardless of
+    which preference was actually missing). `None` whenever zero or more
+    than one preference is unknown, which is also the caller's signal to
+    fall back to the generic wording -- `_components.html`'s
+    `why_seeing_this` decides nothing about which case it is in; this
+    field is the already-decided answer."""
 
 
 @dataclass(frozen=True)
@@ -137,10 +148,17 @@ class SuggestionResult:
 # line. Deliberately excludes each question's own "not_sure" option (and
 # "stage" entirely, see `QuickStartAnswers` above) — "not sure yet" is not
 # a preference to match against, it is the absence of one.
+#
+# Capitalised the same way `app/web/start_pages.py`'s own `GOAL_OPTIONS`
+# labels already are ("Which subject stream to choose", etc, verbatim) --
+# `_INTEREST_TAGS`/`_PRIORITY_TAGS` labels below are capitalised phrases
+# too, so a joined "What you told us: ..." line never mixes a lowercase
+# goal fragment into an otherwise capitalised list (ux-qa-reviewer finding
+# on UI-4).
 _GOAL_TAGS: dict[str, tuple[str, str]] = {
-    "stream": ("decision:stream", "which subject stream to choose"),
-    "course": ("decision:course", "which course to study after school"),
-    "career": ("decision:career", "which career path to explore"),
+    "stream": ("decision:stream", "Which subject stream to choose"),
+    "course": ("decision:course", "Which course to study after school"),
+    "career": ("decision:career", "Which career path to explore"),
 }
 _INTEREST_TAGS: dict[str, tuple[str, str]] = {
     "science_tech": ("interest:science_tech", "Science and technology"),
@@ -163,6 +181,13 @@ class _StatedPreference:
     tag: str
     label: str
     reason_template: str
+    change_label: str
+    """The phrase that completes "Change {change_label}" when this is the
+    ONE preference a suggestion carries no tag data for -- named after
+    the question it came from ("your interest", "your priority", "what
+    you're trying to decide"), never the generic "what matters most to
+    you" catch-all, which stays reserved for the multiple-or-none-unknown
+    case (see `Suggestion.unknown_change_label`)."""
 
 
 def _stated_preferences(answers: QuickStartAnswers) -> list[_StatedPreference]:
@@ -175,17 +200,43 @@ def _stated_preferences(answers: QuickStartAnswers) -> list[_StatedPreference]:
     if answers.goal in _GOAL_TAGS:
         tag, label = _GOAL_TAGS[answers.goal]
         preferences.append(
-            _StatedPreference(tag, label, "Matches what you're trying to decide: {label}.")
+            _StatedPreference(
+                tag,
+                label,
+                "Matches what you're trying to decide: {label}.",
+                "what you're trying to decide",
+            )
         )
     if answers.interest in _INTEREST_TAGS:
         tag, label = _INTEREST_TAGS[answers.interest]
-        preferences.append(_StatedPreference(tag, label, "Matches your interest in {label}."))
+        preferences.append(
+            _StatedPreference(
+                tag, label, "Matches your interest in {label}.", "your interest"
+            )
+        )
     if answers.priority in _PRIORITY_TAGS:
         tag, label = _PRIORITY_TAGS[answers.priority]
         preferences.append(
-            _StatedPreference(tag, label, "Matches what matters most to you: {label}.")
+            _StatedPreference(
+                tag,
+                label,
+                "Matches what matters most to you: {label}.",
+                "your priority",
+            )
         )
     return preferences
+
+
+def _unknown_change_label(unknown_preferences: list[_StatedPreference]) -> str | None:
+    """`Suggestion.unknown_change_label` for one suggestion: the single
+    unknown preference's own `change_label` when there is exactly one,
+    `None` (generic fallback) otherwise -- zero unknowns never reaches
+    this (nothing to name), and more than one is deliberately not named
+    ("Change your interest" would be misleading/incomplete when the
+    priority is unknown too)."""
+    if len(unknown_preferences) == 1:
+        return unknown_preferences[0].change_label
+    return None
 
 
 def _matched_suggestion(
@@ -198,12 +249,14 @@ def _matched_suggestion(
     reasons: list[str] = []
     preferences: list[str] = []
     unknowns: list[str] = []
+    unknown_preferences: list[_StatedPreference] = []
     for pref in stated:
         if pref.tag in candidate.tags:
             reasons.append(pref.reason_template.format(label=pref.label))
             preferences.append(pref.label)
         else:
             unknowns.append(pref.label)
+            unknown_preferences.append(pref)
     return (
         Suggestion(
             pathway_id=candidate.pathway_id,
@@ -211,6 +264,7 @@ def _matched_suggestion(
             reasons=tuple(reasons),
             preferences=tuple(preferences),
             unknowns=tuple(unknowns),
+            unknown_change_label=_unknown_change_label(unknown_preferences),
         ),
         len(reasons),
     )
@@ -238,6 +292,7 @@ def _broadened_suggestion(
         reasons=(reason,),
         preferences=(),
         unknowns=tuple(pref.label for pref in stated),
+        unknown_change_label=_unknown_change_label(stated),
     )
 
 

@@ -193,7 +193,8 @@
 
 
 {% macro why_seeing_this(reasons=none, preferences=none, unknowns=none,
-                         change_preferences_url=none, heading=none) %}
+                         change_preferences_url=none, heading=none,
+                         unknown_change_label=none) %}
   {#- docs/UI.md: "A recommendation shows why it appeared, which
       preferences influenced it, what remains unknown, and how to change
       the preferences." All four parts, or this component is not doing
@@ -205,7 +206,22 @@
 
       With nothing to explain, this renders nothing: an empty
       explanation box invites someone to fill it with something
-      invented. -#}
+      invented.
+
+      unknown_change_label   additive (ux-qa-reviewer finding on UI-4):
+                              already-decided text naming the ONE unknown
+                              preference the "change preferences" link
+                              would actually edit (e.g. "your interest"),
+                              or none when zero or more than one
+                              preference is unknown -- the caller
+                              (`app.planning.suggest.Suggestion.unknown_change_label`)
+                              has already done that counting, this macro
+                              only renders what it is handed. Falls back
+                              to the generic "Change what matters most to
+                              you" whenever this is not given, so every
+                              existing caller (`career_card` above,
+                              explore/compare's argument-free calls)
+                              keeps rendering exactly as before. -#}
   {% if reasons or preferences or unknowns %}
     <aside class="why-block">
       <h3 class="why-block__heading">{{ heading or "Why am I seeing this" }}</h3>
@@ -233,7 +249,7 @@
       {% if change_preferences_url %}
         <p class="why-block__line">
           <a href="{{ change_preferences_url }}" class="text-accent underline">
-            Change what matters most to you
+            {% if unknown_change_label %}Change {{ unknown_change_label }}{% else %}Change what matters most to you{% endif %}
           </a>
         </p>
       {% endif %}
