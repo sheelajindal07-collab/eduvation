@@ -7,8 +7,11 @@ which bypasses RLS and would hide the very bug this file exists to catch.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
+import pytest
+from postgrest.exceptions import APIError
 from supabase import Client
 
 from tests.db.conftest import admit_student, run_name
@@ -18,6 +21,21 @@ def _career_row(admin: Client) -> dict[str, Any]:
     result = (
         admin.table("careers")
         .insert({"name": run_name("RLS test career (SYNTHETIC)")})
+        .execute()
+    )
+    return result.data[0]
+
+
+def _pathway_row(admin: Client, career_id: str) -> dict[str, Any]:
+    result = (
+        admin.table("pathways")
+        .insert(
+            {
+                "career_id": career_id,
+                "name": run_name("RLS test pathway (SYNTHETIC)"),
+                "description": "PUB-3 RLS test fixture.",
+            }
+        )
         .execute()
     )
     return result.data[0]
@@ -176,3 +194,359 @@ class TestStudentProfileIsolation:
             reviewer_client.table("student_profiles").select("*").eq("id", user_a_id).execute()
         )
         assert seen.data == [], "a reviewer must not have cross-student read access"
+
+
+# =====================================================================
+# PUB-3 (db/migrations/0018_publish_functions.sql): review_events /
+# audit_events are reviewer-readable, insert-only, and never updatable or
+# deletable by any role; a saved_plans correction flag is exactly as
+# private as the plan it hangs off.
+# =====================================================================
+@pytest.fixture
+def official_source(admin_client: Client):
+    """A real (non-synthetic) source — a published claim can never be
+    backed by a synthetic one (0001_init.sql), and every fixture below
+    needs a real published claim."""
+    row = (
+        admin_client.table("sources")
+        .insert(
+            {
+                "authority_name": run_name("PUB-3 RLS TEST FIXTURE (official)"),
+                "official_url": "https://example.invalid/pub-3-rls-test-source",
+                "source_type": "official",
+            }
+        )
+        .execute()
+    )
+    source_id = row.data[0]["id"]
+    yield source_id
+    admin_client.table("sources").delete().eq("id", source_id).execute()
+
+
+def _seed_review_event(admin: Client, claim_id: str, actor_id: str) -> dict[str, Any]:
+    return (
+        admin.table("review_events")
+        .insert({"claim_id": claim_id, "actor_id": actor_id, "action": "published", "detail": {}})
+        .execute()
+        .data[0]
+    )
+
+
+def _seed_audit_event(admin: Client, claim_id: str, actor_id: str) -> dict[str, Any]:
+    return (
+        admin.table("audit_events")
+        .insert(
+            {
+                "actor_id": actor_id,
+                "action": "claim_superseded",
+                "entity_type": "claim",
+                "entity_id": claim_id,
+                "detail": {},
+            }
+        )
+        .execute()
+        .data[0]
+    )
+
+
+class TestReviewAndAuditEventsAreInsertOnly:
+    """Named acceptance line: "review_events and audit_events are
+    provably not updatable or deletable by a reviewer (live RLS proof)".
+    `publish_claim`/`supersede_claim` still write real rows here (tested
+    in test_maker_checker.py) because they run SECURITY DEFINER and
+    bypass RLS as the table owner — what is tested here is that the
+    ordinary, RLS-scoped path everyone else uses cannot."""
+
+    def test_guest_and_student_cannot_read_review_events(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        student_a: tuple[str, Client],
+        guest_client: Client,
+        official_source: str,
+    ) -> None:
+        reviewer_id, reviewer_client = reviewer
+        _student_id, student_client = student_a
+        claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": str(uuid.uuid4()),
+                    "field": "verified_charges",
+                    "value": 1,
+                    "source_id": official_source,
+                    "verification_date": "2026-01-01",
+                    "verifier": run_name("pub-3-rls-fixture"),
+                    "review_due_date": "2099-01-01",
+                    "status": "published",
+                    "created_by": reviewer_id,
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        event = _seed_review_event(admin_client, claim["id"], reviewer_id)
+        try:
+            seen_by_reviewer = (
+                reviewer_client.table("review_events").select("*").eq("id", event["id"]).execute()
+            )
+            assert len(seen_by_reviewer.data) == 1
+
+            seen_by_student = (
+                student_client.table("review_events").select("*").eq("id", event["id"]).execute()
+            )
+            assert seen_by_student.data == [], (
+                "a signed-in non-reviewer holds the raw grant, so RLS filters this to zero "
+                "rows rather than erroring (DENY_EMPTY, access_matrix.py's own vocabulary)"
+            )
+
+            with pytest.raises(APIError):
+                # `guest` (anon) holds NO grant at all on this table (this
+                # migration's own `revoke all ... from anon` — reviewer-
+                # only data, not the world-readable shape source_versions
+                # has) — refused at the privilege check, before RLS is
+                # even reached (DENY_ERROR, not DENY_EMPTY).
+                guest_client.table("review_events").select("*").eq("id", event["id"]).execute()
+        finally:
+            admin_client.table("review_events").delete().eq("id", event["id"]).execute()
+            admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+
+    def test_reviewer_cannot_update_or_delete_a_review_event(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        reviewer_id, reviewer_client = reviewer
+        claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": str(uuid.uuid4()),
+                    "field": "verified_charges",
+                    "value": 1,
+                    "source_id": official_source,
+                    "verification_date": "2026-01-01",
+                    "verifier": run_name("pub-3-rls-fixture"),
+                    "review_due_date": "2099-01-01",
+                    "status": "published",
+                    "created_by": reviewer_id,
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        event = _seed_review_event(admin_client, claim["id"], reviewer_id)
+        try:
+            updated = (
+                reviewer_client.table("review_events")
+                .update({"action": "tampered"})
+                .eq("id", event["id"])
+                .execute()
+            )
+            assert updated.data == [], "RLS must reject the update as a no-op (no UPDATE policy)"
+
+            deleted = (
+                reviewer_client.table("review_events").delete().eq("id", event["id"]).execute()
+            )
+            assert deleted.data == [], "RLS must reject the delete as a no-op (no DELETE policy)"
+
+            still_there = (
+                admin_client.table("review_events").select("*").eq("id", event["id"]).execute()
+            )
+            assert len(still_there.data) == 1
+            assert still_there.data[0]["action"] == "published", "the row must be untouched"
+        finally:
+            admin_client.table("review_events").delete().eq("id", event["id"]).execute()
+            admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+
+    def test_reviewer_cannot_insert_a_review_event_directly(
+        self, admin_client: Client, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        """Insert-only means via `publish_claim`/`supersede_claim` ONLY —
+        a reviewer's own direct request must be refused outright, the
+        same shape 0001_init.sql's `reviewers` table already has."""
+        reviewer_id, reviewer_client = reviewer
+        claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": str(uuid.uuid4()),
+                    "field": "verified_charges",
+                    "value": 1,
+                    "source_id": official_source,
+                    "verification_date": "2026-01-01",
+                    "verifier": run_name("pub-3-rls-fixture"),
+                    "review_due_date": "2099-01-01",
+                    "status": "published",
+                    "created_by": reviewer_id,
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            with pytest.raises(APIError):
+                reviewer_client.table("review_events").insert(
+                    {
+                        "claim_id": claim["id"],
+                        "actor_id": reviewer_id,
+                        "action": "published",
+                        "detail": {},
+                    }
+                ).execute()
+        finally:
+            admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+
+    def test_reviewer_cannot_update_or_delete_an_audit_event(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        reviewer_id, reviewer_client = reviewer
+        claim = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": str(uuid.uuid4()),
+                    "field": "verified_charges",
+                    "value": 1,
+                    "source_id": official_source,
+                    "verification_date": "2026-01-01",
+                    "verifier": run_name("pub-3-rls-fixture"),
+                    "review_due_date": "2099-01-01",
+                    "status": "published",
+                    "created_by": reviewer_id,
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        event = _seed_audit_event(admin_client, claim["id"], reviewer_id)
+        try:
+            updated = (
+                admin_client.table("claims").select("id").eq("id", claim["id"]).execute()
+            )
+            assert updated.data  # sanity: fixture claim exists
+
+            update_result = (
+                reviewer_client.table("audit_events")
+                .update({"action": "tampered"})
+                .eq("id", event["id"])
+                .execute()
+            )
+            assert update_result.data == []
+
+            delete_result = (
+                reviewer_client.table("audit_events").delete().eq("id", event["id"]).execute()
+            )
+            assert delete_result.data == []
+
+            still_there = (
+                admin_client.table("audit_events").select("*").eq("id", event["id"]).execute()
+            )
+            assert len(still_there.data) == 1
+            assert still_there.data[0]["action"] == "claim_superseded"
+        finally:
+            admin_client.table("audit_events").delete().eq("id", event["id"]).execute()
+            admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+
+
+class TestSupersedeClaimFlagsPlansCrossUser:
+    """Named acceptance line: "a plan flagged for student A is invisible
+    to student B (live cross-user proof)". Runs the real function, over
+    the real RLS-scoped clients, against a real pathway/saved_plans row —
+    not an inspection of the policy text."""
+
+    def test_flagged_plan_is_visible_only_to_its_own_student(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        student_a: tuple[str, Client],
+        student_b: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        maker_id, _maker_client = reviewer
+        checker_id, checker_client = second_reviewer
+        student_a_id, client_a = student_a
+        _student_b_id, client_b = student_b
+
+        career = _career_row(admin_client)
+        pathway = _pathway_row(admin_client, career["id"])
+        admit_student(admin_client, student_a_id)
+        plan = (
+            client_a.table("saved_plans")
+            .insert({"student_id": student_a_id, "pathway_id": pathway["id"]})
+            .execute()
+            .data[0]
+        )
+        assert plan["needs_review"] is False
+
+        def claim_payload(**overrides: object) -> dict[str, Any]:
+            payload = {
+                "entity_type": "Pathway",
+                "entity_id": pathway["id"],
+                "field": "fee_amount",
+                "value": 1000,
+                "source_id": official_source,
+                "verification_date": "2026-01-01",
+                "verifier": run_name("pub-3-cross-user-fixture"),
+                "review_due_date": "2099-01-01",
+                "status": "published",
+                "created_by": maker_id,
+                "reviewed_by": checker_id,
+            }
+            payload.update(overrides)
+            return payload
+
+        old_claim = admin_client.table("claims").insert(claim_payload()).execute().data[0]
+        new_claim = (
+            admin_client.table("claims").insert(claim_payload(value=1200)).execute().data[0]
+        )
+        try:
+            result = checker_client.rpc(
+                "supersede_claim", {"p_old_id": old_claim["id"], "p_new_id": new_claim["id"]}
+            ).execute()
+            assert result.data[0]["plans_flagged"] == 1
+
+            # Student A sees her own flag, and only the flag columns
+            # changed — the definer function's own "write only the flag
+            # columns" discipline, proven from the OUTSIDE (a real
+            # RLS-scoped read), not by reading the function body.
+            own_view = (
+                client_a.table("saved_plans").select("*").eq("id", plan["id"]).execute().data
+            )
+            assert len(own_view) == 1
+            flagged = own_view[0]
+            assert flagged["needs_review"] is True
+            assert flagged["flagged_at"] is not None
+            assert flagged["flagged_reason"] == "claim_superseded"
+            assert flagged["student_id"] == student_a_id
+            assert flagged["pathway_id"] == pathway["id"]
+            assert flagged["notes"] == plan["notes"]
+            assert flagged["estimated_additional_expenses"] == plan["estimated_additional_expenses"]
+
+            # Student B cannot see student A's plan at all -- flagged or
+            # not, exactly the same own-row RLS this table has always had.
+            b_view = (
+                client_b.table("saved_plans").select("*").eq("id", plan["id"]).execute().data
+            )
+            assert b_view == [], "student B must not see student A's flagged plan"
+        finally:
+            # audit_events.entity_id carries no cascading FK to claims
+            # (0018's own header note) — must go before the claim/user
+            # cleanup below, or `second_reviewer`'s teardown fails to
+            # delete its own user (db/migrations/README.md's
+            # "created_by/reviewed_by ... teardown ordering" gotcha).
+            admin_client.table("audit_events").delete().eq("entity_id", old_claim["id"]).execute()
+            admin_client.table("claims").delete().eq("id", old_claim["id"]).execute()
+            admin_client.table("claims").delete().eq("id", new_claim["id"]).execute()
+            admin_client.table("saved_plans").delete().eq("id", plan["id"]).execute()
+            admin_client.table("pathways").delete().eq("id", pathway["id"]).execute()
+            admin_client.table("careers").delete().eq("id", career["id"]).execute()

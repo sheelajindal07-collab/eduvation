@@ -799,6 +799,38 @@ _PUBLISHING_EVIDENCE_SKIP_REASON = (
 )
 
 
+def _publish_functions_migration_applied() -> bool:
+    """Same marker-function pattern as 0003-0017, for
+    0018_publish_functions.sql (PUB-3: review_events/audit_events,
+    publish_claim()/supersede_claim(), the saved_plans correction flag).
+
+    Added beyond this card's own literal file list, on purpose: without
+    it, a stack that already has 0017 (test_maker_checker.py's WHOLE
+    module gate above) but not yet 0018 would run PUB-3's new tests as
+    real failures — `function publish_claim(...) does not exist` — on
+    the shared stack during the ordinary gap between this migration
+    merging and the lead applying it there, exactly the same gap every
+    migration since 0003 has needed its own gate for. test_rls.py has no
+    existing migration gate at all (its pre-0018 tests only ever needed
+    0001_init.sql) — this is also the first thing that ties it to one.
+    """
+    from app.db import get_anon_client
+
+    try:
+        get_anon_client().rpc("publish_functions_schema_version", {}).execute()
+        return True
+    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+        return False
+
+
+_PUBLISH_FUNCTIONS_SKIP_REASON = (
+    "db/migrations/0018_publish_functions.sql not yet applied to this stack. "
+    "Run `make test-db-up` against a stack with 0018 applied; see "
+    "db/migrations/README.md. A stale PostgREST schema cache looks "
+    "identical — `make test-db-migrate` reloads it."
+)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Enforce the target guard before anything is collected or run.
 
@@ -938,6 +970,18 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         _mark_unavailable(
             _in(("test_maker_checker.py", "test_publishing_evidence.py")),
             _PUBLISHING_EVIDENCE_SKIP_REASON,
+        )
+
+    # Same pattern, for 0018_publish_functions.sql (PUB-3). test_rls.py is
+    # newly gated here for the first time — see
+    # `_publish_functions_migration_applied`'s own docstring for why.
+    # test_access_matrix.py needs no separate gate here, same reasoning as
+    # 0017's own note directly above: its coverage guard already reports
+    # an unapplied migration (new, uncovered `review_events`/
+    # `audit_events` tables) as a failure without a per-file marker.
+    if not _publish_functions_migration_applied():
+        _mark_unavailable(
+            _in(("test_maker_checker.py", "test_rls.py")), _PUBLISH_FUNCTIONS_SKIP_REASON
         )
 
 

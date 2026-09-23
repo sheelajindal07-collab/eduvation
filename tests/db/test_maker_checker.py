@@ -13,6 +13,7 @@ client, matching tests/db/conftest.py's own rule.
 
 from __future__ import annotations
 
+import threading
 import uuid
 from collections.abc import Iterator
 from datetime import date, timedelta
@@ -591,3 +592,436 @@ class TestEditingDuringReviewReturnsToDraft:
             assert edited["value"] == 60000
         finally:
             _cleanup(admin_client, claim_id)
+
+
+# =====================================================================
+# PUB-3 (db/migrations/0018_publish_functions.sql): publish_claim() and
+# supersede_claim() -- atomic, RPC-called functions that extend the SAME
+# maker-checker guarantee this file already tests, not a new concept, so
+# they live here rather than a new file (mirrors 0017's own placement
+# note directly above this section).
+# =====================================================================
+def _submitted_claim(
+    maker_client: Client,
+    maker_id: str,
+    official_source: str,
+    admin_client: Client,
+    **overrides: object,
+) -> dict:
+    """A draft, submitted to in_review, then re-read via the service role
+    so the caller gets the REAL current `content_hash` -- the maker's own
+    insert response already has it, but re-reading after the `in_review`
+    transition is what a real caller would do too."""
+    draft = (
+        maker_client.table("claims")
+        .insert(_draft_payload(official_source, maker_id, **overrides))
+        .execute()
+        .data[0]
+    )
+    maker_client.table("claims").update({"status": "in_review"}).eq("id", draft["id"]).execute()
+    return admin_client.table("claims").select("*").eq("id", draft["id"]).execute().data[0]
+
+
+def _published_pair(
+    admin_client: Client,
+    official_source: str,
+    maker_id: str,
+    checker_id: str,
+    **new_overrides: object,
+) -> tuple[dict, dict]:
+    """Two already-published claims on the SAME entity_type/entity_id/
+    field (service role seeds both directly, same exemption every other
+    fixture in this file already relies on) -- the shape supersede_claim()
+    operates on. `_draft_payload` picks a fresh random `entity_id` per
+    call by default, so it is pinned to ONE shared value here -- without
+    this, `old`/`new` would never match and every "happy path" test would
+    accidentally be exercising the mismatched-entity rejection instead."""
+    shared_entity_id = str(uuid.uuid4())
+    old = (
+        admin_client.table("claims")
+        .insert(
+            _draft_payload(
+                official_source,
+                maker_id,
+                status="published",
+                reviewed_by=checker_id,
+                entity_id=shared_entity_id,
+            )
+        )
+        .execute()
+        .data[0]
+    )
+    new_payload = _draft_payload(
+        official_source,
+        maker_id,
+        status="published",
+        reviewed_by=checker_id,
+        entity_id=shared_entity_id,
+        value=60000,
+    )
+    new_payload.update(new_overrides)
+    new = admin_client.table("claims").insert(new_payload).execute().data[0]
+    return old, new
+
+
+class TestPublishClaimFunction:
+    def test_publish_claim_succeeds_and_records_a_review_event(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        maker_id, maker_client = reviewer
+        checker_id, checker_client = second_reviewer
+        claim = _submitted_claim(maker_client, maker_id, official_source, admin_client)
+        try:
+            result = checker_client.rpc(
+                "publish_claim",
+                {"p_claim_id": claim["id"], "p_expected_hash": claim["content_hash"]},
+            ).execute()
+            published = result.data
+            assert published["status"] == "published"
+            assert published["reviewed_by"] == checker_id
+            assert published["created_by"] == maker_id
+
+            events = (
+                admin_client.table("review_events")
+                .select("*")
+                .eq("claim_id", claim["id"])
+                .execute()
+                .data
+            )
+            assert len(events) == 1
+            assert events[0]["action"] == "published"
+            assert events[0]["actor_id"] == checker_id
+        finally:
+            _cleanup(admin_client, claim["id"])
+
+    def test_publish_claim_rejects_a_stale_expected_hash(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        """The lost-update guard this card names: a caller whose loaded
+        `content_hash` no longer matches the live row must be refused,
+        not silently allowed to publish stale-relative-to-what-they-saw
+        content."""
+        maker_id, maker_client = reviewer
+        _checker_id, checker_client = second_reviewer
+        claim = _submitted_claim(maker_client, maker_id, official_source, admin_client)
+        try:
+            with pytest.raises(APIError) as excinfo:
+                checker_client.rpc(
+                    "publish_claim",
+                    {"p_claim_id": claim["id"], "p_expected_hash": "0" * 64},
+                ).execute()
+            assert "BCPB3" in str(excinfo.value)
+
+            still_in_review = (
+                admin_client.table("claims").select("status").eq("id", claim["id"]).execute()
+            )
+            assert still_in_review.data[0]["status"] == "in_review"
+        finally:
+            _cleanup(admin_client, claim["id"])
+
+    def test_publish_claim_on_a_claim_not_in_review_records_a_conflict_and_returns_null(
+        self, admin_client: Client, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        """A single, non-concurrent call against a DRAFT (never
+        submitted) claim -- the same "not in_review" branch a losing
+        concurrent caller hits, pinned here as its own deterministic
+        case: no exception, a real logged conflict, and nothing published."""
+        reviewer_id, reviewer_client = reviewer
+        draft = (
+            reviewer_client.table("claims")
+            .insert(_draft_payload(official_source, reviewer_id))
+            .execute()
+            .data[0]
+        )
+        try:
+            result = reviewer_client.rpc(
+                "publish_claim",
+                {"p_claim_id": draft["id"], "p_expected_hash": draft["content_hash"]},
+            ).execute()
+            assert result.data["id"] is None, "a status conflict must return NULL, not a row"
+
+            events = (
+                admin_client.table("review_events")
+                .select("*")
+                .eq("claim_id", draft["id"])
+                .execute()
+                .data
+            )
+            assert len(events) == 1
+            assert events[0]["action"] == "publish_conflict"
+            assert events[0]["detail"]["reason"] == "not_in_review"
+
+            unchanged = (
+                admin_client.table("claims").select("status").eq("id", draft["id"]).execute()
+            )
+            assert unchanged.data[0]["status"] == "draft"
+        finally:
+            _cleanup(admin_client, draft["id"])
+
+    def test_publish_claim_requires_an_authenticated_reviewer(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        student_a: tuple[str, Client],
+        guest_client: Client,
+        official_source: str,
+    ) -> None:
+        maker_id, maker_client = reviewer
+        _student_id, student_client = student_a
+        claim = _submitted_claim(maker_client, maker_id, official_source, admin_client)
+        try:
+            with pytest.raises(APIError) as excinfo:
+                student_client.rpc(
+                    "publish_claim",
+                    {"p_claim_id": claim["id"], "p_expected_hash": claim["content_hash"]},
+                ).execute()
+            assert "BCPB1" in str(excinfo.value)
+
+            with pytest.raises(APIError):
+                guest_client.rpc(
+                    "publish_claim",
+                    {"p_claim_id": claim["id"], "p_expected_hash": claim["content_hash"]},
+                ).execute()
+        finally:
+            _cleanup(admin_client, claim["id"])
+
+    def test_two_concurrent_publish_claim_calls_yield_exactly_one_publish(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        """The revert-to-prove subject for this card (.claude/agents/
+        migration-owner.md): with `publish_claim`'s row lock in place,
+        two real, simultaneous HTTP requests against the SAME claim yield
+        exactly one published row and exactly one logged conflict --
+        never two published rows, never a silent second write. Mirrors
+        `test_ai_usage.py::TestConcurrency`'s own real-connections
+        pattern (Barrier + threads), over the RPC/HTTP layer here rather
+        than raw psycopg, since `publish_claim` depends on `auth.uid()`
+        (a real signed-in identity), which only PostgREST supplies."""
+        maker_id, maker_client = reviewer
+        _checker_id, checker_client = second_reviewer
+        claim = _submitted_claim(maker_client, maker_id, official_source, admin_client)
+        try:
+            results: list[object] = [None, None]
+            barrier = threading.Barrier(2)
+
+            def attempt(idx: int) -> None:
+                barrier.wait(timeout=10)
+                try:
+                    res = checker_client.rpc(
+                        "publish_claim",
+                        {"p_claim_id": claim["id"], "p_expected_hash": claim["content_hash"]},
+                    ).execute()
+                    results[idx] = res.data
+                except APIError as exc:  # noqa: BLE001 -- captured for the assertion below
+                    results[idx] = exc
+
+            threads = [threading.Thread(target=attempt, args=(i,)) for i in range(2)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=30)
+
+            published_results = [
+                r for r in results if isinstance(r, dict) and r.get("status") == "published"
+            ]
+            null_results = [r for r in results if isinstance(r, dict) and r.get("id") is None]
+            assert len(published_results) == 1, (
+                f"exactly one of two concurrent publish_claim calls must succeed, got "
+                f"{len(published_results)}: {results}"
+            )
+            assert len(null_results) == 1, (
+                f"the loser must return NULL (a recorded conflict), not raise or silently "
+                f"do nothing: {results}"
+            )
+
+            events = (
+                admin_client.table("review_events")
+                .select("*")
+                .eq("claim_id", claim["id"])
+                .execute()
+                .data
+            )
+            published_events = [e for e in events if e["action"] == "published"]
+            conflict_events = [e for e in events if e["action"] == "publish_conflict"]
+            assert len(published_events) == 1, events
+            assert len(conflict_events) == 1, events
+        finally:
+            _cleanup(admin_client, claim["id"])
+
+
+class TestSupersedeClaimFunction:
+    def test_supersede_claim_marks_old_superseded_and_records_an_audit_event(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        maker_id, _maker_client = reviewer
+        checker_id, checker_client = second_reviewer
+        old, new = _published_pair(admin_client, official_source, maker_id, checker_id)
+        try:
+            result = checker_client.rpc(
+                "supersede_claim", {"p_old_id": old["id"], "p_new_id": new["id"]}
+            ).execute()
+            row = result.data[0]
+            assert row["old_claim_id"] == old["id"]
+            assert row["new_claim_id"] == new["id"]
+            assert row["plans_flagged"] == 0  # no saved_plans exist for this fixture's entity_id
+
+            refreshed_old = (
+                admin_client.table("claims").select("*").eq("id", old["id"]).execute().data[0]
+            )
+            assert refreshed_old["status"] == "superseded"
+            assert refreshed_old["superseded_by"] == new["id"]
+            assert refreshed_old["value"] == 50000, (
+                "the old claim's own recorded value is untouched"
+            )
+
+            audit_rows = (
+                admin_client.table("audit_events")
+                .select("*")
+                .eq("entity_id", old["id"])
+                .execute()
+                .data
+            )
+            assert len(audit_rows) == 1
+            assert audit_rows[0]["action"] == "claim_superseded"
+            assert audit_rows[0]["actor_id"] == checker_id
+            assert audit_rows[0]["detail"]["superseded_by"] == new["id"]
+        finally:
+            # audit_events.entity_id carries no FK (same shape as
+            # claims.entity_id itself — see 0018's own header), so unlike
+            # review_events.claim_id (which cascades from `claims`) it is
+            # never cleaned up by deleting the claim below. Must go first,
+            # or `second_reviewer`'s own teardown fails to delete its user
+            # (db/migrations/README.md's own "created_by/reviewed_by ...
+            # can break test teardown ordering" gotcha, same class, new
+            # table).
+            admin_client.table("audit_events").delete().eq("entity_id", old["id"]).execute()
+            _cleanup(admin_client, old["id"])
+            _cleanup(admin_client, new["id"])
+
+    def test_supersede_claim_rejects_a_draft_replacement(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        maker_id, _maker_client = reviewer
+        checker_id, checker_client = second_reviewer
+        old, _never_published = _published_pair(admin_client, official_source, maker_id, checker_id)
+        draft_replacement = (
+            admin_client.table("claims")
+            .insert(_draft_payload(official_source, maker_id, status="draft"))
+            .execute()
+            .data[0]
+        )
+        try:
+            with pytest.raises(APIError) as excinfo:
+                checker_client.rpc(
+                    "supersede_claim",
+                    {"p_old_id": old["id"], "p_new_id": draft_replacement["id"]},
+                ).execute()
+            assert "BCPB8" in str(excinfo.value)
+
+            unchanged = (
+                admin_client.table("claims").select("status").eq("id", old["id"]).execute()
+            )
+            assert unchanged.data[0]["status"] == "published"
+        finally:
+            _cleanup(admin_client, old["id"])
+            _cleanup(admin_client, _never_published["id"])
+            _cleanup(admin_client, draft_replacement["id"])
+
+    def test_supersede_claim_rejects_a_mismatched_field(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        maker_id, _maker_client = reviewer
+        checker_id, checker_client = second_reviewer
+        old, mismatched = _published_pair(
+            admin_client, official_source, maker_id, checker_id, field="a_totally_different_field"
+        )
+        try:
+            with pytest.raises(APIError) as excinfo:
+                checker_client.rpc(
+                    "supersede_claim", {"p_old_id": old["id"], "p_new_id": mismatched["id"]}
+                ).execute()
+            assert "BCPB9" in str(excinfo.value)
+        finally:
+            _cleanup(admin_client, old["id"])
+            _cleanup(admin_client, mismatched["id"])
+
+    def test_supersede_claim_requires_critical_authorised_reviewer_when_tier_is_critical(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        maker_id, _maker_client = reviewer
+        checker_id, checker_client = second_reviewer
+        old, new = _published_pair(admin_client, official_source, maker_id, checker_id)
+        admin_client.table("claims").update({"tier": "critical"}).eq("id", old["id"]).execute()
+        try:
+            with pytest.raises(APIError) as excinfo:
+                checker_client.rpc(
+                    "supersede_claim", {"p_old_id": old["id"], "p_new_id": new["id"]}
+                ).execute()
+            assert "BCPBA" in str(excinfo.value)
+
+            admin_client.table("reviewers").update({"critical_authorised": True}).eq(
+                "user_id", checker_id
+            ).execute()
+            result = checker_client.rpc(
+                "supersede_claim", {"p_old_id": old["id"], "p_new_id": new["id"]}
+            ).execute()
+            assert result.data[0]["old_claim_id"] == old["id"]
+        finally:
+            admin_client.table("reviewers").update({"critical_authorised": False}).eq(
+                "user_id", checker_id
+            ).execute()
+            # See test_supersede_claim_marks_old_superseded_and_records_an_audit_event's
+            # own comment: audit_events.entity_id has no cascading FK.
+            admin_client.table("audit_events").delete().eq("entity_id", old["id"]).execute()
+            _cleanup(admin_client, old["id"])
+            _cleanup(admin_client, new["id"])
+
+    def test_supersede_claim_requires_an_authenticated_reviewer(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        second_reviewer: tuple[str, Client],
+        student_a: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        maker_id, _maker_client = reviewer
+        checker_id, _checker_client = second_reviewer
+        _student_id, student_client = student_a
+        old, new = _published_pair(admin_client, official_source, maker_id, checker_id)
+        try:
+            with pytest.raises(APIError) as excinfo:
+                student_client.rpc(
+                    "supersede_claim", {"p_old_id": old["id"], "p_new_id": new["id"]}
+                ).execute()
+            assert "BCPB4" in str(excinfo.value)
+        finally:
+            _cleanup(admin_client, old["id"])
+            _cleanup(admin_client, new["id"])

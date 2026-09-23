@@ -253,6 +253,14 @@ TABLE_TARGETS: dict[str, str] = {
     ),
     "safeguarding_flags": "a flag row concerning student A, raised under a placeholder category",
     "source_versions": "a seeded source_version row referencing the synthetic source",
+    "review_events": (
+        "a review_event row seeded directly by the service role, recording a (synthetic) "
+        "'published' action on the seeded claim"
+    ),
+    "audit_events": (
+        "an audit_event row seeded directly by the service role, recording a (synthetic) "
+        "'claim_superseded' action on the seeded claim"
+    ),
 }
 
 
@@ -466,6 +474,117 @@ _SOURCE_VERSIONS: tuple[Cell, ...] = (
             "delete policy either. This IS the immutability guarantee: not even a "
             "reviewer can change or remove a source_version once written."
         ),
+    ),
+)
+
+
+# =====================================================================
+# review_events / audit_events — insert-only, reviewer-readable, never
+# updatable or deletable by any role (0018)
+# =====================================================================
+# Deliberately modelled on `reviewers` (0001), NOT on `source_versions`
+# (0017): a real SELECT policy for `is_reviewer()` exists (unlike
+# `reviewers`, which has none at all — see that table's own comment for
+# why it's a special case), but there is NO insert/update/delete policy
+# for anyone, reviewer included. The only legitimate writer is
+# `publish_claim()`/`supersede_claim()` (SECURITY DEFINER, owner-bypass —
+# tested directly in tests/db/test_maker_checker.py); what this block
+# proves is that the ordinary, RLS-scoped path everyone else uses cannot
+# write here at all, and cannot change or remove a row once it exists.
+_REVIEW_AUDIT_EVENTS: tuple[Cell, ...] = (
+    *_row(
+        "review_events",
+        SELECT,
+        guest=ERROR,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=ALLOW,
+        why="0018 review_events_select_reviewers: `for select using (is_reviewer())`.",
+    ),
+    *_row(
+        "review_events",
+        INSERT,
+        guest=ERROR,
+        student_a=ERROR,
+        student_b=ERROR,
+        reviewer=ERROR,
+        why=(
+            "0018 adds NO insert policy on review_events at all, for anyone — same shape as "
+            "`reviewers` (0001): a WITH CHECK violation (42501) for every `authenticated` "
+            "caller including a reviewer, not just a filtered read. The only real writer is "
+            "`publish_claim()`, which runs SECURITY DEFINER and bypasses this entirely as the "
+            "table owner."
+        ),
+    ),
+    *_row(
+        "review_events",
+        UPDATE,
+        guest=ERROR,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why=(
+            "0018 adds NO update policy on review_events at all, for any role — "
+            "`authenticated` (student_a/student_b/reviewer alike) still holds the raw table "
+            "UPDATE privilege by this stack's own default, so the request reaches RLS and is "
+            "filtered to zero matching rows there, rather than erroring — the exact "
+            "'source_versions' shape (0017), extended to a reviewer too, on purpose: this is "
+            "the 'provably not updatable ... by a reviewer' guarantee PUB-3's own card names. "
+            "`guest` is DENY_ERROR: `anon` has that privilege explicitly revoked below."
+        ),
+    ),
+    *_row(
+        "review_events",
+        DELETE,
+        guest=ERROR,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why=(
+            "Same reasoning as the UPDATE row directly above, DELETE side — 0018 adds no "
+            "delete policy either. Not even a reviewer can change or remove a review_event "
+            "once written."
+        ),
+    ),
+    *_row(
+        "audit_events",
+        SELECT,
+        guest=ERROR,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=ALLOW,
+        why="0018 audit_events_select_reviewers: `for select using (is_reviewer())`.",
+    ),
+    *_row(
+        "audit_events",
+        INSERT,
+        guest=ERROR,
+        student_a=ERROR,
+        student_b=ERROR,
+        reviewer=ERROR,
+        why=(
+            "Same reasoning as review_events' INSERT row above — 0018 adds no insert policy "
+            "here either; the only real writer is `supersede_claim()` (SECURITY DEFINER, "
+            "owner-bypass)."
+        ),
+    ),
+    *_row(
+        "audit_events",
+        UPDATE,
+        guest=ERROR,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why="Same reasoning as review_events' UPDATE row above.",
+    ),
+    *_row(
+        "audit_events",
+        DELETE,
+        guest=ERROR,
+        student_a=EMPTY,
+        student_b=EMPTY,
+        reviewer=EMPTY,
+        why="Same reasoning as review_events' DELETE row above.",
     ),
 )
 
@@ -1352,6 +1471,7 @@ _STORAGE: tuple[Cell, ...] = (
 MATRIX: tuple[Cell, ...] = (
     *_PUBLIC_KB,
     *_SOURCE_VERSIONS,
+    *_REVIEW_AUDIT_EVENTS,
     *_CLAIMS,
     *_REVIEWERS,
     *_STUDENT_VAULT,

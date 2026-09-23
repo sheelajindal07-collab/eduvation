@@ -522,6 +522,33 @@ class _Seeds:
             lambda: self._insert("reviewers", {"user_id": self.maker_id()}, pk="user_id"),
         )
 
+    def review_event_id(self) -> str:
+        return self._once(
+            "review_event", lambda: self._insert("review_events", self.review_event_payload())
+        )
+
+    def review_event_payload(self) -> dict[str, Any]:
+        return {
+            "claim_id": self.claim_id(),
+            "actor_id": self.maker_id(),
+            "action": "published",
+            "detail": {"note": "QA-6 access matrix probe"},
+        }
+
+    def audit_event_id(self) -> str:
+        return self._once(
+            "audit_event", lambda: self._insert("audit_events", self.audit_event_payload())
+        )
+
+    def audit_event_payload(self) -> dict[str, Any]:
+        return {
+            "actor_id": self.maker_id(),
+            "action": "claim_superseded",
+            "entity_type": "claim",
+            "entity_id": self.claim_id(),
+            "detail": {"note": "QA-6 access matrix probe"},
+        }
+
     def profile_id(self) -> str:
         return self._once(
             "profile",
@@ -990,6 +1017,44 @@ def _probe_source_versions(operation: Operation, seeds: _Seeds) -> _Probe:
     )
 
 
+def _probe_review_events(operation: Operation, seeds: _Seeds) -> _Probe:
+    # No insert policy exists at all (0018) — same shape as `reviewers` —
+    # so, unlike every other probe above, there is no legal INSERT this
+    # payload could ever produce for ANY role; `insert_filter` still
+    # names the row a hypothetical (bugged) permissive policy would
+    # create, so a regression here is caught and cleaned up, not missed.
+    claim_id = seeds.claim_id()
+    return _Probe(
+        pk="id",
+        target=None if operation is Operation.INSERT else seeds.review_event_id(),
+        insert_payload={
+            "claim_id": claim_id,
+            "actor_id": seeds.maker_id(),
+            "action": "published",
+            "detail": {"note": "qa-6 matrix insert probe"},
+        },
+        update_payload={"action": "publish_conflict"},
+        insert_filter={"claim_id": claim_id, "action": "published"},
+    )
+
+
+def _probe_audit_events(operation: Operation, seeds: _Seeds) -> _Probe:
+    claim_id = seeds.claim_id()
+    return _Probe(
+        pk="id",
+        target=None if operation is Operation.INSERT else seeds.audit_event_id(),
+        insert_payload={
+            "actor_id": seeds.maker_id(),
+            "action": "claim_superseded",
+            "entity_type": "claim",
+            "entity_id": claim_id,
+            "detail": {"note": "qa-6 matrix insert probe"},
+        },
+        update_payload={"detail": {"note": "updated"}},
+        insert_filter={"entity_id": claim_id, "action": "claim_superseded"},
+    )
+
+
 def _probe_ai_usage_caps(operation: Operation, seeds: _Seeds) -> _Probe:
     # The single row (`id boolean primary key check (id)`) is seeded by
     # the migration itself; nothing to create. `insert_filter` is None for
@@ -1028,6 +1093,8 @@ _PROBE_BUILDERS: dict[str, Callable[[Operation, _Seeds], _Probe]] = {
     "safeguarding_flags": _probe_safeguarding_flags,
     "app_settings": _probe_app_settings,
     "source_versions": _probe_source_versions,
+    "review_events": _probe_review_events,
+    "audit_events": _probe_audit_events,
     "guest_sessions": _probe_guest_sessions,
     "guest_plans": _probe_guest_plans,
     "_schema_migrations": _probe_schema_migrations,
