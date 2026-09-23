@@ -115,6 +115,44 @@ this template (there is no generic "field is value" phrasing equivalent —
 plain-data citation shape every other template's `ai_citations` already
 uses.
 
+## BCI-026: the budget is per-identity, and lives in the database
+
+Until BCI-026 this module handed `app.ai.pipeline.answer()` a single,
+process-wide, `lru_cache`d `app.ai.budget.AIRequestBudget` — one
+in-memory daily counter shared by every `/ask` and `/ask/view` request
+from every account and every guest combined, reset by any restart, and
+never writing a row to `ai_usage`. `db/migrations/0011_ai_usage.sql`
+(AI-4) and `0015_ai_identity_binding.sql` had built the real thing —
+per-identity daily, global daily and global monthly ceilings enforced
+inside `ai_reserve()` — and nothing used it.
+
+`_ai_budget_for_request()` below is the fix. It resolves ONE identity per
+request and hands back a real `app.ai.budget_db.AIRequestBudgetDB` for
+it:
+
+- **Account** — a valid `Authorization: Bearer <token>` header, resolved
+  to an account id by a live `client.auth.get_user(jwt=...)` check, the
+  exact pattern `app/api/plans.py`'s `_current_user_id()` already uses
+  (never a client-side JWT decode). The budget is constructed with THIS
+  request's own RLS-scoped client, which is what makes it work at all:
+  0015 derives the account's identity hash from `auth.uid()` on the
+  connection and ignores whatever hash the client sent, so an account
+  reservation made through an anon client raises BCAI3 by design.
+- **Guest** — the opaque guest-session token from the `bcion_guest_session`
+  cookie (`app/web/guest_session.py`), when the browser already has one.
+- **Neither** — no bearer token AND no guest-session cookie: the existing
+  process-wide `_ai_budget()` singleton, exactly as before.
+
+**A session-less guest is NOT given a new guest session here** — see
+`_ai_budget_for_request()`'s own docstring for the reasoning. Nothing in
+this module ever mints, writes or clears a guest-session cookie.
+
+Neither route's response shape changes, and nothing here can 500: a
+budget that cannot be established, or that fails for any reason other
+than a genuine cap, degrades to `AIAnswerStatus.ai_unavailable` — the
+same status a `GeminiNotConfiguredError` already produces, rendering
+exactly what the AI-off path renders.
+
 ## Router registration (see this card's own completion report)
 
 `app/main.py` is a frozen, lead-only registry — this module cannot add
@@ -141,22 +179,23 @@ import uuid as uuid_module
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from functools import lru_cache
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query
 from postgrest.exceptions import APIError
 from pydantic import BaseModel
 from supabase import Client
 
 from app.ai import pipeline as ai_pipeline
 from app.ai.actions import NextStepAction, next_step_actions_from_citations
-from app.ai.budget import AIRequestBudget, default_budget
+from app.ai.budget import AIBudgetExceededError, AIRequestBudget, default_budget
+from app.ai.budget_db import AIRequestBudgetDB, AIUsageError
 from app.ai.gemini_provider import GeminiNotConfiguredError, GeminiProvider
 from app.ai.schemas import AIAnswerStatus, AskRequest
 from app.ai.schemas import Answer as AIAnswer
 from app.ai.what_changed import RenderedDiffLine, WhatChangedAnswer, answer_what_changed
 from app.api.compare import COMPARISON_FIELDS, FieldValueOut
-from app.api.deps import get_db_client
+from app.api.deps import _bearer_token, get_db_client
 from app.api.eligibility import GENERIC_CRITERION_FIELDS
 from app.core.config import get_settings
 from app.data.models import DEFAULT_JURISDICTION, Claim, ClaimStatus, Source, SourceType, TrustLabel
@@ -480,20 +519,225 @@ def assemble_ask_answer(
 
 @lru_cache
 def _ai_budget() -> AIRequestBudget:
-    """One process-local `AIRequestBudget`, shared by every `/ask`
-    request in this process — the same `lru_cache` singleton lifecycle
-    `app.core.config.get_settings()` uses (this module's docstring:
-    "Provider and budget, both real but injected, not constructed
-    per-request"). `default_budget()` (`app/ai/budget.py`) is
-    deliberately NOT cached itself — its own docstring: "a caller that
-    wants a single shared counter across requests ... should construct
-    one `AIRequestBudget` itself at app startup and reuse that instance"
-    — this function is that one caller, constructing exactly once per
-    process. A fresh `AIRequestBudget` built per-request would reset the
-    daily counter to zero on every single call, defeating the entire
-    point of a daily spend cap.
+    """The LAST-RESORT, process-local `AIRequestBudget` — since BCI-026 it
+    is used only when this request has no resolvable identity at all
+    (no bearer token AND no guest-session cookie); see
+    `_ai_budget_for_request()` below, which is now the only caller.
+
+    Still a `lru_cache` singleton, the same lifecycle
+    `app.core.config.get_settings()` uses. `default_budget()`
+    (`app/ai/budget.py`) is deliberately NOT cached itself — its own
+    docstring: "a caller that wants a single shared counter across
+    requests ... should construct one `AIRequestBudget` itself at app
+    startup and reuse that instance" — this function is that one caller,
+    constructing exactly once per process. A fresh `AIRequestBudget`
+    built per-request would reset the daily counter to zero on every
+    single call, defeating the entire point of a daily spend cap.
     """
     return default_budget()
+
+
+_GUEST_SESSION_COOKIE_NAME = "bcion_guest_session"
+"""Byte-identical to `app/web/guest_session.py`'s `COOKIE_NAME`, and
+written as a literal here rather than imported — deliberately.
+
+That is a web-layer module, and this codebase's established layering is
+"web imports api, never the reverse" (this module's own docstring's
+"Router registration" section; no module under `app/api/` imports
+anything from `app/web/` today, and this card is not the place to be the
+first). `app/web/ask_pages.py` calls that module's own
+`token_from_request()` directly, as the web layer may; this constant
+exists only so the JSON route can declare the same cookie.
+`tests/unit/test_ask_api.py::TestGuestSessionCookieName` asserts the two
+strings are equal against the real constant, so they cannot drift
+silently."""
+
+
+class AIBudget(Protocol):
+    """The whole of the budget shape `app.ai.pipeline.answer()` and
+    `app.ai.what_changed.answer_what_changed()` actually use.
+
+    Both annotate their `budget` parameter as the concrete
+    `app.ai.budget.AIRequestBudget`, but both only ever CALL
+    `budget.reserve(today=...)` — the use is structural, the annotation
+    is nominal. `app.ai.budget_db.AIRequestBudgetDB`'s own docstring
+    claims to be a drop-in for exactly that ("Same call shape on purpose
+    (`reserve()`, `remaining()`), so the swap is one import line in
+    whoever constructs the budget"); this protocol is that claim written
+    down where a type checker can see it, and
+    `tests/unit/test_ask_api.py::TestBudgetDbIsADropIn` checks both
+    classes against it rather than taking the docstring's word for it.
+
+    `app/ai/pipeline.py` and `app/ai/budget.py` are outside this card's
+    owned files, so neither annotation can be widened to this protocol
+    there; the two call sites below `cast()` instead, which is a
+    statement about a type annotation and never a runtime conversion.
+    """
+
+    def remaining(self, *, today: date | None = None) -> int: ...
+
+    def reserve(self, *, today: date | None = None) -> None: ...
+
+
+class AIBudgetUnavailableError(RuntimeError):
+    """This request's AI budget could not be established, or failed for a
+    reason that is NOT a spend cap.
+
+    Deliberately distinct from `AIBudgetExceededError` ("you are out of
+    budget", which is an ordinary, expected outcome that
+    `app.ai.pipeline.answer()` already turns into
+    `AIAnswerStatus.budget_exhausted`). `app/ai/budget_db.py`'s own
+    docstring makes the same split for the same reason: "a caller that
+    treats a programming error as a cap silently turns a bug into a
+    permanent, invisible AI outage". This one degrades to
+    `AIAnswerStatus.ai_unavailable` instead — the AI layer could not run,
+    which is a different sentence from "the AI layer has spent enough
+    today".
+    """
+
+
+@dataclass(frozen=True)
+class _GuardedDBBudget:
+    """A thin wrapper that keeps the database-backed budget's failure
+    surface inside this module.
+
+    `AIRequestBudget.reserve()` can raise exactly one thing:
+    `AIBudgetExceededError`, which `app.ai.pipeline.answer()` already
+    catches. `AIRequestBudgetDB.reserve()` can additionally raise
+    `AIUsageError` (a BCAI2/BCAI3 protocol error — e.g. 0015's "identity
+    kind 'account' requires a signed-in caller") or a raw PostgREST
+    `APIError` (e.g. `ai_reserve()` missing because 0011 was never
+    applied to this database). Neither is caught by
+    `app.ai.pipeline.answer()`, so without this wrapper either one would
+    escape as an unhandled 500 from a route whose whole contract is
+    "never an error page" — a failure mode the in-memory budget
+    structurally could not have.
+
+    Only the budget's own two calls are wrapped, so retrieval's existing
+    error behaviour inside the pipeline is untouched. A genuine cap is
+    re-raised unchanged: it must keep reaching
+    `app.ai.pipeline.answer()`'s own `budget_exhausted` handling.
+    """
+
+    inner: AIRequestBudgetDB
+
+    def remaining(self, *, today: date | None = None) -> int:
+        try:
+            return self.inner.remaining(today=today)
+        except AIBudgetExceededError:
+            raise
+        except Exception as exc:
+            raise AIBudgetUnavailableError(
+                "The database-backed AI budget could not be read."
+            ) from exc
+
+    def reserve(self, *, today: date | None = None) -> None:
+        try:
+            self.inner.reserve(today=today)
+        except AIBudgetExceededError:
+            raise
+        except Exception as exc:
+            raise AIBudgetUnavailableError(
+                "The database-backed AI budget could not be reserved against."
+            ) from exc
+
+
+def _ai_budget_for_request(
+    db: Client,
+    *,
+    template_id: str,
+    authorization: str | None,
+    guest_session_token: str | None,
+) -> AIBudget:
+    """This request's own budget — see this module's docstring's
+    "BCI-026" section for the three identity cases and why they exist.
+
+    **Why a session-less guest is NOT given a new guest session here.**
+    `app/web/guest_session.py` offers `ensure_session()`/`create_session()`,
+    and this function deliberately uses neither — only `token_from_request`'s
+    "read the cookie the browser already has" half (via the caller). Three
+    reasons, in order of weight:
+
+    1. `/ask` and `/ask/view` are GET routes. Minting a session INSERTs a
+       `guest_sessions` row, i.e. a write from a safe method on a public,
+       unauthenticated endpoint. A client that does not keep cookies — a
+       script, a crawler, any JSON caller of `/ask` — would mint a brand
+       new row AND a brand new identity on every single request, which
+       makes the per-identity daily cap trivially bypassable by simply
+       not sending a cookie while filling that table. That is strictly
+       worse for the exact threat the cap exists to stop than the
+       fallback below.
+    2. `create_session()`/`ensure_session()` have no call site anywhere in
+       `app/` yet (AUTH-4 built the cookie half; nothing wires it). The
+       first caller effectively decides when a guest session begins, and
+       that belongs to whichever card wires guest plans — not to a
+       spend-accounting fix.
+    3. `/ask/view` returns a `TemplateResponse` directly, and FastAPI only
+       merges an injected `Response` parameter's headers on the branch
+       where the endpoint did NOT return a Response — so minting there
+       would mean threading a token back out of the AI layer purely to
+       set a cookie.
+
+    The fallback is not a hole: a session-less guest gets exactly the
+    behaviour that existed before this card (the process-wide in-memory
+    daily cap), while every account and every cookie-carrying guest now
+    gets real per-identity accounting plus the installation-wide daily
+    and monthly ceilings in `ai_usage_caps`.
+
+    Raises `AIBudgetUnavailableError` — never returns the global budget —
+    when a bearer token IS present but does not resolve to an account.
+    Quietly falling back there would spend a real auth failure against a
+    shared counter and hide it.
+    """
+    token = _bearer_token(authorization)
+    if token is not None:
+        # Exactly `app/api/plans.py`'s `_current_user_id()` pattern: a live
+        # Supabase Auth check against the caller's own token, passed
+        # explicitly (see `app.api.deps.AuthedSession`'s docstring for why
+        # a bare `client.auth.get_user()` would find no session here).
+        # Never a client-side decode of the JWT.
+        try:
+            user_response = db.auth.get_user(jwt=token)
+        except Exception as exc:
+            raise AIBudgetUnavailableError(
+                "A bearer token was presented but could not be resolved to an account."
+            ) from exc
+        user = user_response.user if user_response is not None else None
+        if user is None or not user.id:
+            raise AIBudgetUnavailableError(
+                "A bearer token was presented but resolved to no account."
+            )
+        try:
+            # `client=db` is load-bearing, not a micro-optimisation:
+            # db/migrations/0015_ai_identity_binding.sql derives an
+            # ACCOUNT's identity hash from `auth.uid()` on the connection
+            # and ignores the hash the client sent, so this reservation
+            # only works at all through this request's own JWT-scoped
+            # client -- and can never be aimed at another account.
+            return _GuardedDBBudget(
+                AIRequestBudgetDB.for_account(str(user.id), template_id=template_id, client=db)
+            )
+        except AIUsageError as exc:
+            raise AIBudgetUnavailableError(
+                "The account budget for this request could not be constructed."
+            ) from exc
+
+    # An empty cookie is treated as no cookie, matching
+    # `app/web/guest_session.py`'s `token_from_request` exactly -- a
+    # browser handed `bcion_guest_session=` has no session, and an empty
+    # identity would be refused by `AIRequestBudgetDB` anyway.
+    session_token = (guest_session_token or "").strip() or None
+    if session_token is not None:
+        try:
+            return _GuardedDBBudget(
+                AIRequestBudgetDB.for_guest(session_token, template_id=template_id, client=db)
+            )
+        except AIUsageError as exc:
+            raise AIBudgetUnavailableError(
+                "The guest budget for this request could not be constructed."
+            ) from exc
+
+    return _ai_budget()
 
 
 def _pipeline_answer(
@@ -503,6 +747,8 @@ def _pipeline_answer(
     entity_kind: str,
     entity_id: str,
     as_of: date,
+    authorization: str | None = None,
+    guest_session_token: str | None = None,
 ) -> AIAnswer | None:
     """The additive AI layer over `assemble_ask_answer()`'s unconditional
     deterministic fact cards — see this module's own docstring's
@@ -534,6 +780,13 @@ def _pipeline_answer(
     id — never has) degrades to `AIAnswerStatus.unsupported_template`
     inside `app.ai.pipeline.answer()` itself, exactly like every other
     non-`answered` status: nothing extra rendered, no error.
+
+    BCI-026: `authorization`/`guest_session_token` are this request's raw
+    identity inputs, passed straight to `_ai_budget_for_request()` (see
+    this module's docstring's "BCI-026" section). Both default to `None`,
+    which resolves to the process-wide `_ai_budget()` singleton — the
+    pre-BCI-026 behaviour, and the correct answer for a caller that
+    genuinely has no identity to offer.
     """
     settings = get_settings()
     if not (settings.ai_enabled and settings.ai_configured):
@@ -542,12 +795,43 @@ def _pipeline_answer(
         provider = GeminiProvider()
     except GeminiNotConfiguredError:
         return AIAnswer(status=AIAnswerStatus.ai_unavailable)
+    try:
+        budget = _ai_budget_for_request(
+            db,
+            template_id=template.id,
+            authorization=authorization,
+            guest_session_token=guest_session_token,
+        )
+    except AIBudgetUnavailableError:
+        # Never a 500, and never a silent fall-through to the global
+        # in-memory budget -- that would spend a real auth problem
+        # against a counter shared with everyone else and hide it.
+        logger.warning(
+            "AI budget identity could not be resolved for template_id=%s; "
+            "degrading to ai_unavailable (no identity is logged)",
+            template.id,
+        )
+        return AIAnswer(status=AIAnswerStatus.ai_unavailable)
     request = AskRequest(
         template_id=template.id,
         pathway_id=entity_id if entity_kind == "pathway" else None,
         career_id=entity_id if entity_kind == "career" else None,
     )
-    return ai_pipeline.answer(db, request, provider, _ai_budget(), as_of=as_of)
+    try:
+        return ai_pipeline.answer(
+            db, request, provider, cast("AIRequestBudget", budget), as_of=as_of
+        )
+    except AIBudgetUnavailableError:
+        # Raised only by `_GuardedDBBudget` (see its docstring) -- the
+        # budget itself failed for a reason that is not a cap. A genuine
+        # cap never reaches here: `app.ai.pipeline.answer()` catches
+        # `AIBudgetExceededError` itself and returns `budget_exhausted`.
+        logger.warning(
+            "The database-backed AI budget failed for template_id=%s; "
+            "degrading to ai_unavailable (no identity is logged)",
+            template.id,
+        )
+        return AIAnswer(status=AIAnswerStatus.ai_unavailable)
 
 
 def _what_changed_answer(
@@ -555,6 +839,8 @@ def _what_changed_answer(
     claim_id: str,
     *,
     as_of: date,
+    authorization: str | None = None,
+    guest_session_token: str | None = None,
 ) -> WhatChangedAnswer | None:
     """`what_changed`'s own additive AI layer — mirrors `_pipeline_answer()`
     above (same settings gate, same `GeminiProvider()` construction and
@@ -569,6 +855,11 @@ def _what_changed_answer(
     Returns `None` under the exact same condition `_pipeline_answer()`
     does — AI disabled/not configured — meaning "never even called",
     never a status.
+
+    BCI-026: same per-request identity resolution, same three cases and
+    same never-a-500 degrade as `_pipeline_answer()` above — this
+    template shares the budget, because the cap is per identity, not per
+    template.
     """
     settings = get_settings()
     if not (settings.ai_enabled and settings.ai_configured):
@@ -577,7 +868,29 @@ def _what_changed_answer(
         provider = GeminiProvider()
     except GeminiNotConfiguredError:
         return WhatChangedAnswer(status=AIAnswerStatus.ai_unavailable)
-    return answer_what_changed(db, claim_id, provider, _ai_budget(), as_of=as_of)
+    try:
+        budget = _ai_budget_for_request(
+            db,
+            template_id="what_changed",
+            authorization=authorization,
+            guest_session_token=guest_session_token,
+        )
+    except AIBudgetUnavailableError:
+        logger.warning(
+            "AI budget identity could not be resolved for template_id=what_changed; "
+            "degrading to ai_unavailable (no identity is logged)"
+        )
+        return WhatChangedAnswer(status=AIAnswerStatus.ai_unavailable)
+    try:
+        return answer_what_changed(
+            db, claim_id, provider, cast("AIRequestBudget", budget), as_of=as_of
+        )
+    except AIBudgetUnavailableError:
+        logger.warning(
+            "The database-backed AI budget failed for template_id=what_changed; "
+            "degrading to ai_unavailable (no identity is logged)"
+        )
+        return WhatChangedAnswer(status=AIAnswerStatus.ai_unavailable)
 
 
 class AskFactCardOut(BaseModel):
@@ -677,6 +990,7 @@ def ask(
     claim_id: str | None = Query(default=None),
     db: Client = Depends(get_db_client),
     authorization: str | None = Header(default=None),
+    guest_session: str | None = Cookie(default=None, alias=_GUEST_SESSION_COOKIE_NAME),
 ) -> AskResponse:
     """`?template=<id>&pathway_id=<uuid>` (or `&career_id=<uuid>` instead
     of `pathway_id`, or -- `next_steps` only -- `&plan_id=<uuid>` instead
@@ -689,10 +1003,16 @@ def ask(
     escaped.
 
     `authorization` is read here (the same header `get_db_client` already
-    reads independently to build `db`) purely to tell
+    reads independently to build `db`) for two things: to tell
     `_pathway_id_for_plan` whether this caller is a guest, for its own
-    warning-log distinction -- it has no other effect and never changes
-    what `db` itself resolves to."""
+    warning-log distinction, and (BCI-026) to resolve this request's AI
+    spend identity. It never changes what `db` itself resolves to.
+
+    `guest_session` is the `bcion_guest_session` cookie
+    (`app/web/guest_session.py`), read for one purpose only: the guest
+    half of that same BCI-026 identity resolution. This route never
+    writes, refreshes or clears it, and never mints a new one -- see
+    `_ai_budget_for_request()`'s own docstring."""
     ask_template = ASK_TEMPLATES.get(template)
     if ask_template is None:
         raise HTTPException(status_code=404, detail="We don't recognise that question.")
@@ -734,7 +1054,13 @@ def ask(
         # AI-19: what_changed's own AI layer -- see module docstring's
         # "AI-19" section for why this cannot go through
         # `_pipeline_answer()`/`ai_pipeline.answer()` at all.
-        what_changed_result = _what_changed_answer(db, entity_id, as_of=as_of)
+        what_changed_result = _what_changed_answer(
+            db,
+            entity_id,
+            as_of=as_of,
+            authorization=authorization,
+            guest_session_token=guest_session,
+        )
         if (
             what_changed_result is not None
             and what_changed_result.status == AIAnswerStatus.answered
@@ -749,7 +1075,13 @@ def ask(
             ai_citations = []
     else:
         ai_answer = _pipeline_answer(
-            db, ask_template, entity_kind=entity_kind, entity_id=entity_id, as_of=as_of
+            db,
+            ask_template,
+            entity_kind=entity_kind,
+            entity_id=entity_id,
+            as_of=as_of,
+            authorization=authorization,
+            guest_session_token=guest_session,
         )
         if ai_answer is not None and ai_answer.status == AIAnswerStatus.answered:
             ai_sentences = list(ai_answer.sentences)
