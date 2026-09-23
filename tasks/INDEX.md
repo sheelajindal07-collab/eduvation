@@ -195,6 +195,7 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 - [x] AI-14 - AI-assisted claim extraction drafts: paste text, extraction + verification pass, verbatim-span check, draft only [P1a L8, x2, un-dropped, DONE, merged]
 - [x] AI-18 - Next-steps template over a server-owned, claim-bound action catalogue [P1a L10, x2, new, DONE, merged]
 - [x] AI-19 - What-changed summary over the superseded_by diff [P1a L10, new, DONE, merged; currently reviewer-only in effect, see STATUS.md]
+- [x] BCI-025 (UI-12, new, not in the original card set) - `/ask/view` now renders all four AI content kinds and resolves `next_steps`/`what_changed`'s own id shapes, matching `GET /ask`'s JSON contract [P1a follow-up, DONE, merged 2026-09-23]
 - [x] AI-20 - Hindi content drafts, offline batch with back-translation check, CSV for the reviewer [P1a L9, DONE, merged]
 
 ## Step 12 Hindi, accessibility, difficult states (M6) - OPEN
@@ -225,7 +226,7 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 
 ## Step 13 Operational safety and release review - OPEN
 - [ ] OPS-1 - Owner: vendors, backup tier, VM region, n8n status [W0, owner]
-- [ ] OPS-2 - PII-free structured logging and request id [W2]
+- [x] OPS-2 - PII-free structured logging and request id [W2, DONE, already merged -- app/core/logging.py, configure_observability(app), tests/unit/test_logging_redaction.py (16 passed); checkbox was stale, found while scouting the next wave 2026-09-23]
 - [x] RULES-11 - "Critical rule cases" gate command [W2]
 - [x] SEC-3 - Proxy rate limiting [P2] (nginx config, not yet wired into a live deploy — DEPLOY-4/7 to wire in)
 - [ ] TRIAL-5 - usage_events table and metric views [P2]

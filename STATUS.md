@@ -379,15 +379,44 @@ already out of scope for this pilot). 18 + 10 live tests passing, full
 unit suite **1436 passed**, mypy clean, all re-run by the lead through
 the actually-merged app.
 
-**Every Phase 1a dev-agent card is now done.** What remains is entirely
-human or owner work: **AI-10** (provider terms, restricted key, spend
-cap - gates any live model call and AI-11's real evaluation run),
-**AI-16** (Mahesh reviews the Hindi eval answers and AI-20's drafts, once
-either exists), **AI-17** (production sign-off, Phase 2), and two
-findings still needing your explicit yes before AI-12's eventual fix
-round can treat them as settled: AI-11's official-vs-synthetic eval
-seeding, and the two eval categories (`ambiguous`, `source_mismatch`)
-that the current one-id-per-template design cannot represent at all.
+**Urgent security follow-up (2026-09-22 night): AI-4's account
+identity-hash oracle, closed.** Independent data-security review found
+a real, reproduced exposure in migration `0011_ai_usage.sql`:
+`ai_reserve`/`ai_budget_remaining` trusted a caller-supplied identity
+hash with no check against the caller's actual signed-in session -
+account ids are not secret, so any anon-key caller could read or burn
+a named account's AI budget. `db/migrations/0015_ai_identity_binding.sql`
+binds the account case to `auth.uid()` server-side; the guest path
+(genuinely secret, server-generated token) is unaffected; `ai_settle`
+was confirmed out of scope (different, already-documented risk). Full
+revert-to-prove both directions, both functions. Applied to the shared
+stack and verified live before the owner's production apply continued.
+Also fixed two pre-existing tests that were passing only because the
+vulnerability existed.
+
+**BCI-025 (UI-12) merged (2026-09-23): `/ask/view` now matches `GET
+/ask`'s full JSON contract.** Found by checking the actual template
+rather than assuming AI-7/AI-18/AI-19 were fully wired end to end: the
+HTML page never resolved `next_steps`' `plan_id`-only or `what_changed`'s
+`claim_id`-only request shapes, and had no markup at all for any of the
+four AI content kinds - a student visiting the page saw only fact
+cards, even with a fully successful AI answer. Both gaps closed: the
+page's resolution now mirrors the JSON route exactly (including the
+same ownership-checked 404 for another identity's plan id), and all
+four content kinds render alongside the fact cards, only when non-empty.
+Two missing translation keys added along the way. 26 unit + 19 live
+tests passing, full suite **1443 passed**, mypy clean.
+
+**Every Phase 1a dev-agent card is now done**, including this follow-on
+work. What remains is entirely human or owner work: **AI-10** (provider
+terms, restricted key, spend cap - gates any live model call and
+AI-11's real evaluation run), **AI-16** (Mahesh reviews the Hindi eval
+answers and AI-20's drafts, once either exists), **AI-17** (production
+sign-off, Phase 2), and two findings still needing your explicit yes
+before AI-12's eventual fix round can treat them as settled: AI-11's
+official-vs-synthetic eval seeding, and the two eval categories
+(`ambiguous`, `source_mismatch`) that the current one-id-per-template
+design cannot represent at all.
 
 ## Lead session, 2026-09-22 evening — merge-queue drain, cleanup, one process rule
 Owner asked for a speed analysis, then "do the treatment". What the
