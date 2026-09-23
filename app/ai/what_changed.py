@@ -66,6 +66,17 @@ exactly like `app/ai/pipeline.py`), never a word or a value.
 `tests/unit/test_ai_what_changed.py`'s
 `test_rendered_line_text_is_unchanged_by_whatever_the_provider_s_raw_text_says`
 proves this directly.
+
+Every rendered `.text`, once built, is re-checked before it is ever
+returned as `answered`: `app.ai.guards.scan_generated_sentences`
+(BCI-027) — the runtime companion to `assert_no_banned_phrases`'s
+fixed-string, import-time check — runs over every `RenderedDiffLine.text`
+here, mirroring `app/ai/pipeline.py`'s own identically-purposed check
+over `Answer.sentences`. A hit downgrades the WHOLE answer to
+`AIAnswerStatus.insufficient_information`, never a partial redaction of
+one line — see that check's own inline comment, immediately before this
+module's final `answered` return, for the exact citations precedent it
+follows.
 """
 
 from __future__ import annotations
@@ -85,6 +96,7 @@ from app.ai.guards import (
     citation_for_record,
     parse_selection_response,
     parse_verification_response,
+    scan_generated_sentences,
 )
 from app.ai.prompts import TEMPLATE_REGISTRY, build_selection_prompt, build_verification_prompt
 from app.ai.retrieval import RetrievedRecord
@@ -404,6 +416,30 @@ def answer_what_changed(
         _render_line(diff, attribute_by_record_id[record_id]) for record_id in surviving_ids
     )
     citations = [citation_for_record(records_by_id[record_id]) for record_id in surviving_ids]
+
+    # Runtime banned-phrase scan (BCI-027) -- this module's own equivalent
+    # final-render step, mirroring app/ai/pipeline.py's identically-named
+    # check between ITS step 11 and step 13: `RenderedDiffLine.text` is
+    # built entirely from `ClaimDiff`'s own old/new values (module
+    # docstring's "Rendering" section), which ultimately trace back to a
+    # published, reviewer-approved claim's own `.value` -- a human content
+    # error at review time could put hedge/guarantee language there, and
+    # nothing previously re-checked it before rendering. A hit downgrades
+    # the WHOLE answer, never a partial redaction of one line -- same
+    # all-or-nothing shape the freshness check immediately above uses,
+    # including that check's own precedent of NOT setting `citations` on
+    # this downgrade path (read directly: the `if stale:` branch above
+    # returns with `citations` left at its dataclass default, `()`, not
+    # `_fallback_citations`-style -- this module has no such helper; there
+    # is nothing analogous to app/ai/pipeline.py's `fallback_citations` to
+    # attach here).
+    if scan_generated_sentences([line.text for line in rendered_lines]):
+        return WhatChangedAnswer(
+            status=AIAnswerStatus.insufficient_information,
+            diff=diff,
+            selection_ids=list(selection_ids),
+            verification_ids=list(verification_ids),
+        )
 
     return WhatChangedAnswer(
         status=AIAnswerStatus.answered,

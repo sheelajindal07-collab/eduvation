@@ -94,12 +94,26 @@ genuine bug in its own prompt construction (see
     `test_answered_sentences_are_generated_entirely_by_code_never_by_the_provider`
     proves this directly, mirroring `app/ai/grounding.py`'s own
     identically-purposed test.
-12. **Banned-phrase guard** — `app.ai.guards.assert_no_banned_phrases`,
-    run over `app.ai.prompts.TEMPLATE_REGISTRY`'s labels at import time
-    (see that module) rather than per-request here, since these are
-    fixed strings that never change between requests; a hit is a build/
-    test-time failure, never something this function's runtime control
-    flow needs to branch on.
+12. **Banned-phrase guard (fixed strings, import time)** —
+    `app.ai.guards.assert_no_banned_phrases`, run over
+    `app.ai.prompts.TEMPLATE_REGISTRY`'s labels at import time (see that
+    module) rather than per-request here, since these are fixed strings
+    that never change between requests; a hit is a build/test-time
+    failure, never something this function's runtime control flow needs
+    to branch on. **Its own, independent runtime companion (BCI-027)**
+    runs between steps 11 and 13, below: `app.ai.guards.
+    scan_generated_sentences` over the `sentences` step 11 just
+    generated from the surviving records' own (published, reviewer-
+    approved) values. Unlike the import-time check, this one is real
+    per-request control flow — a published record's *value* could, in
+    principle, itself contain hedge/guarantee language (a human content
+    error at review time, never an AI hallucination), and nothing
+    previously re-checked that before rendering it. A hit downgrades the
+    WHOLE answer to `insufficient_information`, the same all-or-nothing
+    shape steps 9 and 10 use, never a partial redaction of just the
+    offending sentence — this function never raises on this path, since a
+    real request must degrade gracefully like every other failure mode
+    here, not crash.
 13. **"Settling" the budget.** `app/ai/budget.py`'s `AIRequestBudget` —
     read directly, per this card's contract note, rather than guessed —
     exposes only `reserve()` and `remaining()`; there is no `settle(...)`
@@ -147,6 +161,7 @@ from app.ai.guards import (
     fact_sentence_for_record,
     parse_selection_response,
     parse_verification_response,
+    scan_generated_sentences,
 )
 from app.ai.prompts import TEMPLATE_REGISTRY, build_selection_prompt, build_verification_prompt
 from app.ai.retrieval import (
@@ -310,6 +325,24 @@ def answer(
     # the surviving records' own fields, never from provider output.
     sentences = [fact_sentence_for_record(records_by_id[record_id]) for record_id in surviving_ids]
     citations = [citation_for_record(records_by_id[record_id]) for record_id in surviving_ids]
+
+    # Runtime banned-phrase scan (BCI-027) — over the SENTENCES THIS
+    # PIPELINE JUST GENERATED, not the fixed TEMPLATE_REGISTRY labels
+    # step 12 below checks at import time. A hit here means a published,
+    # reviewer-approved record's own `.value` contained hedge/guarantee
+    # language that survived maker-checker review — a real request, so it
+    # must degrade, never crash and never partially redact: the WHOLE
+    # answer downgrades to `insufficient_information`, same all-or-nothing
+    # shape steps 9/10 above use, with `fallback_citations` (every record
+    # step 3 retrieved) attached the same way step 10's own staleness
+    # downgrade does, so a caller can see which record blocked the answer.
+    if scan_generated_sentences(sentences):
+        return Answer(
+            status=AIAnswerStatus.insufficient_information,
+            citations=fallback_citations,
+            selection_ids=list(selection_ids),
+            verification_ids=list(verification_ids),
+        )
 
     # Step 13 — "settling" the budget: see module docstring point 13 for
     # why no further call against `budget` happens here.

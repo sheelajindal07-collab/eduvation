@@ -1,7 +1,11 @@
 """The guards `app/ai/pipeline.py`'s two-pass runner is built on: strict
 whole-response line-format validation for each pass, the traceability
 check that stands in for an outbound-payload call, code-only sentence/
-citation generation, and the banned-phrase build/test-time check.
+citation generation, the banned-phrase build/test-time check
+(`assert_no_banned_phrases`), and its independent runtime companion
+(`scan_generated_sentences`, BCI-027) that re-checks the sentences a
+pipeline actually generates from a published record's own value, per
+request, without raising.
 
 ## Why this module exists rather than importing from `app/ai/grounding.py`
 
@@ -266,6 +270,58 @@ def citation_for_record(record: RetrievedRecord) -> dict[str, Any]:
         "source_url": record.source_url,
         "is_stale": record.is_stale,
     }
+
+
+def scan_generated_sentences(sentences: Sequence[str]) -> tuple[str, ...]:
+    """Runtime companion to `assert_no_banned_phrases` below (BCI-027) —
+    scans sentences a pipeline is about to render to a student, never
+    fixed, code-authored strings.
+
+    `assert_no_banned_phrases`'s contract is "raise immediately, this is
+    a build-time bug" — correct for `app.ai.prompts.TEMPLATE_REGISTRY`'s
+    fixed labels, wrong here: a real request must never crash on this, it
+    must degrade gracefully, exactly like every other failure mode
+    `app/ai/pipeline.py`'s `answer()` and `app/ai/what_changed.py`'s
+    `answer_what_changed()` already have (an unsupported template, a
+    provider timeout, a stale record — none of those raise out of either
+    pipeline either). So this function is pure and NEVER raises: it only
+    reports which `BANNED_PHRASES` (`app/ai/schemas.py`) entries were
+    found, in `find_banned_phrases` order, deduplicated across every
+    sentence checked. A caller only needs to know THAT a hit occurred, in
+    order to downgrade the whole answer — never which single sentence,
+    since this pipeline's own "reject whole, never partial" design
+    principle (module docstring) applies here exactly as it does to every
+    other validation step.
+
+    Why this exists: `app.ai.guards.fact_sentence_for_record`'s own
+    docstring already establishes that no character the provider wrote
+    ever reaches a rendered sentence — every sentence is built by code
+    from an already-PUBLISHED, reviewer-approved record's own `.value`.
+    But that value itself was typed by a human at review time, and
+    nothing previously re-checked it for hedge/guarantee/ranking language
+    before rendering — a content error at review time (not an AI
+    hallucination) would previously have reached a student completely
+    unscanned. Maker-checker review is supposed to catch this at source;
+    this is the same mechanical backstop `BANNED_PHRASES` already
+    provides everywhere else it is checked (fixed strings via
+    `assert_no_banned_phrases`, the eval set's own calibration fixtures),
+    finally wired to the one place — runtime-generated content — it was
+    previously documented as covering but never actually was.
+
+    Callers: `app/ai/pipeline.py`'s `answer()` (over `Answer.sentences`,
+    between step 11's sentence generation and step 13's final return) and
+    `app/ai/what_changed.py`'s `answer_what_changed()` (over each
+    `RenderedDiffLine.text`, its own equivalent final-render step) — both
+    downgrade the WHOLE answer to `AIAnswerStatus.insufficient_information`
+    on any non-empty result here, never redact a single sentence/line and
+    keep the rest.
+    """
+    hits: list[str] = []
+    for sentence in sentences:
+        for phrase in find_banned_phrases(sentence):
+            if phrase not in hits:
+                hits.append(phrase)
+    return tuple(hits)
 
 
 def assert_no_banned_phrases(*texts: str) -> None:
