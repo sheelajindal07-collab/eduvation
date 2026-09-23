@@ -24,6 +24,17 @@
       meet each requirement. Leave anything blank to see just what's required.
     </p>
 
+    {# AUTH-6: a small, self-contained "Save this route" form -- additive
+       only, no restructuring of this screen's own form below. Reaching
+       this branch at all means pathway_id was already validated as a
+       real UUID (the "not a valid pathway" case returns the `error`
+       branch above, before this point), so no extra guard is needed
+       here. Lands on /my-plan, matching this task's own acceptance line. #}
+    <form method="post" action="/my-plan/save" class="mb-6">
+      <input type="hidden" name="pathway_id" value="{{ pathway_id }}" />
+      <button type="submit" class="btn-secondary">Save this route</button>
+    </form>
+
     {# SCOPE-6: additive to whatever the criteria list below already
        renders -- explains WHY a pathway's own jurisdiction has little or
        nothing published yet, instead of the screen just looking sparse

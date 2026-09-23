@@ -233,3 +233,52 @@ def require_same_origin(*cookie_names: str) -> Callable[..., None]:
         )
 
     return _guard
+
+
+def require_origin_unconditionally(
+    request: Request, settings: Settings = Depends(get_settings)
+) -> None:
+    """The same Origin/Referer rule `require_same_origin()` enforces, but
+    WITHOUT that factory's cookie-presence gate (`request_is_guarded()`)
+    -- checked on every state-changing request this dependency is
+    attached to, cookie or no cookie.
+
+    ## Why this exists as a second function rather than a flag on the first
+
+    `require_same_origin()`'s cookie gate is not an oversight — it is the
+    documented, correct shape for a route like the sign-in POST, which
+    cannot possibly carry the cookie it is in the middle of creating (see
+    this module's docstring, "A sign-in POST still works from anywhere").
+    Removing that gate there would lock every visitor out of signing in.
+
+    But a route whose entire visible harm IS "an attacker drives a
+    victim's cookie-less browser into minting a brand-new session and
+    writing attacker-chosen data into it" has no such excuse: there is no
+    legitimate reason a real, same-origin caller of that route would ever
+    lack an `Origin`/`Referer` a browser sends on every real form
+    submission, cross-site forgery included only lacks a *matching* one.
+    Gating on cookie presence there would leave exactly the attack the
+    check exists for unguarded, because a forged request against a route
+    like that is essentially always the FIRST request in a session, not a
+    later one. `POST /my-plan/save` and `POST /my-plan/remove` (AUTH-6
+    fix round, the guest-session-minting write path) are this function's
+    first callers.
+
+    Do NOT reach for this as a drop-in replacement for
+    `require_same_origin()` on anything shaped like sign-in or any other
+    route a signed-out visitor must legitimately be able to reach with no
+    `Origin` header at all (a same-origin browser navigation always sends
+    one; the sign-in exemption is specifically about the cookie not
+    existing yet, not about the header). Ask whether "no cookie yet" is
+    itself part of the harm a route needs protecting against — if yes,
+    this function; if the route's own job is letting a signed-out visitor
+    in, `require_same_origin()`.
+    """
+    if request.method.upper() not in STATE_CHANGING_METHODS:
+        return
+    if origin_is_allowed(request, settings):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail={"code": CSRF_ERROR_CODE, "message": CSRF_ERROR_MESSAGE},
+    )
