@@ -44,12 +44,17 @@
 ] %}
 
 {# The utility menu. Same convention: `href = none` is a slot, not a
-   link. UI-13 builds privacy, help and the account page; a language
-   switcher needs a route that sets the `lang` cookie (I18N-1 built the
-   reader, not the writer). #}
+   link. UI-13 builds privacy and help; a language switcher needs a
+   route that sets the `lang` cookie (I18N-1 built the reader, not the
+   writer). No "Account" entry here: AUTH-3 gave student accounts their
+   own real, live `/sign-in` and `/sign-up` links (`base.html`'s
+   `utility_menu` block, right next to this menu) -- a "soon" placeholder
+   for the same concept beside those live links would tell a visitor two
+   contradictory things about the same feature at once (ux-qa-reviewer
+   finding, this fix round). Removing the placeholder does not touch
+   those live links themselves. #}
 {% set UTILITY_ITEMS = [
   {"key": "timeline", "href": "/timeline/view", "label": "Timeline calculator"},
-  {"key": "account",  "href": none,             "label": "Account"},
   {"key": "language", "href": none,             "label": "Language"},
   {"key": "privacy",  "href": none,             "label": "Privacy"},
   {"key": "help",     "href": none,             "label": "Help"}

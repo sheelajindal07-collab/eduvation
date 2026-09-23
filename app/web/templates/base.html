@@ -7,8 +7,9 @@
      student_nav    the four-destination nav. Reviewer pages override
                     this with an empty block to hide student navigation
      utility_menu   account / language / privacy / tools (docs/PRODUCT.md:
-                    "not a fifth destination"). Reviewer pages override
-                    it empty too
+                    "not a fifth destination"), plus AUTH-3's sign-in/
+                    sign-up/sign-out links. Reviewer pages override it
+                    empty too, which also hides those links there
      session_state  guest vs account, rendered from the optional
                     `session_state` context variable (AUTH-14)
      content        the page itself
@@ -51,6 +52,42 @@
         {% endblock %}
         {% block utility_menu %}
           {{ nav.utility_menu(current_path) }}
+          {# AUTH-3: sign-in/sign-up (or sign-out, once a page actually
+             passes session_state == "account" -- no page does yet,
+             AUTH-14's own job) -- added inside this existing block,
+             deliberately, rather than a new sibling one: reviewer pages
+             already override this whole block to empty ("no student
+             navigation on a reviewer page" -- app/web/reviewer/auth.py's
+             own console), and a new top-level block would not have been
+             covered by that existing override, leaking student-only
+             account links onto the reviewer console. Nesting here means
+             the one existing mechanism hides this too, with no reviewer
+             template needing to change.
+
+             Excluded on "/" specifically: UI-3's landing page
+             (app/web/templates/landing.html) is a settled, tested "no
+             account wall" screen -- its own docstring says so and
+             tests/unit/test_web_start.py::TestLandingPage asserts
+             neither "sign in" nor "sign up" appears anywhere on it. That
+             test caught this before merge: it is a real, pre-existing
+             product decision, not something this task gets to relax by
+             adding a global nav link, so the one screen that promises no
+             account wall keeps not showing one -- every other page
+             still gets the links. #}
+          {% if current_path != "/" %}
+            <nav class="site-header__account-links flex items-center gap-3" aria-label="Account">
+              {% if session_state == "account" %}
+                <form method="post" action="/sign-out">
+                  <button type="submit" class="nav-link bg-transparent border-0 p-0 cursor-pointer">
+                    Sign out
+                  </button>
+                </form>
+              {% else %}
+                <a href="/sign-in" class="nav-link">Sign in</a>
+                <a href="/sign-up" class="nav-link">Sign up</a>
+              {% endif %}
+            </nav>
+          {% endif %}
         {% endblock %}
       </div>
     </div>
