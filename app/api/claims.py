@@ -27,11 +27,56 @@ from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from postgrest.exceptions import APIError
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.api.deps import AuthedSession, require_auth
+from app.data.models import CURRENCY_PATTERN
 
 router = APIRouter(prefix="/claims", tags=["claims"])
+
+# ---------------------------------------------------------------------
+# SCOPE-13 -- currency required on money fields, forbidden on every other
+# field.
+#
+# No single "the money fields" constant existed anywhere in this codebase
+# before this card (checked app/data/models.py and app/rules/cost.py, the
+# two places the card pointed at, plus a repo-wide grep) -- the cost
+# engine (app/rules/cost.py, app/planning/comparison.py) is generic over
+# whatever `FieldValue`s its caller hands it and never names a field by
+# string itself except in these three exact places, which this list is
+# copied from verbatim rather than inventing anything new:
+#   - `app/planning/comparison.py`'s `_verified_charges_field_value`
+#     (`_money_field_value("verified_charges", ...)`)
+#   - `app/planning/comparison.py`'s `_estimated_additional_expenses_hint`
+#     (`field_value_for("estimated_additional_expenses_hint", ...)`, fed
+#     straight into `_money_from_field_value`)
+#   - `app/planning/comparison.py`'s `assemble_cost_breakdown`
+#     (`_money_field_value("potential_assistance_not_yet_awarded", ...)`)
+#   - RULES-10's `fee_component:<name>` prefix convention
+#     (`app/planning/comparison.py`'s `_FEE_COMPONENT_FIELD_PREFIX`,
+#     mirrored -- not re-imported, matching this codebase's own
+#     established file-local-constant convention, e.g. `_ENTITY_TABLES` in
+#     app/web/reviewer/queue.py) for itemised fee lines.
+# Kept file-local rather than moved into app/data/models.py or
+# app/rules/cost.py, both outside this card's own file list.
+# ---------------------------------------------------------------------
+
+_MONEY_FIELD_NAMES: frozenset[str] = frozenset(
+    {
+        "verified_charges",
+        "estimated_additional_expenses_hint",
+        "potential_assistance_not_yet_awarded",
+    }
+)
+
+_FEE_COMPONENT_FIELD_PREFIX = "fee_component:"
+"""Mirrors `app/planning/comparison.py`'s own constant of the same name
+(RULES-10) -- copied, not imported, per this module's docstring above."""
+
+
+def _is_money_field(field: str) -> bool:
+    return field in _MONEY_FIELD_NAMES or field.startswith(_FEE_COMPONENT_FIELD_PREFIX)
+
 
 _RLS_VIOLATION = "42501"
 _FOREIGN_KEY_VIOLATION = "23503"
@@ -89,6 +134,44 @@ class CreateClaimRequest(BaseModel):
     """Matches the DB's own CHECK constraint (0001_init.sql) — validated
     here too so an invalid value is a clean 422 from pydantic rather than
     a raw Postgres constraint-violation error relayed to the caller."""
+    currency: str | None = Field(default=None, pattern=CURRENCY_PATTERN)
+    """SCOPE-13 / docs/CONTRACTS.md "Money and currency": ISO 4217,
+    uppercase (same shape `app/data/models.py`'s `Claim.currency` and
+    `db/migrations/0008_jurisdiction_currency.sql`'s CHECK constraint
+    already require) -- REQUIRED on a money field (`_is_money_field`)
+    and FORBIDDEN on every other field, enforced below. A money-valued
+    claim with no currency is exactly the state
+    `app/planning/comparison.py`'s `_money_field_value` already treats as
+    `not_available` once published -- refusing it at write time (422)
+    catches the mistake before a reviewer ever approves a fee nobody can
+    actually read, instead of a confidently-badged number the arithmetic
+    layer silently discards."""
+
+    @model_validator(mode="after")
+    def currency_matches_field_kind(self) -> CreateClaimRequest:
+        """SCOPE-13's own two rules, both server-side (never a
+        form/template-only check, per this card's named risk): a money
+        field submitted with no currency, and a non-money field submitted
+        WITH one, are both a 422 -- pydantic's own `ValueError`, not a
+        raw Postgres constraint failure, so the caller (the JSON API
+        directly, or `app/web/reviewer/extract.py`'s
+        `reviewer_extract_create_claim`, which already turns any
+        `ValidationError` from constructing this exact model into a
+        styled console alert rather than a stack trace) gets a clean,
+        honest error either way."""
+        is_money = _is_money_field(self.field)
+        if is_money and self.currency is None:
+            raise ValueError(
+                f"'{self.field}' is a money field and must be submitted with a currency "
+                "(ISO 4217, e.g. 'INR') -- docs/CONTRACTS.md \"Money and currency\"."
+            )
+        if not is_money and self.currency is not None:
+            raise ValueError(
+                f"'{self.field}' is not a money field and must not carry a currency -- "
+                "only verified_charges, estimated_additional_expenses_hint, "
+                "potential_assistance_not_yet_awarded and fee_component:<name> take one."
+            )
+        return self
 
     @field_validator("verifier")
     @classmethod
@@ -129,6 +212,18 @@ class ClaimOut(BaseModel):
     created_by: str | None
     reviewed_by: str | None
     extracted_by: str
+    jurisdiction: str
+    """SCOPE-13: db/migrations/0008_jurisdiction_currency.sql column,
+    never surfaced on this response shape before this card -- defaults to
+    'IN' at the database layer, so every existing row (published before
+    this column existed) still round-trips here."""
+    academic_cycle: str | None
+    """SCOPE-13: as above -- nullable, a text label (`docs/CONTRACTS.md`
+    "Duration, dates, cycle, DOB"), not a date."""
+    currency: str | None
+    """SCOPE-13: as above -- see `CreateClaimRequest.currency`'s own
+    docstring for why this is `None` for a non-money claim and a required
+    ISO 4217 code for a money one."""
 
 
 def _to_claim_out(row: dict[str, Any]) -> ClaimOut:
@@ -162,6 +257,7 @@ def create_claim(
                     "extracted_by": request.extracted_by,
                     "status": "draft",
                     "created_by": created_by,
+                    "currency": request.currency,
                 }
             )
             .execute()

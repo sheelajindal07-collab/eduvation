@@ -245,6 +245,14 @@ class ReviewQueueRow:
     entity_name: str | None
     source: Source | None
     source_url: str | None
+    has_published_duplicate: bool
+    """SCOPE-13: whether another claim, already PUBLISHED, exists for the
+    same (entity_type, entity_id, field) as this row's own draft/in_review
+    claim -- see `_published_duplicate_keys`. A simple read-side flag, not
+    a block: this console has no way to merge or auto-resolve two claims
+    on the same fact, so the reviewer decides what to do with the
+    warning, the same "explain, don't block" tone as every other alert on
+    this page."""
 
 
 _ENTITY_TABLES = {"Pathway": "pathways", "Career": "careers"}
@@ -257,9 +265,44 @@ new entity type here (once its table exists) is the only change needed
 to resolve it too."""
 
 
+def _published_duplicate_keys(
+    db: Client, claims: list[ClaimOut]
+) -> set[tuple[str, str, str]]:
+    """SCOPE-13: which (entity_type, entity_id, field) combinations already
+    have a PUBLISHED claim on record -- a plain read-side query against
+    the existing `claims` table (`claims_select_published`,
+    db/migrations/0001_init.sql, already makes a published claim
+    world-readable), no new migration or column needed.
+
+    Scoped to just the entity ids this page is already showing, not the
+    whole table -- there is no composite index on
+    (entity_type, entity_id, field, status) to make an unscoped query
+    cheap, and a pilot's own review queue is small. A row here means
+    "another, already-approved claim exists for the same fact" -- since
+    this function only ever sees draft/in_review claims as its `claims`
+    argument (`reviewer_queue_page`'s own `list_claims(status=[...])`
+    call), any match found is necessarily a DIFFERENT claim, never the
+    row's own.
+    """
+    entity_ids = {c.entity_id for c in claims}
+    if not entity_ids:
+        return set()
+    result = (
+        db.table("claims")
+        .select("entity_type, entity_id, field")
+        .eq("status", "published")
+        .in_("entity_id", list(entity_ids))
+        .execute()
+    )
+    return {
+        (row["entity_type"], row["entity_id"], row["field"])
+        for row in cast("list[dict[str, Any]]", result.data)
+    }
+
+
 def _resolve_queue_rows(db: Client, claims: list[ClaimOut]) -> list[ReviewQueueRow]:
     """Resolve every claim's entity_id and source_id for display, in
-    len(_ENTITY_TABLES) + 1 queries total (not one per claim/row) — same
+    len(_ENTITY_TABLES) + 2 queries total (not one per claim/row) — same
     batching shape as app/api/compare.py's assemble_comparisons.
 
     ux-qa-reviewer finding, 2026-09-21: this used to resolve
@@ -286,6 +329,8 @@ def _resolve_queue_rows(db: Client, claims: list[ClaimOut]) -> list[ReviewQueueR
             for row in cast("list[dict[str, Any]]", sources_result.data)
         }
 
+    duplicate_keys = _published_duplicate_keys(db, claims)
+
     rows = []
     for c in claims:
         entity_name = entity_names.get(c.entity_id) if c.entity_type in _ENTITY_TABLES else None
@@ -296,6 +341,7 @@ def _resolve_queue_rows(db: Client, claims: list[ClaimOut]) -> list[ReviewQueueR
                 entity_name=entity_name,
                 source=source,
                 source_url=_safe_source_url(source),
+                has_published_duplicate=(c.entity_type, c.entity_id, c.field) in duplicate_keys,
             )
         )
     return rows
