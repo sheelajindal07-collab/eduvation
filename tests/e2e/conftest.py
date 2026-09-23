@@ -41,12 +41,15 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
+from collections import deque
 from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
 import pytest
+from playwright.sync_api import Page
 
 from app.core.config import get_settings
 
@@ -172,6 +175,31 @@ def live_server() -> Iterator[str]:
     on, and it must never grow one. So the server under test and the
     test process always agree on the target, and the target has already
     been proven to be loopback by `pytest_configure`'s guard above.
+
+    QA-7 root-cause fix, found by bisecting a from-scratch equivalent of
+    this exact fixture against this one (a real hang, not the
+    click-triggered-navigation one this task was warned about -- that one
+    is still open, tracked separately; this is a different bug this
+    session actually diagnosed and fixed): `stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT` below was never paired with anything that
+    reads that pipe during normal operation -- both call sites that
+    touched `process.stdout` only ever ran on a startup failure. Uvicorn's
+    own access log, this app's structured JSON access log
+    (`app.core.logging`'s `bcion.access` logger) and supabase-py's own
+    INFO-level `httpx` logging together write far more than a pipe's OS
+    buffer (~64KB on Windows) over one session-scoped server's whole
+    lifetime handling a
+    real multi-page journey -- once that buffer filled, the CHILD
+    process's own next log write blocked, freezing uvicorn's single
+    worker mid-request. That surfaces to a test as `Page.goto` timing out
+    on, say, the sixth navigation, having worked fine for the first five
+    -- indistinguishable from a browser-side hang unless someone actually
+    reads the child's blocked stdout. A background daemon thread drains
+    it continuously for the fixture's entire life, so the child can never
+    block on a full buffer again; the last `_STARTUP_LOG_LINES` lines are
+    kept (not the unbounded full text) so the two failure paths below can
+    still show real diagnostic output without this thread's own memory
+    use growing over a long session.
     """
     port = _free_port()
     base_url = f"http://127.0.0.1:{port}"
@@ -194,16 +222,36 @@ def live_server() -> Iterator[str]:
         stderr=subprocess.STDOUT,
         text=True,
     )
+
+    _STARTUP_LOG_LINES = 200
+    log_lines: deque[str] = deque(maxlen=_STARTUP_LOG_LINES)
+
+    def _drain_child_output() -> None:
+        # QA-7: the ONLY reader of this pipe for the fixture's entire
+        # life -- see the docstring above. Must never stop early (no
+        # size cap on iteration itself, only on what's retained) or the
+        # same deadlock returns the moment this thread would otherwise
+        # exit.
+        stdout = process.stdout
+        if stdout is None:
+            return
+        for line in stdout:
+            log_lines.append(line)
+
+    drain_thread = threading.Thread(
+        target=_drain_child_output, name="e2e-live-server-stdout-drain", daemon=True
+    )
+    drain_thread.start()
+
     try:
         deadline = time.monotonic() + 20
         last_error: Exception | None = None
         became_healthy = False
         while time.monotonic() < deadline:
             if process.poll() is not None:
-                output = process.stdout.read() if process.stdout else ""
                 raise RuntimeError(
                     f"uvicorn exited early (code {process.returncode}) while starting "
-                    f"the e2e live_server fixture:\n{output}"
+                    f"the e2e live_server fixture:\n{''.join(log_lines)}"
                 )
             try:
                 response = httpx.get(f"{base_url}/healthz", timeout=1)
@@ -216,13 +264,14 @@ def live_server() -> Iterator[str]:
         if not became_healthy:
             process.terminate()
             try:
-                output, _ = process.communicate(timeout=5)
+                process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 process.kill()
-                output, _ = process.communicate(timeout=5)
+                process.wait(timeout=5)
             raise RuntimeError(
                 "uvicorn never answered GET /healthz within 20s while starting the "
-                f"e2e live_server fixture (last connection error: {last_error}):\n{output}"
+                f"e2e live_server fixture (last connection error: {last_error}):\n"
+                f"{''.join(log_lines)}"
             )
         yield base_url
     finally:
@@ -232,3 +281,42 @@ def live_server() -> Iterator[str]:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=5)
+
+
+# QA-7: the two viewports the inventory names -- a 360x740 phone and a
+# 1280x800 desktop. Implemented with `Page.set_viewport_size()` rather
+# than overriding pytest-playwright's own `browser_context_args` fixture
+# (that fixture is session-scoped in the plugin; a fixture a per-test
+# parametrized value needs to flow through would have to be pulled down
+# to function scope, which pytest doesn't allow a session-scoped fixture
+# to depend on) -- resizing the already-isolated per-test `page` fixture
+# achieves the identical effect (a real viewport change Playwright itself
+# reports back through `document.documentElement.clientWidth`) with no
+# fixture-scope surgery.
+_VIEWPORTS = [
+    pytest.param({"width": 360, "height": 740}, id="mobile-360x740"),
+    pytest.param({"width": 1280, "height": 800}, id="desktop-1280x800"),
+]
+
+
+@pytest.fixture(params=_VIEWPORTS)
+def viewport_size(request: pytest.FixtureRequest) -> dict[str, int]:
+    """One of QA-7's two required viewports. Parametrizing this fixture
+    (rather than each test function individually) means every test that
+    depends on it -- directly, or via `sized_page` below -- automatically
+    runs once per viewport, with a readable `[mobile-360x740]` /
+    `[desktop-1280x800]` id in `pytest -v` output, and reuse across any
+    future e2e test that also needs both viewports (this task's own
+    instruction: reuse this infrastructure rather than duplicating it)."""
+    return dict(request.param)
+
+
+@pytest.fixture
+def sized_page(page: Page, viewport_size: dict[str, int]) -> Page:
+    """pytest-playwright's own `page` fixture (a fresh, isolated context
+    per test), resized to one of QA-7's two viewports before the test
+    gets it. Tests that need the viewport parametrization take this
+    fixture instead of `page` directly; every other guarantee `page`
+    already gives (isolation, auto-close) is unchanged."""
+    page.set_viewport_size(viewport_size)
+    return page
