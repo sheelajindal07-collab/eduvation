@@ -88,6 +88,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.api.account import router as account_router
 from app.api.ask import router as ask_router
 from app.api.auth import router as auth_router
 from app.api.claims import router as claims_router
@@ -312,6 +313,7 @@ EXPECTED_ROUTERS: tuple[str, ...] = (
     "consent_pages",
     "ask",
     "ask_pages",
+    "account",
 )
 
 
@@ -353,6 +355,7 @@ def build_router_slots() -> list[RouterSlot]:
         RouterSlot("consent_pages", consent_pages_router),
         RouterSlot("ask", ask_router),
         RouterSlot("ask_pages", ask_pages_router),
+        RouterSlot("account", account_router),
     ]
 
 
