@@ -32,6 +32,7 @@ from app.ai.guards import (
     fact_sentence_for_record,
     parse_selection_response,
     parse_verification_response,
+    scan_generated_sentences,
 )
 from app.ai.mock_provider import MockAIProvider
 from app.ai.prompts import TEMPLATE_REGISTRY
@@ -549,6 +550,95 @@ def test_banned_phrase_guard_is_silent_on_clean_text() -> None:
 def test_template_registry_labels_contain_no_banned_phrase() -> None:
     for template in TEMPLATE_REGISTRY.values():
         assert find_banned_phrases(template.label) == ()
+
+
+# ---------------------------------------------------------------------
+# Runtime banned-phrase scan (BCI-027) — app.ai.guards.
+# scan_generated_sentences, wired between step 11 (sentence generation)
+# and step 13 (the final `answered` return). Unlike step 12's
+# assert_no_banned_phrases (fixed TEMPLATE_REGISTRY labels, import time,
+# raises), this is real per-request control flow over the sentences THIS
+# pipeline just generated from a published, reviewer-approved record's
+# own value -- and it degrades, never raises.
+# ---------------------------------------------------------------------
+
+
+def test_scan_generated_sentences_is_pure_and_never_raises_on_a_hit() -> None:
+    """The exact contract difference from assert_no_banned_phrases this
+    card's own text draws: same underlying find_banned_phrases check,
+    but reporting, not raising."""
+    hits = scan_generated_sentences(["This might be the answer, maybe."])
+    # BANNED_PHRASES order (app/ai/schemas.py): "maybe" precedes "might".
+    assert hits == ("maybe", "might")
+
+
+def test_scan_generated_sentences_is_silent_on_clean_text() -> None:
+    assert scan_generated_sentences(["According to GSEB: minimum age is 17."]) == ()
+
+
+def test_scan_generated_sentences_dedupes_a_repeated_hit_across_sentences() -> None:
+    hits = scan_generated_sentences(["It might be 17.", "It might also be 18."])
+    assert hits == ("might",)
+
+
+def test_banned_phrase_in_a_claim_value_downgrades_whole_answer_to_insufficient_information(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """THE proof this card's completion report asks for: a claim value
+    deliberately seeded with a banned phrase (simulating a human content
+    error at review time, never an AI hallucination -- the provider only
+    ever contributes ids, per step 11's own proof above) downgrades the
+    WHOLE answer, never a partial redaction of just the offending
+    sentence. Two surviving records here -- one clean, one seeded -- and
+    BOTH sentences are dropped, not just the bad one."""
+    _patch_settings(monkeypatch, ai_enabled=True, configured=True)
+    clean_record = _record("rec-clean", field="minimum_age", value=17)
+    # "maybe" is a real BANNED_PHRASES entry (app/ai/schemas.py) -- a
+    # reviewer would never have approved this in practice, but this
+    # module's own guard makes no assumption maker-checker review is
+    # infallible.
+    banned_record = _record("rec-banned", field="minimum_age", value="maybe")
+    _patch_pathway_records(monkeypatch, (clean_record, banned_record))
+    provider = MockAIProvider(
+        responses=["[rec-clean]\n[rec-banned]", "YES rec-clean\nYES rec-banned"]
+    )
+    budget = _budget()
+
+    result = pipeline.answer(object(), _pathway_request(), provider, budget, as_of=TODAY)
+
+    assert result.status == AIAnswerStatus.insufficient_information
+    # Never a partial redaction: sentences is fully empty, not "just the
+    # clean one survived".
+    assert result.sentences == []
+    assert result.selection_ids == ["rec-clean", "rec-banned"]
+    assert result.verification_ids == ["rec-clean", "rec-banned"]
+    # Fact cards for every retrieved record still attached -- same
+    # citations precedent step 10's own staleness downgrade uses, so a
+    # caller can see which record blocked the answer.
+    assert result.citations == [
+        citation_for_record(clean_record),
+        citation_for_record(banned_record),
+    ]
+    assert len(provider.calls) == 2
+
+
+def test_a_generated_sentence_with_no_banned_phrase_is_answered_normally(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sanity check on the boundary: an ordinary, clean generated sentence
+    is NOT downgraded by this new check -- it must not be so aggressive
+    it blocks ordinary content the earlier tests already prove is
+    answered."""
+    _patch_settings(monkeypatch, ai_enabled=True, configured=True)
+    record = _record("rec-clean", field="minimum_age", value=17)
+    _patch_pathway_records(monkeypatch, (record,))
+    provider = MockAIProvider(responses=["[rec-clean]", "YES rec-clean"])
+    budget = _budget()
+
+    result = pipeline.answer(object(), _pathway_request(), provider, budget, as_of=TODAY)
+
+    assert result.status == AIAnswerStatus.answered
+    assert result.sentences == ["According to GSEB: minimum age is 17."]
 
 
 # ---------------------------------------------------------------------

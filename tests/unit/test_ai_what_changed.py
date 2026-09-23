@@ -491,6 +491,82 @@ class TestFreshness:
 
 
 # ---------------------------------------------------------------------
+# Runtime banned-phrase scan (BCI-027) — app.ai.guards.
+# scan_generated_sentences, run over every RenderedDiffLine.text this
+# module's own final-render step builds. Mirrors app/ai/pipeline.py's
+# identically-purposed check between ITS step 11 and step 13 -- see that
+# file's own tests for the direct, pure-function proofs
+# (scan_generated_sentences never raises, dedupes across texts, etc.);
+# these are the answer_what_changed()-level proofs specific to this
+# module.
+# ---------------------------------------------------------------------
+
+
+class TestRuntimeBannedPhraseScan:
+    def test_banned_phrase_in_a_claims_value_downgrades_whole_answer_to_insufficient_information(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """THE proof this card's completion report asks for, for
+        what_changed.py: a successor claim's own `.value` seeded with a
+        banned phrase (a human content error at review time, never an AI
+        hallucination -- the provider only ever contributes ids, per this
+        module's own `test_rendered_line_text_is_unchanged_by_whatever_
+        the_provider_s_raw_text_says`) downgrades the WHOLE answer. Two of
+        the three candidate diff lines here (source_authority,
+        verification_date) are perfectly clean -- `.lines` is still fully
+        empty, never "the two clean ones survived"."""
+        _patch_settings(monkeypatch, ai_enabled=True, configured=True)
+        superseded = _claim_row(claim_id=_SUPERSEDED_ID, value=17, source_id=_OLD_SOURCE_ID)
+        successor = _claim_row(
+            claim_id=_SUCCESSOR_ID,
+            # "maybe" is a real BANNED_PHRASES entry (app/ai/schemas.py).
+            value="18 (maybe)",
+            source_id=_NEW_SOURCE_ID,
+            status="published",
+            verification_date="2026-06-01",
+            superseded_by=None,
+        )
+        sources = [
+            _source_row(source_id=_OLD_SOURCE_ID, authority_name="Old Authority (test fixture)"),
+            _source_row(source_id=_NEW_SOURCE_ID, authority_name="New Authority (test fixture)"),
+        ]
+        db = _db_with(superseded=superseded, successor=successor, sources=sources)
+        provider = MockAIProvider(responses=[_select_all_three(), _confirm_all_three()])
+
+        result = answer_what_changed(db, _SUPERSEDED_ID, provider, _budget(), as_of=TODAY)
+
+        assert result.status == AIAnswerStatus.insufficient_information
+        assert result.lines == ()
+        assert result.diff is not None
+        assert result.selection_ids == [_VALUE_ID, _SOURCE_AUTHORITY_ID, _VERIFICATION_DATE_ID]
+        assert result.verification_ids == [
+            _VALUE_ID,
+            _SOURCE_AUTHORITY_ID,
+            _VERIFICATION_DATE_ID,
+        ]
+        # Mirrors this module's own staleness-downgrade precedent (read
+        # directly, immediately above the scan in app/ai/what_changed.py):
+        # citations is left at its dataclass default, empty -- there is no
+        # fallback_citations-style helper in this module to attach instead.
+        assert result.citations == []
+
+    def test_a_clean_successor_value_is_answered_normally(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Sanity check on the boundary: this new check must not be so
+        aggressive it blocks the ordinary, clean happy path the tests
+        below already prove is answered."""
+        _patch_settings(monkeypatch, ai_enabled=True, configured=True)
+        db = _full_scenario_db()
+        provider = MockAIProvider(responses=[_select_all_three(), _confirm_all_three()])
+
+        result = answer_what_changed(db, _SUPERSEDED_ID, provider, _budget(), as_of=TODAY)
+
+        assert result.status == AIAnswerStatus.answered
+        assert len(result.lines) == 3
+
+
+# ---------------------------------------------------------------------
 # The happy path, and the "code renders, model only selects" proof.
 # ---------------------------------------------------------------------
 
