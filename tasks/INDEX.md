@@ -196,6 +196,8 @@ Every card here carries the three Phase 1a rules: answer or refuse, never guess;
 - [x] AI-18 - Next-steps template over a server-owned, claim-bound action catalogue [P1a L10, x2, new, DONE, merged]
 - [x] AI-19 - What-changed summary over the superseded_by diff [P1a L10, new, DONE, merged; currently reviewer-only in effect, see STATUS.md]
 - [x] BCI-025 (UI-12, new, not in the original card set) - `/ask/view` now renders all four AI content kinds and resolves `next_steps`/`what_changed`'s own id shapes, matching `GET /ask`'s JSON contract [P1a follow-up, DONE, merged 2026-09-23]
+- [x] BCI-026 (new, audit follow-up) - the database-backed AI budget (0011/0015) is now actually wired into the live Ask BCION routes, replacing the shared global-only counter [P1a follow-up, DONE, merged 2026-09-23]
+- [x] BCI-027 (new, audit follow-up) - a real per-request banned-phrase scan now runs over generated answer sentences, not just fixed labels at import time [P1a follow-up, DONE, merged 2026-09-23]
 - [x] AI-20 - Hindi content drafts, offline batch with back-translation check, CSV for the reviewer [P1a L9, DONE, merged]
 
 ## Step 12 Hindi, accessibility, difficult states (M6) - OPEN

@@ -407,6 +407,53 @@ four content kinds render alongside the fact cards, only when non-empty.
 Two missing translation keys added along the way. 26 unit + 19 live
 tests passing, full suite **1443 passed**, mypy clean.
 
+**Independent 3-lens audit (2026-09-23): no new vulnerability, three
+real findings, two now fixed.** Ran a security/completeness/docs-sync
+review over the whole Phase 1a AI surface specifically to check for
+another gap like the identity-hash oracle - found none. Found instead:
+(1) `docs/ARCHITECTURE.md`/`docs/SECURITY.md` both claimed "per-account
+spend caps" - false, `AIRequestBudgetDB` (0011/0015) was never actually
+called from any live route, every request shared one process-wide,
+non-identity-keyed counter; (2) `docs/ARCHITECTURE.md` claimed the
+banned-phrase guard runs "over the result" of every answer - false, it
+only ever ran once at import time, over the four fixed prompt labels; a
+claim value containing banned language would reach a student unscanned;
+(3) `evals/reports/README.md` under-documented `run_ai_eval.py`'s real
+output shape since the two were added together, missing the `error`
+field that distinguishes a real crash from a legitimate mismatch. All
+three doc issues corrected directly. Both functional gaps carded and
+fixed:
+
+**BCI-026 merged: the database-backed AI budget is now actually wired
+in.** `app/api/ask.py` resolves real per-request identity - a Bearer
+token via the same live `auth.uid()` check `app/api/plans.py` already
+uses builds `AIRequestBudgetDB.for_account(...)` against the request's
+own RLS-scoped client (load-bearing: 0015 derives the hash from
+`auth.uid()` on that exact connection, so a reservation can never be
+aimed at another account); a guest-session cookie builds `.for_guest(...)`;
+neither present falls back to the existing global counter, unchanged.
+A bearer token that's present but doesn't resolve (expired, forged, auth
+down) now raises and degrades to `ai_unavailable` rather than silently
+spending a real auth failure against everyone else's shared budget.
+Proven live: a signed-in student's request writes a real `ai_usage` row;
+two accounts' requests never touch each other's identity; a
+session-less guest writes no ledger row at all. The new live tests were
+proven non-vacuous with a negative check - temporarily reverting the
+fix made them fail before the revert was undone. 32 new unit + 4 new
+live tests.
+
+**BCI-027 merged: a real per-request banned-phrase scan now exists.**
+Wired between sentence generation and the final `answered` return in
+both `app/ai/pipeline.py` and `app/ai/what_changed.py`: any generated
+sentence containing a banned phrase downgrades the *whole* answer to
+`insufficient_information`, never a partial redaction, matching this
+pipeline's existing reject-whole philosophy. The original build-time
+check (fixed template labels, at import) is untouched, unweakened - this
+is a second, independent runtime check. 24 new unit tests.
+
+Full suite after both: **1491 unit tests passed**, mypy clean, 23 live
+db tests passed through the actually-merged app.
+
 **Every Phase 1a dev-agent card is now done**, including this follow-on
 work. What remains is entirely human or owner work: **AI-10** (provider
 terms, restricted key, spend cap - gates any live model call and
