@@ -5,6 +5,55 @@ never deleted.
 
 ---
 
+## 2026-09-23 — AUTH-6 and AUTH-9 merged; a new anon-grants gap flagged as a follow-up
+**AUTH-6 merged.** `/my-plan`: current decision, next three actions (now
+with correct trust-label badges), saved alternatives, remove; additive
+"Save this route" forms on Compare, Timeline and Requirements;
+guest-session-backed by default with a "Not saved to an account"
+banner; a failed save keeps the draft visible and never shows "Saved";
+no-store; zero JS. When a real, validated student session exists it
+sets `session_state="account"` — the first page in the app to do so,
+finally making AUTH-3's already-built "Sign out" nav branch reachable
+for a genuinely signed-in student. Fix round closed two HIGH findings
+before this merged: a live CSRF bypass on `/my-plan/save` and
+`/my-plan/remove` letting a cookie-less cross-origin visitor mint an
+unsolicited guest session and save an attacker-chosen pathway (fixed
+with a new, additive `require_origin_unconditionally()` — sign-in's own
+cookie-gated CSRF trade-off is untouched, since that trade-off is
+correct only for sign-in, where the cookie genuinely cannot exist yet);
+and a trust-label omission where an overdue-for-recheck claim's next
+action rendered with no warning at all, unlike the identical fact on
+Compare/Requirements. Both reviewers independently reproduced the
+closure live, with their own freshly seeded fixtures, not by re-running
+the fixer's own tests. Disclosed, not fixed here (`_nav.html` is a
+shared, frozen contract file outside this card's own files): the "My
+Plan" nav destination still reads "soon" even though the route now
+works — tracked as a fast-follow, since a student who doesn't bookmark
+the URL currently has no way back to their own saved plan through the
+UI.
+
+**AUTH-9 merged.** `GET /account`, `GET /account/export` — the
+student's own profile, saved plans, actions and consents rows, using
+only the student's own RLS-scoped client; no-store; payload never
+logged. Independently, live re-verified: cross-user isolation (two real
+accounts), guest/signed-out access (no data), and the reviewer-only
+session edge case (refused, indistinguishable from a guest, because no
+RLS policy anywhere grants a reviewer cross-student read access to
+these tables).
+
+**New finding from AUTH-9's review, not blocking, tracked as a
+follow-up:** `anon` still holds full table-level grants on `consents`
+and `plan_actions` (and, more broadly, `guardian_consents`/
+`safeguarding_staff`/`safeguarding_flags`/`student_accounts`) — the
+same gap SEC-6's migration `0016` closed for `student_profiles`/
+`saved_plans`/`reviewers`, but never reached these tables. RLS
+currently blocks exploitation via three independent, live-confirmed
+mechanisms, so there is no live leak today — but there is no grant-layer
+backstop either, and AUTH-9 is the first feature to make
+`consents`/`plan_actions` matter for a real read path. Flagged as a
+background task for a follow-up migration-owner session (see
+`tasks/INDEX.md`'s AUTH-9 entry); not fixed in this wave.
+
 ## 2026-09-23 — PUB-3 merged: audit trail and atomic publish/supersede functions built, deliberately not yet wired to the live API
 **Decision:** Merged `db/migrations/0018_publish_functions.sql` (real
 number — the card's own guess of "0005" was stale by twelve
