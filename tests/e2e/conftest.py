@@ -188,8 +188,8 @@ def live_server() -> Iterator[str]:
     (`app.core.logging`'s `bcion.access` logger) and supabase-py's own
     INFO-level `httpx` logging together write far more than a pipe's OS
     buffer (~64KB on Windows) over one session-scoped server's whole
-    lifetime handling a
-    real multi-page journey -- once that buffer filled, the CHILD
+    lifetime handling a real multi-page journey -- once that buffer
+    filled, the CHILD
     process's own next log write blocked, freezing uvicorn's single
     worker mid-request. That surfaces to a test as `Page.goto` timing out
     on, say, the sixth navigation, having worked fine for the first five
