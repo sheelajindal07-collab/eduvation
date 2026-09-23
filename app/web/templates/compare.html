@@ -125,9 +125,17 @@
                save. Lands on /my-plan, matching this task's own
                acceptance line ("a guest saves from Compare and sees it
                on /my-plan"). #}
+            {# Fix round (ux-qa-reviewer): distinguishing accessible names
+               for each repeated "Save this route" button, same
+               convention reviewer_queue.html/reviewer_extract.html
+               already use for this exact pattern. #}
             <form method="post" action="/my-plan/save" class="mt-2">
               <input type="hidden" name="pathway_id" value="{{ c.pathway_id }}" />
-              <button type="submit" class="btn-secondary">Save this route</button>
+              <button
+                type="submit"
+                class="btn-secondary"
+                aria-label="Save this route -- {{ pathway_names.get(c.pathway_id, 'this pathway') }}"
+              >Save this route</button>
             </form>
           {% endif %}
           {{ save_action("pathway", c.pathway_id, return_to="/compare/view") }}

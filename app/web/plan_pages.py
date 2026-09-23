@@ -70,6 +70,7 @@ raise standing in for a total provider outage.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -82,9 +83,10 @@ from app.api.plans import PlanOut, SavePlanRequest
 from app.api.plans import delete_plan as _api_delete_plan
 from app.api.plans import list_plans as _api_list_plans
 from app.api.plans import save_plan as _api_save_plan
-from app.core.csrf import require_same_origin
+from app.core.csrf import require_origin_unconditionally
 from app.data.models import Claim, ClaimStatus, Source, SourceType
 from app.planning.actions import NextActions, derive_next_actions
+from app.planning.comparison import trust_label_for_claim
 from app.web import guest_session
 from app.web.common import (
     _DB_UNAVAILABLE_MESSAGE,
@@ -92,22 +94,27 @@ from app.web.common import (
     _form_str,
     _looks_like_a_uuid,
 )
-from app.web.guest_session import COOKIE_NAME as _GUEST_COOKIE_NAME
-from app.web.session import COOKIE_NAME as _STUDENT_COOKIE_NAME
 from app.web.session import get_student_session, no_store
 from app.web.templating import templates
 
 router = APIRouter(include_in_schema=False)  # HTML pages, not the JSON API surface
 
-# SEC-2's own documented extension point (app/core/csrf.py's module
-# docstring names this exact pair of cookies as the worked example) --
-# covers BOTH session kinds this screen writes under. app/main.py's own
-# OriginCheckMiddleware only ever guards `bcion_student_session`
-# (deliberately, that module's own docstring says why), so a guest's
-# `POST /my-plan/save` would otherwise have no Origin check at all beyond
-# the guest cookie's own SameSite=Lax -- this closes that gap for both
-# write routes below.
-require_my_plan_origin = require_same_origin(_STUDENT_COOKIE_NAME, _GUEST_COOKIE_NAME)
+# Fix round (data-security-reviewer, live-reproduced): a brand-new
+# visitor with NO session cookie at all could be driven by a hidden
+# auto-submitting cross-site form into POSTing here with a mismatched
+# `Origin` -- and it succeeded, because `require_same_origin()`'s guard
+# is cookie-presence-gated (`request_is_guarded()`), a trade-off that
+# only makes sense for the not-yet-cookied sign-in POST. A genuine
+# same-origin "Save this route" submit from Compare/Timeline/Requirements
+# always carries an `Origin`, so this route uses the UNCONDITIONAL
+# variant instead -- see `app/core/csrf.py`'s own
+# `require_origin_unconditionally` docstring for the full reasoning.
+# app/main.py's own OriginCheckMiddleware only ever guards
+# `bcion_student_session` (deliberately, that module's own docstring
+# says why), so a guest's `POST /my-plan/save` would otherwise have no
+# Origin check at all beyond the guest cookie's own SameSite=Lax -- this
+# closes that gap for both write routes below, cookie or no cookie.
+require_my_plan_origin = require_origin_unconditionally
 
 _ACTION_LABELS: dict[str, str] = {
     "check_entry_requirements": "Check the entry requirements",
@@ -178,11 +185,25 @@ def _row_to_claim(row: dict[str, Any]) -> Claim:
     )
 
 
-def _next_actions_for_pathway(db: Client, pathway_id: str) -> NextActions:
+def _next_actions_for_pathway(db: Client, pathway_id: str) -> tuple[NextActions, dict[str, str]]:
     """The current decision's own up-to-three next actions -- only ever
     derived from that ONE pathway's published, non-synthetic claims
     (`app.planning.actions.derive_next_actions`'s own gate), never from
-    an alternative."""
+    an alternative.
+
+    Also returns each action's own trust label (`action_key ->
+    TrustLabel.value`), computed here with `app.planning.comparison`'s
+    same `trust_label_for_claim` Compare/Requirements already call --
+    fix round (ux-qa-reviewer, live-reproduced): My Plan's next actions
+    never showed ANY of docs/UI.md's five trust-label statuses, so an
+    overdue-for-recheck claim rendered with zero visual warning where
+    Compare/Requirements would show the amber "Needs rechecking" badge
+    for the identical fact. `app.planning.actions.NextAction` itself is
+    deliberately left unchanged (its own dataclass shape may have other
+    readers) -- this module already has the claim and source objects
+    right here, which is everything `trust_label_for_claim` needs, so
+    computing the label at this same point is both simpler and lower
+    risk than growing that dataclass."""
     claims_result = (
         db.table("claims")
         .select("*")
@@ -200,7 +221,22 @@ def _next_actions_for_pathway(db: Client, pathway_id: str) -> NextActions:
         source_rows = cast("list[dict[str, Any]]", sources_result.data)
         sources_by_id = {row["id"]: _row_to_source(row) for row in source_rows}
 
-    return derive_next_actions(claims_by_field, sources_by_id)
+    next_actions = derive_next_actions(claims_by_field, sources_by_id)
+
+    # Same "server-computed now" shape app/api/compare.py's own as_of
+    # uses for this identical helper -- a client-supplied date is never
+    # accepted for "how stale is this claim".
+    as_of = datetime.now(tz=UTC).date()
+    trust_labels = {
+        action.action_key: trust_label_for_claim(
+            claims_by_field[action.claim_field],
+            sources_by_id[claims_by_field[action.claim_field].source_id],
+            as_of=as_of,
+        ).value
+        for action in next_actions.actions
+    }
+
+    return next_actions, trust_labels
 
 
 def _pathway_names(db: Client, pathway_ids: list[str]) -> dict[str, str]:
@@ -247,6 +283,7 @@ def _render_my_plan(
                     "alternatives": [],
                     "pathway_names": {},
                     "next_actions": None,
+                    "next_action_trust_labels": {},
                     "action_labels": _ACTION_LABELS,
                     "save_error": save_error,
                     "notice_message": None,
@@ -270,6 +307,7 @@ def _render_my_plan(
                         "alternatives": [],
                         "pathway_names": {},
                         "next_actions": None,
+                        "next_action_trust_labels": {},
                         "action_labels": _ACTION_LABELS,
                         "save_error": save_error,
                         "notice_message": None,
@@ -291,9 +329,12 @@ def _render_my_plan(
 
     pathway_names = _pathway_names(db, [row.pathway_id for row in plan_rows])
 
-    next_actions = (
-        _next_actions_for_pathway(db, current.pathway_id) if current is not None else None
-    )
+    if current is not None:
+        next_actions, next_action_trust_labels = _next_actions_for_pathway(
+            db, current.pathway_id
+        )
+    else:
+        next_actions, next_action_trust_labels = None, {}
 
     return no_store(
         templates.TemplateResponse(
@@ -306,6 +347,7 @@ def _render_my_plan(
                 "alternatives": alternatives,
                 "pathway_names": pathway_names,
                 "next_actions": next_actions,
+                "next_action_trust_labels": next_action_trust_labels,
                 "action_labels": _ACTION_LABELS,
                 "save_error": save_error,
                 "notice_message": _NOTICE_MESSAGES.get(notice or ""),

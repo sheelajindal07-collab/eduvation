@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import pytest
@@ -35,12 +36,39 @@ from fastapi.testclient import TestClient
 from supabase import Client
 
 import app.web.plan_pages as plan_pages
+from app.core.config import Settings, get_settings
+from app.core.csrf import CSRF_ERROR_CODE
 from app.main import app
 from app.web.guest_session import COOKIE_NAME as GUEST_COOKIE_NAME
 from app.web.session import COOKIE_NAME as STUDENT_COOKIE_NAME
 from tests.db.conftest import admit_student, run_name
 
 _SAME_ORIGIN = {"Origin": "http://testserver"}
+_CROSS_ORIGIN = {"Origin": "https://evil.example.com"}
+_SAME_REFERER = {"Referer": "http://testserver/compare/view"}
+
+
+@contextmanager
+def strict_allowed_hosts() -> Iterator[None]:
+    """Narrow `ALLOWED_HOSTS` to `testserver` for the duration of a test.
+
+    Same helper `tests/db/test_reviewer_console.py` already defines for
+    the identical reason: the app under test boots with development
+    settings, where `allowed_hosts_list` is the permissive `["*"]` and
+    every declared origin therefore passes -- so a genuine cross-origin
+    rejection cannot be demonstrated without a real allow-list. Not
+    imported from that module because it is a private, file-local helper
+    there too (matching this codebase's "each module carries its own
+    small copy" convention -- see e.g. `app/web/plan_pages.py`'s own
+    `_row_to_source`/`_row_to_claim`).
+    """
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        _env_file=None, allowed_hosts="testserver"
+    )
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
 
 
 @pytest.fixture
@@ -168,6 +196,63 @@ def pathway_with_next_action(admin_client: Client) -> Iterator[dict[str, Any]]:
             "verifier": run_name("test-fixture-reviewer"),
             "status": "published",
             "review_due_date": "2099-01-01",
+        }
+    ).execute()
+    yield pathway_row
+    admin_client.table("careers").delete().eq("id", career["id"]).execute()
+
+
+@pytest.fixture
+def pathway_with_overdue_next_action(admin_client: Client) -> Iterator[dict[str, Any]]:
+    """Same shape as `pathway_with_next_action` above, but the one
+    published claim is verified well outside
+    `app.planning.comparison.DEFAULT_FRESHNESS_SLA_DAYS` (180 days) --
+    genuinely stale, so `trust_label_for_claim` returns
+    `needs_rechecking` for it exactly as it would for the identical fact
+    on Compare/Requirements. Fix round (ux-qa-reviewer): proves the
+    amber "Needs rechecking" badge now actually reaches /my-plan's next
+    actions."""
+    career = (
+        admin_client.table("careers")
+        .insert({"name": run_name("plan-pages career (overdue action)")})
+        .execute()
+        .data[0]
+    )
+    pathway_row = (
+        admin_client.table("pathways")
+        .insert(
+            {
+                "career_id": career["id"],
+                "name": run_name("plan-pages pathway (overdue action)"),
+                "description": "Seeded by tests/db/test_plan_pages.py",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    source = (
+        admin_client.table("sources")
+        .insert(
+            {
+                "authority_name": run_name("PLAN PAGES TEST OVERDUE SOURCE"),
+                "official_url": "https://example.invalid/plan-pages-test-overdue-source",
+                "source_type": "official",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    admin_client.table("claims").insert(
+        {
+            "entity_type": "Pathway",
+            "entity_id": pathway_row["id"],
+            "field": "application_window",
+            "value": "1 January 2020 to 31 January 2020",
+            "source_id": source["id"],
+            "verification_date": "2020-01-01",
+            "verifier": run_name("test-fixture-reviewer"),
+            "status": "published",
+            "review_due_date": "2020-06-01",
         }
     ).execute()
     yield pathway_row
@@ -436,6 +521,81 @@ class TestCurrentDecisionAndNextActions:
         assert second_pathway["name"] in response.text
 
 
+class TestNextActionTrustLabel:
+    """Fix round (ux-qa-reviewer, live-reproduced): My Plan's next
+    actions never showed any of docs/UI.md's five trust-label statuses,
+    so an overdue-for-recheck claim rendered with zero visual warning
+    where Compare/Requirements would show the amber "Needs rechecking"
+    badge for the identical fact. `app/web/plan_pages.py` now computes
+    that label with the same `trust_label_for_claim` those screens
+    already call and passes it to `my_plan.html`'s `evidence_line()`/
+    `trust_badge()`."""
+
+    def test_an_overdue_claim_s_next_action_shows_needs_rechecking(
+        self,
+        client: TestClient,
+        student_a: tuple[str, Client],
+        pathway_with_overdue_next_action: dict[str, Any],
+    ) -> None:
+        _user_id, scoped_client = student_a
+        token = _student_token(scoped_client)
+        client.cookies.set(STUDENT_COOKIE_NAME, token)
+
+        current_plan = (
+            scoped_client.table("saved_plans")
+            .insert(
+                {"student_id": _user_id, "pathway_id": pathway_with_overdue_next_action["id"]}
+            )
+            .execute()
+            .data[0]
+        )
+        scoped_client.table("saved_plans").update({"is_current": True}).eq(
+            "id", current_plan["id"]
+        ).execute()
+
+        response = client.get("/my-plan")
+        assert response.status_code == 200
+        assert "Note the application window" in response.text
+        # The exact amber badge text `_trust_badge.html`'s `trust_badge()`
+        # macro renders for `needs_rechecking` -- the same one
+        # Compare/Requirements already show for an identically stale
+        # claim.
+        assert "Needs rechecking" in response.text
+        # `evidence_line()`'s own qualifier text for this label (see
+        # `_trust_badge.html`'s docstring) -- a second, independent
+        # signal that the label actually reached the template, not just
+        # the badge glyph on its own.
+        assert "(recheck due)" in response.text
+
+    def test_a_fresh_claim_s_next_action_does_not_show_needs_rechecking(
+        self,
+        client: TestClient,
+        student_a: tuple[str, Client],
+        pathway_with_next_action: dict[str, Any],
+    ) -> None:
+        """The negative case, so the assertion above is proven to be
+        about staleness and not merely "the badge always renders"."""
+        _user_id, scoped_client = student_a
+        token = _student_token(scoped_client)
+        client.cookies.set(STUDENT_COOKIE_NAME, token)
+
+        current_plan = (
+            scoped_client.table("saved_plans")
+            .insert({"student_id": _user_id, "pathway_id": pathway_with_next_action["id"]})
+            .execute()
+            .data[0]
+        )
+        scoped_client.table("saved_plans").update({"is_current": True}).eq(
+            "id", current_plan["id"]
+        ).execute()
+
+        response = client.get("/my-plan")
+        assert response.status_code == 200
+        assert "Note the application window" in response.text
+        assert "Checked against official source" in response.text
+        assert "Needs rechecking" not in response.text
+
+
 class TestCrossStudentIsolationOnMyPlan:
     def test_student_b_cannot_see_student_a_s_plan_via_my_plan(
         self,
@@ -503,6 +663,232 @@ class TestRemoveControl:
         still_there = plan_pages.guest_session.list_plans(get_anon_client(), x_token)
         assert len(still_there) == 1
         assert still_there[0].id == x_plan_id
+
+
+class TestOriginGuardIsUnconditional:
+    """Fix round (data-security-reviewer, live-reproduced): a brand-new
+    visitor with NO session cookie at all could be driven by a hidden
+    auto-submitting cross-site form into `POST /my-plan/save` with a
+    mismatched `Origin`, and it succeeded -- minting a fresh guest
+    session and saving an attacker-chosen pathway with zero consent.
+    Root cause was `require_same_origin()`'s cookie-presence gate, correct
+    for the not-yet-cookied sign-in POST but wrong here: a genuine
+    same-origin "Save this route" submit always carries an `Origin`.
+    `app/web/plan_pages.py` now uses `app.core.csrf.
+    require_origin_unconditionally` instead, which checks Origin/Referer
+    regardless of cookie presence.
+
+    Every test below reads the actual plan state back after the rejected
+    request -- not just the status code -- proving the write never
+    happened."""
+
+    def test_no_cookie_cross_origin_save_is_rejected_and_nothing_is_saved(
+        self, client: TestClient, pathway: dict[str, Any]
+    ) -> None:
+        # strict_allowed_hosts(): the app boots with development settings,
+        # where allowed_hosts_list is the permissive `["*"]` and every
+        # declared origin therefore passes -- a genuine cross-origin
+        # rejection needs a real allow-list to demonstrate at all.
+        with strict_allowed_hosts():
+            response = client.post(
+                "/my-plan/save",
+                data={"pathway_id": pathway["id"]},
+                headers=_CROSS_ORIGIN,
+                follow_redirects=False,
+            )
+            assert response.status_code == 403
+            assert response.json()["detail"]["code"] == CSRF_ERROR_CODE
+            # No guest session was minted for this rejected attempt.
+            assert client.cookies.get(GUEST_COOKIE_NAME) is None
+
+            after = client.get("/my-plan")
+        assert "Nothing saved here yet" in after.text
+        assert pathway["name"] not in after.text
+
+    def test_returning_guest_cross_origin_save_is_rejected_and_existing_plan_unchanged(
+        self,
+        client: TestClient,
+        pathway: dict[str, Any],
+        second_pathway: dict[str, Any],
+    ) -> None:
+        with strict_allowed_hosts():
+            client.post(
+                "/my-plan/save", data={"pathway_id": pathway["id"]}, headers=_SAME_ORIGIN
+            )
+            token = client.cookies.get(GUEST_COOKIE_NAME)
+            assert token
+
+            response = client.post(
+                "/my-plan/save",
+                data={"pathway_id": second_pathway["id"]},
+                headers=_CROSS_ORIGIN,
+                follow_redirects=False,
+            )
+            assert response.status_code == 403
+            assert response.json()["detail"]["code"] == CSRF_ERROR_CODE
+
+            from app.db import get_anon_client
+
+            plans = plan_pages.guest_session.list_plans(get_anon_client(), token)
+        assert [p.pathway_id for p in plans] == [pathway["id"]]
+
+    def test_signed_in_cross_origin_save_is_rejected_and_saved_plans_unchanged(
+        self, client: TestClient, student_a: tuple[str, Client], pathway: dict[str, Any]
+    ) -> None:
+        _user_id, scoped_client = student_a
+        token = _student_token(scoped_client)
+        client.cookies.set(STUDENT_COOKIE_NAME, token)
+
+        with strict_allowed_hosts():
+            response = client.post(
+                "/my-plan/save",
+                data={"pathway_id": pathway["id"]},
+                headers=_CROSS_ORIGIN,
+                follow_redirects=False,
+            )
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == CSRF_ERROR_CODE
+
+        remaining = scoped_client.table("saved_plans").select("*").execute().data
+        assert remaining == []
+
+    def test_no_cookie_cross_origin_remove_is_rejected_and_plan_survives(
+        self, pathway: dict[str, Any]
+    ) -> None:
+        client_x = TestClient(app)
+        attacker = TestClient(app)
+
+        with strict_allowed_hosts():
+            client_x.post(
+                "/my-plan/save", data={"pathway_id": pathway["id"]}, headers=_SAME_ORIGIN
+            )
+            x_token = client_x.cookies.get(GUEST_COOKIE_NAME)
+            assert x_token
+
+            from app.db import get_anon_client
+
+            x_plans = plan_pages.guest_session.list_plans(get_anon_client(), x_token)
+            assert len(x_plans) == 1
+            x_plan_id = x_plans[0].id
+
+            response = attacker.post(
+                "/my-plan/remove",
+                data={"plan_id": x_plan_id},
+                headers=_CROSS_ORIGIN,
+                follow_redirects=False,
+            )
+            assert response.status_code == 403
+            assert response.json()["detail"]["code"] == CSRF_ERROR_CODE
+            # The attacker's own request must not even mint a session,
+            # let alone reach the delete.
+            assert attacker.cookies.get(GUEST_COOKIE_NAME) is None
+
+            still_there = plan_pages.guest_session.list_plans(get_anon_client(), x_token)
+        assert len(still_there) == 1
+        assert still_there[0].id == x_plan_id
+
+    def test_returning_guest_cross_origin_remove_is_rejected_and_plan_survives(
+        self, client: TestClient, pathway: dict[str, Any]
+    ) -> None:
+        with strict_allowed_hosts():
+            client.post(
+                "/my-plan/save", data={"pathway_id": pathway["id"]}, headers=_SAME_ORIGIN
+            )
+            token = client.cookies.get(GUEST_COOKIE_NAME)
+            assert token
+
+            from app.db import get_anon_client
+
+            plan_id = plan_pages.guest_session.list_plans(get_anon_client(), token)[0].id
+
+            response = client.post(
+                "/my-plan/remove",
+                data={"plan_id": plan_id},
+                headers=_CROSS_ORIGIN,
+                follow_redirects=False,
+            )
+            assert response.status_code == 403
+            assert response.json()["detail"]["code"] == CSRF_ERROR_CODE
+
+            still_there = plan_pages.guest_session.list_plans(get_anon_client(), token)
+        assert [p.id for p in still_there] == [plan_id]
+
+    def test_signed_in_cross_origin_remove_is_rejected_and_plan_survives(
+        self, client: TestClient, student_a: tuple[str, Client], pathway: dict[str, Any]
+    ) -> None:
+        _user_id, scoped_client = student_a
+        token = _student_token(scoped_client)
+        client.cookies.set(STUDENT_COOKIE_NAME, token)
+
+        saved_plan = (
+            scoped_client.table("saved_plans")
+            .insert({"student_id": _user_id, "pathway_id": pathway["id"]})
+            .execute()
+            .data[0]
+        )
+
+        with strict_allowed_hosts():
+            response = client.post(
+                "/my-plan/remove",
+                data={"plan_id": saved_plan["id"]},
+                headers=_CROSS_ORIGIN,
+                follow_redirects=False,
+            )
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == CSRF_ERROR_CODE
+
+        remaining = scoped_client.table("saved_plans").select("id").execute().data
+        assert [row["id"] for row in remaining] == [saved_plan["id"]]
+
+    def test_same_origin_with_no_cookie_is_still_accepted(
+        self, client: TestClient, pathway: dict[str, Any]
+    ) -> None:
+        """The fix's own boundary: a real, first-time guest save (no
+        cookie yet, genuine same-origin submit) must keep working --
+        this is not a re-run of `TestGuestSavesFromCompareAndSeesItOnMyPlan`
+        for its own sake, it is this class's explicit proof that the new
+        unconditional guard did not turn into an unconditional
+        rejection."""
+        response = client.post(
+            "/my-plan/save",
+            data={"pathway_id": pathway["id"]},
+            headers=_SAME_ORIGIN,
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert client.cookies.get(GUEST_COOKIE_NAME)
+
+    def test_referer_fallback_is_accepted_for_save_with_no_cookie(
+        self, client: TestClient, pathway: dict[str, Any]
+    ) -> None:
+        response = client.post(
+            "/my-plan/save",
+            data={"pathway_id": pathway["id"]},
+            headers=_SAME_REFERER,
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert client.cookies.get(GUEST_COOKIE_NAME)
+
+    def test_referer_fallback_is_accepted_for_remove(
+        self, client: TestClient, pathway: dict[str, Any]
+    ) -> None:
+        client.post("/my-plan/save", data={"pathway_id": pathway["id"]}, headers=_SAME_ORIGIN)
+        token = client.cookies.get(GUEST_COOKIE_NAME)
+        assert token
+
+        from app.db import get_anon_client
+
+        plan_id = plan_pages.guest_session.list_plans(get_anon_client(), token)[0].id
+
+        response = client.post(
+            "/my-plan/remove",
+            data={"plan_id": plan_id},
+            headers={"Referer": "http://testserver/my-plan"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert plan_pages.guest_session.list_plans(get_anon_client(), token) == []
 
 
 class TestSaveFormsArePresentOnEachScreen:
