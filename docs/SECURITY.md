@@ -248,10 +248,20 @@ to any aggregator, dashboard or third party, that line must be dropped to
 ## AI / LLM controls
 - No write access to the database from the AI/guidance layer.
 - No access to the student vault from the AI/guidance layer.
-- PII redaction before any external model call — no names, phone numbers,
-  identifiers; only retrieved records + stated interests/constraints go out.
-- 15-second timeout; atomic per-request spend reservation; global + per-
-  account spend caps; graceful fallback to deterministic tools at the cap.
+- **Correction, 2026-09-23 audit**: the line previously here described a
+  redaction mechanism and a "stated interests/constraints" data channel
+  that do not exist and never have. The real guarantee is structural, not
+  a filter: `AskRequest`/`OutboundPayload` (`app/ai/schemas.py`) are a
+  closed schema with no free-text field of any kind — template id, one
+  entity id, a language code, nothing else — so there is no channel for a
+  name, phone number or stated interest to travel on in the first place.
+  `app/ai/retrieval.py` separately asserts, by an AST-inspection test,
+  that it never imports anything from a student-identity-bearing table.
+- 15-second timeout; atomic per-request spend reservation; a global spend
+  cap is wired live today (in-memory, process-wide); a per-account/
+  per-guest database-backed cap exists (`app/ai/budget_db.py`) but is not
+  yet wired into any live route (tracked, not fixed here) — graceful
+  fallback to deterministic tools at the cap.
 - Retrieved external text (sources, imported catalogues) is treated as
   **data, never as instructions** — prompt-injection and data-poisoning
   resistance for the extraction pipeline.
