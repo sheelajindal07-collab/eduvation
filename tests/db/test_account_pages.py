@@ -134,6 +134,29 @@ def signup_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(account_pages, "get_settings", lambda: _EnabledSignupSettings())
 
 
+class _MinorAccountsEnabledSettings:
+    """A minimal stand-in for `Settings`, exposing only the one attribute
+    `app/api/auth.py`'s `sign_up()` actually reads for this gate
+    (`minor_accounts_enabled`) -- this module calls that function
+    directly (see its own docstring), so the real gate check runs inside
+    `app.api.auth`, not `account_pages` -- the imported name to override
+    is `app.api.auth.get_settings`, not `account_pages.get_settings`
+    (that one is patched separately, by the `signup_enabled` fixture
+    above, for the unrelated `SIGNUP_ENABLED` check). Kept as this file's
+    own copy rather than an import from `tests/db/test_guardian_consent.py`,
+    same "no import-time dependency on that one" reasoning that file's own
+    docstring gives elsewhere."""
+
+    minor_accounts_enabled = True
+
+
+@pytest.fixture
+def minor_accounts_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.api.auth.get_settings", lambda: _MinorAccountsEnabledSettings()
+    )
+
+
 def _delete_user_by_email(admin_client: Client, email: str) -> None:
     users = admin_client.auth.admin.list_users()
     match = next((u for u in users if u.email == email), None)
@@ -314,12 +337,21 @@ class TestSignUpEnabled:
         finally:
             _delete_user_by_email(admin_client, email)
 
+    @pytest.mark.usefixtures("minor_accounts_enabled")
     def test_minor_sign_up_reports_pending_guardian_consent_not_active(
         self,
         client: TestClient,
         admin_client: Client,
         stub_email_sender: LoggingEmailSender,
     ) -> None:
+        """Fix round (data-security-reviewer finding): this test used to
+        exercise the real `MINOR_ACCOUNTS_ENABLED` default (`False`) as a
+        PASSING success case with no gate check anywhere in front of it --
+        exactly the dead-code gap this fix closes. The `minor_accounts_
+        enabled` fixture opts this test into the flag being ON, so it
+        keeps proving the already-settled pending-guardian-consent
+        behaviour; `TestMinorAccountsDisabledByDefault` below proves the
+        REAL default actually refuses this same request."""
         email = run_email("acctpage-minor", domain="example.com")
         guardian_email = f"bcion-guardian-{uuid.uuid4().hex[:12]}@example.com"
         try:
@@ -383,6 +415,57 @@ class TestSignUpEnabled:
         assert response.status_code == 202
         assert "check your email" in response.text.lower()
         assert '"detail"' not in response.text
+
+
+@pytest.mark.usefixtures("signup_enabled")
+class TestMinorAccountsDisabledByDefault:
+    """data-security-reviewer finding, this fix round (HIGH): this is the
+    web page's own version of the same live proof
+    `tests/db/test_guardian_consent.py::TestMinorAccountsDisabledByDefault`
+    gives at the JSON API layer -- specifically closing the gap that
+    reviewer named: AUTH-3's own `/sign-up` page is the first real,
+    public, zero-JS browser UI over this path, and its own acceptance
+    test (`TestSignUpEnabled::
+    test_minor_sign_up_reports_pending_guardian_consent_not_active`)
+    exercised the real `MINOR_ACCOUNTS_ENABLED` default as a PASSING
+    success case with no gate check anywhere in front of it. `SIGNUP_
+    ENABLED` is turned on (`signup_enabled` fixture) so the request
+    actually reaches `app.api.auth.sign_up()` -- `MINOR_ACCOUNTS_ENABLED`
+    itself is left at its real, unpatched default (`False`) throughout."""
+
+    def test_real_default_refuses_minor_sign_up_and_creates_no_account(
+        self, client: TestClient, admin_client: Client
+    ) -> None:
+        assert get_settings().minor_accounts_enabled is False, (
+            "this test's own premise: every environment ships with real "
+            "minor accounts disabled (app.core.config.py's fail-closed "
+            "default) -- this exercises the REAL default, not an assumed "
+            "one."
+        )
+        email = run_email("acctpage-minorgatedoff", domain="example.com")
+        guardian_email = f"bcion-guardian-{uuid.uuid4().hex[:12]}@example.com"
+        response = client.post(
+            "/sign-up",
+            data={
+                "email": email,
+                "password": "correct-horse-battery-staple-12",
+                "date_of_birth": _minor_dob(15),
+                "guardian_email": guardian_email,
+            },
+        )
+        assert response.status_code == 503
+        assert response.headers["content-type"].startswith("text/html")
+        assert '"detail"' not in response.text  # never the raw JSON error shape
+        assert "not available" in response.text.lower()
+        assert _no_script_tag(response.text)
+        assert STUDENT_COOKIE_NAME not in response.headers.get("set-cookie", "")
+
+        users = admin_client.auth.admin.list_users()
+        assert not any(u.email == email for u in users), (
+            "POST /sign-up must never create an account for a self-declared "
+            "minor while MINOR_ACCOUNTS_ENABLED is false -- found an "
+            "account that should not exist."
+        )
 
 
 class TestPostSignOut:

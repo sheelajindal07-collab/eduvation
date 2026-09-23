@@ -60,6 +60,35 @@ def stub_email_sender(monkeypatch: pytest.MonkeyPatch) -> LoggingEmailSender:
     return sender
 
 
+class _MinorAccountsEnabledSettings:
+    """A minimal stand-in for `Settings`, exposing only the one attribute
+    `app/api/auth.py`'s `sign_up()` actually reads for this gate
+    (`minor_accounts_enabled`) — deliberately not `Settings(
+    minor_accounts_enabled=True)` itself, since that real model is
+    `frozen=True` and process-wide cached (`app.core.config.
+    get_settings`); overriding the imported name in `app.api.auth`'s own
+    namespace is the narrowest possible change, mirroring
+    `tests/db/test_account_pages.py`'s identically-shaped
+    `_EnabledSignupSettings`, and never touches the real cached singleton
+    other modules still read."""
+
+    minor_accounts_enabled = True
+
+
+@pytest.fixture
+def minor_accounts_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fix round (data-security-reviewer finding): `MINOR_ACCOUNTS_ENABLED`
+    defaults to `False` everywhere (CLAUDE.md's non-negotiable), and
+    `app.api.auth.sign_up()` now fails closed (503) for a self-declared
+    minor unless this is true — see `TestMinorAccountsDisabledByDefault`
+    below for the proof that the real default actually refuses a minor
+    sign-up. Every OTHER minor-sign-up test in this file exercises the
+    already-settled guardian-consent behaviour that exists once this gate
+    is open, so it opts in via this fixture rather than re-proving the
+    gate itself in every test."""
+    monkeypatch.setattr("app.api.auth.get_settings", lambda: _MinorAccountsEnabledSettings())
+
+
 @pytest.fixture
 def confirmed_adult(admin_client: Client) -> Iterator[dict[str, str]]:
     """A real, pre-confirmed 18+ user — mirrors test_api_auth.py's own
@@ -226,6 +255,7 @@ class TestUnder18SignUpValidation:
         assert response.status_code == 400
         assert "guardian_email" in response.json()["detail"]
 
+    @pytest.mark.usefixtures("minor_accounts_enabled")
     def test_under_18_sign_up_with_genuinely_different_guardian_dotted_email_is_accepted(
         self, admin_client: Client, stub_email_sender: LoggingEmailSender
     ) -> None:
@@ -263,6 +293,7 @@ class TestUnder18SignUpValidation:
         if match is not None:
             admin_client.auth.admin.delete_user(match.id)
 
+    @pytest.mark.usefixtures("minor_accounts_enabled")
     def test_under_18_sign_up_with_guardian_email_reports_pending_not_active(
         self, admin_client: Client, stub_email_sender: LoggingEmailSender
     ) -> None:
@@ -297,6 +328,87 @@ class TestUnder18SignUpValidation:
         match = next((u for u in users if u.email == email), None)
         if match:
             admin_client.auth.admin.delete_user(match.id)
+
+
+class TestMinorAccountsDisabledByDefault:
+    """data-security-reviewer finding, this fix round (HIGH):
+    `MINOR_ACCOUNTS_ENABLED` (CLAUDE.md's own non-negotiable -- "Real
+    minor accounts stay disabled until the consent and safeguarding
+    workflow is reviewed by a person") already existed and already
+    parsed, but nothing in `app.api.auth.sign_up()` ever READ it -- a
+    self-declared minor's sign-up reached Supabase Auth and this route's
+    own guardian-consent bookkeeping regardless of the flag's value.
+    Proven live, the same non-vacuous style
+    `tests/db/test_account_pages.py`'s
+    `TestSignUpDisabled::test_post_creates_no_account_proven_live` already
+    uses for the sibling `SIGNUP_ENABLED` gate: query Supabase Auth's own
+    admin user list for this exact email AFTER the POST and confirm it
+    genuinely does not exist -- not just that the response looked right."""
+
+    def test_real_default_refuses_minor_sign_up_and_creates_no_account(
+        self, admin_client: Client
+    ) -> None:
+        from app.core.config import get_settings
+
+        assert get_settings().minor_accounts_enabled is False, (
+            "this test's own premise: every environment ships with real "
+            "minor accounts disabled (app.core.config.py's fail-closed "
+            "default) -- this exercises the REAL default, not an assumed "
+            "one."
+        )
+        email = run_email("consent-minorgatedoff", domain="example.com")
+        guardian_email = f"bcion-guardian-{uuid.uuid4().hex[:12]}@example.com"
+        response = client.post(
+            "/auth/sign-up",
+            json={
+                "email": email,
+                "password": "correct-horse-battery-staple-10",
+                "date_of_birth": _MINOR_DOB,
+                "guardian_email": guardian_email,
+            },
+        )
+        assert response.status_code == 503
+        assert "not available" in response.json()["detail"].lower()
+
+        users = admin_client.auth.admin.list_users()
+        assert not any(u.email == email for u in users), (
+            "POST /auth/sign-up must never create a Supabase Auth account "
+            "for a self-declared minor while MINOR_ACCOUNTS_ENABLED is "
+            "false -- found an account that should not exist."
+        )
+
+    @pytest.mark.usefixtures("minor_accounts_enabled")
+    def test_flipping_the_flag_on_restores_todays_minor_sign_up_behavior(
+        self, admin_client: Client, stub_email_sender: LoggingEmailSender
+    ) -> None:
+        """The other half of the same proof: flipping
+        `minor_accounts_enabled` to `True` (this file's own fixture, a
+        test-only monkeypatch -- never the real cached `Settings`
+        singleton) restores the existing, already-tested
+        pending-guardian-consent behaviour completely unchanged -- this
+        fix must not regress it."""
+        email = run_email("consent-minorgateon", domain="example.com")
+        guardian_email = f"bcion-guardian-{uuid.uuid4().hex[:12]}@example.com"
+        response = client.post(
+            "/auth/sign-up",
+            json={
+                "email": email,
+                "password": "correct-horse-battery-staple-11",
+                "date_of_birth": _MINOR_DOB,
+                "guardian_email": guardian_email,
+            },
+        )
+        if response.status_code == 429:
+            return  # Supabase's own email-sending rate limit -- unrelated
+        assert response.status_code == 201
+        body = response.json()
+        assert body["account_status"] == "pending_guardian_consent"
+        assert body["access_token"] is None
+
+        users = admin_client.auth.admin.list_users()
+        match = next((u for u in users if u.email == email), None)
+        assert match is not None, "flag was on -- the account must be created"
+        admin_client.auth.admin.delete_user(match.id)
 
 
 class TestCreateGuardianConsentRequest:

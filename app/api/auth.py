@@ -19,6 +19,15 @@ enforce_guardian_consent_gate`'s, for exactly where and why.
 `app/notifications/logging_sender.py`; the gate's database state is
 real, but nobody's inbox is reached yet.
 
+**`MINOR_ACCOUNTS_ENABLED` (this fix round):** none of the above ever
+runs unless `app.core.config.Settings.minor_accounts_enabled` is true
+(default `False` everywhere, per CLAUDE.md's non-negotiable that real
+minor accounts stay disabled until a person reviews the consent/
+safeguarding workflow) — `sign_up()` fails closed with `HTTPException
+(503, ...)` for a self-declared minor before Supabase Auth or any
+guardian-consent bookkeeping is ever touched. An 18+ sign-up never
+reaches that check.
+
 Each call gets a fresh client (app/db/client.py) — never shared, never
 cached, per the concurrency fix in docs/DECISIONS.md.
 
@@ -61,6 +70,7 @@ from app.api.guardian_consent import (
     guardian_consent_schema_is_live,
     is_minor,
 )
+from app.core.config import get_settings
 from app.db import get_anon_client
 from app.notifications.factory import get_email_sender
 
@@ -272,6 +282,36 @@ def sign_up(request: SignUpRequest) -> AuthResponse:
                 "docs/SECURITY.md 'Consent & safeguarding')."
             ),
         )
+    # data-security-reviewer finding, this fix round (HIGH): CLAUDE.md's
+    # own non-negotiable -- "Real minor accounts stay disabled until the
+    # consent and safeguarding workflow is reviewed by a person" -- names
+    # `MINOR_ACCOUNTS_ENABLED` (app.core.config.Settings.
+    # minor_accounts_enabled, default False, parsed fail-closed by
+    # `_fail_closed_bool`) as that gate, but until now nothing anywhere
+    # ever READ it: a self-declared minor's sign-up reached Supabase Auth
+    # and this route's own guardian-consent bookkeeping regardless of the
+    # flag's value. AUTH-3's own zero-JS `/sign-up` page was the first
+    # thing to put a real, public browser UI over this path with no gate
+    # check at all in front of it. Checked here, BEFORE any of this
+    # route's own guardian-consent state is created and BEFORE
+    # `get_anon_client()`/Supabase Auth is ever touched -- same "fail
+    # closed before the point of no return" placement as the
+    # `guardian_consent_schema_is_live()` check immediately below, and for
+    # the same reason: letting a self-declared minor's sign-up through as
+    # a real account here is exactly the non-negotiable this check exists
+    # to enforce, no matter what state the guardian-consent schema is in.
+    # An 18+ sign-up is completely unaffected (never reaches this branch).
+    if minor and not get_settings().minor_accounts_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Sign-up for a student under 18 is not available yet. This "
+                "pilot's safeguarding review for minor accounts is still in "
+                "progress. Please check back later, or continue as a "
+                "learner 18 or older."
+            ),
+        )
+
     if minor and not guardian_consent_schema_is_live():
         # Fail CLOSED, before Supabase's own auth.users row is even
         # created: db/migrations/0004_guardian_consent.sql (own-row RLS
