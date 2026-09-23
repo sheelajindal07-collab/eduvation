@@ -18,10 +18,14 @@ dist/
 .env.test
 
 # Migration-owner scratch stacks (docs/DEVELOPMENT-PLAN.md wave 2,
-# supabase/config.toml's reserved second/third stack blocks) — a
-# workdir copy of config.toml with real local ports, never tracked.
+# supabase/config.toml's reserved stack blocks) — a workdir copy of
+# config.toml with real local ports, never tracked. Globbed rather than
+# listed one suffix at a time: each new migration-owner lane reserves
+# the next free "+100 ports" block (bcion-lite-migration-3 was the
+# first one to actually need it) and this pattern should never need
+# editing again just because a new one opened.
 .supabase-migration/
-.supabase-migration-2/
+.supabase-migration-*/
 
 # Node (if Playwright/e2e tooling adds a package.json later)
 node_modules/

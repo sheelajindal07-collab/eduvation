@@ -520,12 +520,25 @@ _SKIP_REASON = (
 
 
 def _saved_plans_table_exists() -> bool:
+    from postgrest.exceptions import APIError
+
     from app.db import get_anon_client
 
     try:
         get_anon_client().table("saved_plans").select("id").limit(1).execute()
         return True
-    except Exception:  # noqa: BLE001 — any error here means "not ready yet"
+    except APIError as exc:
+        # 0016_grants_hardening.sql (SEC-6) revoked every anon privilege
+        # on saved_plans outright -- so on any stack with 0016 applied,
+        # this probe now gets 42501 (permission denied) INSTEAD OF an
+        # empty result, even though the table exists and 0002 is
+        # genuinely applied. 42501 here means "the table exists and
+        # anon correctly has no access to it", the intended post-0016
+        # state, not "not applied" -- only a schema/relation-not-found
+        # error (PostgREST's PGRST205, or Postgres's own 42P01) means
+        # that. Return True on 42501, not just "not an error".
+        return exc.code == "42501"
+    except Exception:  # noqa: BLE001 — any other error here means "not ready yet"
         return False
 
 

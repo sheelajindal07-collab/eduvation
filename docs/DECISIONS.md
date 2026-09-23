@@ -5,6 +5,58 @@ never deleted.
 
 ---
 
+## 2026-09-23 — PUB-3 merged: audit trail and atomic publish/supersede functions built, deliberately not yet wired to the live API
+**Decision:** Merged `db/migrations/0018_publish_functions.sql` (real
+number — the card's own guess of "0005" was stale by twelve
+migrations): `review_events`/`audit_events` (insert-only,
+reviewer-readable, immutable for every role including reviewers),
+`saved_plans` correction-flag columns, `publish_claim(claim_id,
+expected_hash)` (row-locked against a concurrent publish, a stale-hash
+guard against a lost update) and `supersede_claim(old_id, new_id)`
+(requires the replacement to already be published on the exact same
+entity/field, requires the critical-tier reviewer-authorisation gate
+for a critical claim, flags every affected student's saved plan by
+count only, never by content).
+
+The reviewer found, and the implementer's own completion report did not
+disclose, that neither function is called anywhere in the live
+application yet — `app/api/claims.py`'s real `/claims/{id}/approve` and
+`/claims/{id}/supersede` routes still perform a plain table `UPDATE`,
+confirmed by reading them directly. **This means the audit trail, the
+concurrency guard and the saved-plans correction-flag protect no real
+user action today.** This is not a defect in what PUB-3 built: its own
+task card scoped it to the migration plus two test files, and wiring
+the application layer to actually call these functions is a
+separately, already-planned card — **PUB-7, "Claims API completion"**
+(`docs/plan/inventory-2-trust-content.md`) — not an oversight this
+session invented to explain away a gap. PUB-7 itself still depends on
+PUB-4 (the owner applying the migration ledger to staging/production),
+which hasn't happened yet, so it isn't itself launchable right now.
+**Reason this is recorded as a decision, not just a task-index note:**
+so nobody — including a future session reading `STATUS.md` and seeing
+"audit trail: built" — mistakes "the schema exists" for "reviewer
+actions are actually being audited." They are not, until PUB-7 lands.
+
+Confirmed the PUB-2 populated-stack lesson (below) does not apply here:
+0018 contains no bulk `UPDATE` against the existing `claims` table (only
+new tables, new nullable-defaulted columns, and two new functions),
+verified both by reading the migration directly and by an explicit
+drill seeding one claim in every relevant workflow state (draft,
+in_review, published, superseded) on a dedicated stack before applying
+0018 to it — clean, as expected.
+
+**Also flagged, pre-existing, not caused by this migration:** SEC-6's
+migration `0016` (merged the same day as PUB-2) revoked `anon`'s grants
+on `saved_plans` entirely. `tests/db/conftest.py`'s
+`_saved_plans_table_exists()` helper probes as `anon` and treats any
+exception as "migration not applied" — so on any fully-migrated stack
+it now wrongly reports migration 0002 as missing, which makes
+`tests/db/test_api_plans.py` hard-fail under `BCION_REQUIRE_LIVE=1`
+with a misleading "not yet applied" message instead of running. Not
+attributable to or fixed by PUB-3; the lead should fix this helper
+directly (it needs a probe that distinguishes "relation does not exist"
+from "permission denied for relation").
+
 ## 2026-09-23 — AUTH-3, SCOPE-13, PUB-2 merged, each after a fix round; a migration-safety gap caught only during merge verification
 **AUTH-3 merged.** Zero-JS sign-in/sign-up(flagged off)/sign-out pages
 (`app/web/account_pages.py`), the first real caller of AUTH-2's session
