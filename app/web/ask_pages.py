@@ -44,6 +44,23 @@ mode on this page already renders via `ask.html`, and "a plausible but
 broken link" is exactly what `invalid_request` already means here for
 the pathway_id/career_id case).
 
+## BCI-026: this page's AI spend identity
+
+`app.api.ask._pipeline_answer`/`_what_changed_answer` now resolve one
+real identity per request and build a database-backed
+`app.ai.budget_db.AIRequestBudgetDB` for it (see `app/api/ask.py`'s own
+docstring's "BCI-026" section for the three cases and the reasoning).
+This module supplies the two raw inputs that resolution needs and
+nothing more: the `Authorization` header it already reads, and the
+guest-session token from `app.web.guest_session.token_from_request` --
+read HERE rather than in `app/api/ask.py` because that helper is a
+web-layer module and this codebase's layering is "web imports api, never
+the reverse".
+
+Nothing about this page's rendering changes. This module never mints,
+writes or clears a guest-session cookie: a visitor who has none keeps
+exactly the budget behaviour that existed before this card.
+
 ## Router registration
 Registered as its OWN standalone top-level `RouterSlot` ("ask_pages"),
 not nested inside `app/web/pages.py` — `app/main.py` and
@@ -78,6 +95,7 @@ from app.api.ask import (
 )
 from app.core.config import get_settings
 from app.web.common import _DB_UNAVAILABLE_MESSAGE, _db_client_or_none
+from app.web.guest_session import token_from_request
 from app.web.templating import templates
 
 router = APIRouter(include_in_schema=False)  # HTML pages, not the JSON API surface
@@ -200,8 +218,18 @@ def ask_page(
     what_changed_line_objs: tuple[RenderedDiffLine, ...] = ()
     ai_sentences: list[str]
     ai_citations: list[dict[str, Any]]
+    # BCI-026: this request's AI spend identity inputs -- the header above
+    # plus the guest-session cookie the browser already has (never one
+    # this page mints). See this module's own "BCI-026" docstring section.
+    guest_session_token = token_from_request(request)
     if ask_template.id == "what_changed":
-        what_changed_result = _what_changed_answer(db, entity_id, as_of=as_of)
+        what_changed_result = _what_changed_answer(
+            db,
+            entity_id,
+            as_of=as_of,
+            authorization=authorization,
+            guest_session_token=guest_session_token,
+        )
         if (
             what_changed_result is not None
             and what_changed_result.status == AIAnswerStatus.answered
@@ -216,7 +244,13 @@ def ask_page(
             ai_citations = []
     else:
         ai_answer = _pipeline_answer(
-            db, ask_template, entity_kind=entity_kind, entity_id=entity_id, as_of=as_of
+            db,
+            ask_template,
+            entity_kind=entity_kind,
+            entity_id=entity_id,
+            as_of=as_of,
+            authorization=authorization,
+            guest_session_token=guest_session_token,
         )
         if ai_answer is not None and ai_answer.status == AIAnswerStatus.answered:
             ai_sentences = list(ai_answer.sentences)

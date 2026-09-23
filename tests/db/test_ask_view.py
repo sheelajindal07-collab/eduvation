@@ -21,16 +21,24 @@ absent from a hand-built fake.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from datetime import date
+from typing import Any, NoReturn
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from supabase import Client
 
+import app.api.ask as ask_module
+from app.ai.budget_db import identity_digest
+from app.ai.schemas import AIAnswerStatus, AskRequest
+from app.ai.schemas import Answer as AIAnswer
 from app.api.ask import router as ask_json_router
+from app.core.config import Settings
+from app.db import get_anon_client
 from app.web.ask_pages import router as ask_html_router
-from tests.db.conftest import admit_student, run_name
+from app.web.guest_session import COOKIE_NAME as GUEST_SESSION_COOKIE_NAME
+from tests.db.conftest import RUN_ID, _require_live, admit_student, run_name
 
 _FALLBACK_COPY = "You can still compare routes and use the calculators."
 
@@ -464,3 +472,272 @@ class TestAskViewWhatChangedClaimIdAgainstTheRealStack:
         )
         assert response.status_code == 200
         assert "Back to explore" in response.text
+
+
+# =====================================================================
+# BCI-026 -- the AI spend budget is per-identity and DATABASE-backed.
+#
+# Everything above this line proves the deterministic baseline. What is
+# proved below is the thing AI-4/0011 was built for and nothing actually
+# used until this card: a real request from a real, signed-in account
+# reserves against `ai_usage` THROUGH THAT ACCOUNT'S OWN RLS-SCOPED
+# CLIENT, leaving a real row behind — and another account's request never
+# touches it.
+#
+# The ONLY fakes here are the AI provider and the pipeline body: nothing
+# in this repo ever calls a real model, and `ai_pipeline.answer`'s own
+# two-pass behaviour is already covered by tests/unit/test_ai_pipeline.py.
+# The fake pipeline below calls `budget.reserve(today=...)` — the exact
+# call the real one makes (`app/ai/pipeline.py` step 4) — so the
+# reservation path under test is genuinely the real
+# `AIRequestBudgetDB` -> `ai_reserve()` -> `ai_usage` one, over the wire,
+# against the local stack.
+# =====================================================================
+
+_AI_MIGRATION_SKIP_REASON = (
+    "db/migrations/0011_ai_usage.sql and/or 0015_ai_identity_binding.sql are not "
+    "applied to this stack, so the database-backed AI budget cannot be exercised. "
+    "Apply db/migrations/*.sql (db/migrations/README.md); a stale PostgREST schema "
+    "cache looks identical and is reloaded by re-running the migrate step."
+)
+
+
+def _unavailable(reason: str) -> NoReturn:
+    """Skip — or, under BCION_REQUIRE_LIVE=1, fail. Same rule
+    `tests/db/test_ai_usage.py` uses: "green" must never mean "did not
+    run"."""
+    if _require_live():
+        pytest.fail(f"BCION_REQUIRE_LIVE=1, so this may not skip: {reason}", pytrace=False)
+    pytest.skip(reason)
+
+
+class _FakeGeminiProvider:
+    """Constructing this succeeds and makes no network call. `.generate()`
+    is never reached — `ask_module.ai_pipeline.answer` is replaced
+    wholesale in every test below."""
+
+    def generate(self, prompt: str) -> str:  # pragma: no cover - never called
+        raise AssertionError("must not be called -- ai_pipeline.answer is replaced")
+
+
+def _ai_on_settings() -> Settings:
+    """AI flags on, with a placeholder key so `Settings.ai_configured` is
+    true. No real key, and no provider call is ever made."""
+    return Settings(_env_file=None, ai_enabled=True, gemini_api_key="test-only-not-a-real-key")
+
+
+@pytest.fixture
+def ai_usage_rows(admin_client: Client) -> Iterator[list[str]]:
+    """Identity hashes whose `ai_usage` rows this test wants removed
+    afterwards — service role, teardown only (tests/db/conftest.py's
+    contract for `admin_client`), never used to make an assertion about
+    what a real user may do.
+
+    Deleting them genuinely frees the budget they consumed: every cap in
+    0011 is computed from the rows that exist right now.
+    """
+    hashes: list[str] = []
+    yield hashes
+    if hashes:
+        admin_client.table("ai_usage").delete().in_("identity_hash", hashes).execute()
+
+
+@pytest.fixture
+def ai_enabled_with_a_reserving_pipeline(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Turn the AI layer on for one test and replace the pipeline with a
+    stand-in that makes exactly ONE real reservation against whatever
+    budget the route resolved for the caller."""
+    captured: dict[str, Any] = {}
+
+    def _reserving_answer(
+        db: Any, request: AskRequest, provider: Any, budget: Any, *, as_of: date | None = None
+    ) -> AIAnswer:
+        captured["budget"] = budget
+        captured["request"] = request
+        budget.reserve(today=as_of)
+        return AIAnswer(status=AIAnswerStatus.not_available)
+
+    settings = _ai_on_settings()
+    monkeypatch.setattr(ask_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(ask_module, "GeminiProvider", _FakeGeminiProvider)
+    monkeypatch.setattr(ask_module.ai_pipeline, "answer", _reserving_answer)
+    return captured
+
+
+@pytest.fixture(scope="module")
+def ai_migrations_applied() -> None:
+    """Deliberately NOT autouse: the deterministic UI-11/BCI-025 tests
+    above must not start depending on 0011/0015. Only the BCI-026 class
+    below requests it."""
+    anon = get_anon_client()
+    for marker in ("ai_usage_schema_version", "ai_identity_binding_schema_version"):
+        try:
+            anon.rpc(marker, {}).execute()
+        except Exception:  # noqa: BLE001 — any error here means "not applied yet"
+            _unavailable(_AI_MIGRATION_SKIP_REASON)
+
+
+def _usage_rows_for(admin_client: Client, identity_hash: str) -> list[dict[str, Any]]:
+    """Read the ledger with the service role. Teardown/inspection only —
+    `ai_usage_select_own` deliberately lets NO caller read another
+    identity's rows, which is exactly why an assertion about "B's request
+    never touched A" has to be made from outside RLS."""
+    result = (
+        admin_client.table("ai_usage").select("*").eq("identity_hash", identity_hash).execute()
+    )
+    return list(result.data or [])
+
+
+class TestAccountReservationsReallyReachAiUsage:
+    """This card's own required proof: a real row exists after a real
+    request, and a different account's identity is never touched by it."""
+
+    @pytest.fixture(autouse=True)
+    def _gate(self, ai_migrations_applied: None) -> None:
+        return None
+
+    def test_a_signed_in_student_s_request_writes_a_real_ai_usage_row(
+        self,
+        seeded_pathway: dict[str, Any],
+        student_a: tuple[str, Client],
+        admin_client: Client,
+        ai_usage_rows: list[str],
+        ai_enabled_with_a_reserving_pipeline: dict[str, Any],
+    ) -> None:
+        a_id, a_client = student_a
+        token = _access_token(admin_client, a_client, a_id)
+        a_hash = identity_digest(a_id)
+        ai_usage_rows.append(a_hash)
+        assert _usage_rows_for(admin_client, a_hash) == []
+
+        response = client.get(
+            "/ask",
+            params={"template": "pathway_overview", "pathway_id": seeded_pathway["pathway"]["id"]},
+            headers=_auth(token),
+        )
+
+        assert response.status_code == 200
+        # The deterministic baseline is untouched by any of this.
+        fields_by_name = {c["field"]: c for c in response.json()["fact_cards"]}
+        assert "entry_requirements" in fields_by_name
+
+        rows = _usage_rows_for(admin_client, a_hash)
+        assert len(rows) == 1, "exactly one reservation should have been written"
+        row = rows[0]
+        assert row["identity_kind"] == "account"
+        assert row["template_id"] == "pathway_overview"
+        assert row["calls_reserved"] == 1
+        assert row["status"] == "reserved"
+        # And no prompt/answer text anywhere in the ledger, ever (0011).
+        assert "prompt" not in row
+        assert "answer" not in row
+
+        # The identity the route resolved really is the DB-backed one.
+        budget = ai_enabled_with_a_reserving_pipeline["budget"]
+        assert budget.inner.identity_kind == "account"
+        assert budget.inner.identity_hash == a_hash
+
+    def test_one_account_s_request_never_touches_another_account_s_identity(
+        self,
+        seeded_pathway: dict[str, Any],
+        student_a: tuple[str, Client],
+        student_b: tuple[str, Client],
+        admin_client: Client,
+        ai_usage_rows: list[str],
+        ai_enabled_with_a_reserving_pipeline: dict[str, Any],
+    ) -> None:
+        """CLAUDE.md: cross-user access is tested every time auth changes.
+        Before this card there was ONE process-wide counter for everybody;
+        this is the assertion that says that is over."""
+        a_id, a_client = student_a
+        b_id, b_client = student_b
+        a_hash, b_hash = identity_digest(a_id), identity_digest(b_id)
+        ai_usage_rows.extend([a_hash, b_hash])
+
+        a_response = client.get(
+            "/ask",
+            params={"template": "pathway_overview", "pathway_id": seeded_pathway["pathway"]["id"]},
+            headers=_auth(_access_token(admin_client, a_client, a_id)),
+        )
+        assert a_response.status_code == 200
+        assert len(_usage_rows_for(admin_client, a_hash)) == 1
+        assert _usage_rows_for(admin_client, b_hash) == []
+
+        b_response = client.get(
+            "/ask",
+            params={"template": "cost_breakdown", "pathway_id": seeded_pathway["pathway"]["id"]},
+            headers=_auth(_access_token(admin_client, b_client, b_id)),
+        )
+        assert b_response.status_code == 200
+
+        a_rows = _usage_rows_for(admin_client, a_hash)
+        b_rows = _usage_rows_for(admin_client, b_hash)
+        # B spent B's budget, not A's: A still has exactly the one row
+        # from A's own request, and B's row carries B's own template.
+        assert len(a_rows) == 1
+        assert a_rows[0]["template_id"] == "pathway_overview"
+        assert len(b_rows) == 1
+        assert b_rows[0]["template_id"] == "cost_breakdown"
+        assert a_rows[0]["id"] != b_rows[0]["id"]
+
+    def test_a_guest_with_a_session_cookie_reserves_under_its_own_guest_identity(
+        self,
+        seeded_pathway: dict[str, Any],
+        admin_client: Client,
+        ai_usage_rows: list[str],
+        ai_enabled_with_a_reserving_pipeline: dict[str, Any],
+    ) -> None:
+        """The guest half of the same wiring, against the real stack.
+
+        The cookie value is an opaque token the route never validates —
+        deliberately: `app/web/guest_session.py`'s `ensure_session`
+        docstring says probing whether a token is live would turn every
+        page load into a token oracle, and `ai_reserve` hashes whatever
+        it is given for a guest (0015 leaves the guest path unbound,
+        because possessing the token IS the credential). So a token
+        string is exactly as much as this path ever has.
+        """
+        guest_token = f"bci026-guest-{RUN_ID}"
+        guest_hash = identity_digest(guest_token)
+        ai_usage_rows.append(guest_hash)
+        guest_client = TestClient(_make_app())
+        guest_client.cookies.set(GUEST_SESSION_COOKIE_NAME, guest_token)
+
+        response = guest_client.get(
+            "/ask",
+            params={"template": "eligibility_gap", "pathway_id": seeded_pathway["pathway"]["id"]},
+        )
+
+        assert response.status_code == 200
+        rows = _usage_rows_for(admin_client, guest_hash)
+        assert len(rows) == 1
+        assert rows[0]["identity_kind"] == "guest"
+        assert rows[0]["template_id"] == "eligibility_gap"
+
+    def test_a_session_less_guest_writes_no_ledger_row_at_all(
+        self,
+        seeded_pathway: dict[str, Any],
+        admin_client: Client,
+        ai_enabled_with_a_reserving_pipeline: dict[str, Any],
+    ) -> None:
+        """The documented judgment call, proved live: no bearer token and
+        no cookie means the process-local in-memory budget, so nothing is
+        minted and nothing is written — and, in particular, this GET
+        route creates no `guest_sessions` row."""
+        before = (
+            admin_client.table("guest_sessions").select("id", count="exact").execute().count
+        )
+
+        response = client.get(
+            "/ask",
+            params={"template": "pathway_overview", "pathway_id": seeded_pathway["pathway"]["id"]},
+        )
+
+        assert response.status_code == 200
+        assert "set-cookie" not in {key.lower() for key in response.headers}
+        budget = ai_enabled_with_a_reserving_pipeline["budget"]
+        assert budget is ask_module._ai_budget()
+        after = (
+            admin_client.table("guest_sessions").select("id", count="exact").execute().count
+        )
+        assert after == before

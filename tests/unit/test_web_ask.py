@@ -583,3 +583,92 @@ class TestAskViewWhatChangedResolvesClaimIdAndRendersDiffLines:
         )
         assert response.status_code == 200
         assert "Back to explore" in response.text
+
+
+class TestAskViewPassesItsIdentityInputsToTheAiLayer:
+    """BCI-026: this page's ONLY new job is supplying the two raw identity
+    inputs `app.api.ask._ai_budget_for_request` needs -- the
+    `Authorization` header it already read, and the guest-session token
+    from `app.web.guest_session.token_from_request` (read in the web
+    layer, because `app/api/ask.py` may not import a web module). What
+    the budget is then built FROM is tested in
+    `tests/unit/test_ask_api.py`; what is tested here is that this page
+    passes the inputs at all, for both AI branches, and that it still
+    renders exactly as before for a guest who has no session.
+    """
+
+    def _tables(self) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "claims": [_claim_row(field="entry_requirements", value="Class 12 pass")],
+            "sources": [_official_source_row()],
+            "pathways": [{"id": _PATHWAY_ID, "name": "Test Pathway"}],
+        }
+
+    def test_the_guest_cookie_and_authorization_header_reach_pipeline_answer(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        def _fake_pipeline_answer(*args: Any, **kwargs: Any) -> AIAnswer:
+            captured.update(kwargs)
+            return AIAnswer(status=AIAnswerStatus.not_available)
+
+        monkeypatch.setattr(ask_pages_module, "_pipeline_answer", _fake_pipeline_answer)
+        client = _client_with_tables(self._tables())
+        client.cookies.set("bcion_guest_session", "guest-token-for-this-test")
+
+        response = client.get(
+            "/ask/view",
+            params={"template": "pathway_overview", "pathway_id": _PATHWAY_ID},
+            headers={"Authorization": "Bearer test-only-access-token"},
+        )
+
+        assert response.status_code == 200
+        assert captured["authorization"] == "Bearer test-only-access-token"
+        assert captured["guest_session_token"] == "guest-token-for-this-test"
+
+    def test_the_same_inputs_reach_the_what_changed_branch(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        def _fake_what_changed(*args: Any, **kwargs: Any) -> WhatChangedAnswer:
+            captured.update(kwargs)
+            return WhatChangedAnswer(status=AIAnswerStatus.not_available)
+
+        monkeypatch.setattr(ask_pages_module, "_what_changed_answer", _fake_what_changed)
+        client = _client_with_tables(self._tables())
+        client.cookies.set("bcion_guest_session", "guest-token-for-this-test")
+
+        response = client.get(
+            "/ask/view", params={"template": "what_changed", "claim_id": _CLAIM_ID}
+        )
+
+        assert response.status_code == 200
+        assert captured["guest_session_token"] == "guest-token-for-this-test"
+        assert captured["authorization"] is None
+
+    def test_a_session_less_guest_gets_no_cookie_and_the_unchanged_page(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The documented judgment call: this GET route never mints a
+        guest session, so a visitor with no cookie sees byte-for-byte
+        what UI-11 already gave them."""
+        captured: dict[str, Any] = {}
+
+        def _fake_pipeline_answer(*args: Any, **kwargs: Any) -> AIAnswer:
+            captured.update(kwargs)
+            return AIAnswer(status=AIAnswerStatus.not_available)
+
+        monkeypatch.setattr(ask_pages_module, "_pipeline_answer", _fake_pipeline_answer)
+        client = _client_with_tables(self._tables())
+
+        response = client.get(
+            "/ask/view", params={"template": "pathway_overview", "pathway_id": _PATHWAY_ID}
+        )
+
+        assert response.status_code == 200
+        assert captured["guest_session_token"] is None
+        assert "set-cookie" not in {key.lower() for key in response.headers}
+        assert "bcion_guest_session" not in client.cookies
+        assert "Class 12 pass" in response.text
