@@ -384,6 +384,169 @@ class TestReviewerExtractCreateClaim:
 
 
 # ---------------------------------------------------------------------
+# Regression coverage for the fix round on top of SCOPE-13's
+# `CreateClaimRequest.currency_matches_field_kind` (app/api/claims.py):
+# before this fix, this route (the ONLY web-UI path that can create a
+# new claim at all) had no `currency` form field whatsoever, so every
+# money-field proposal (verified_charges,
+# estimated_additional_expenses_hint,
+# potential_assistance_not_yet_awarded, any fee_component:<name>) 422'd
+# unconditionally -- `reviewer_extract_create_claim` never had a
+# currency to forward. These tests go through the actual route (not
+# `CreateClaimRequest` directly), proving the fix end-to-end.
+# ---------------------------------------------------------------------
+
+
+class TestReviewerExtractCreateClaimCurrency:
+    def test_money_field_proposal_with_a_currency_creates_a_draft_claim_end_to_end(
+        self, admin_client: Client, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        """The exact regression both reviewers found: before this fix, a
+        `verified_charges` proposal from `/reviewer/extract` could never
+        be turned into a claim through this route at all, because the
+        form never collected a currency. Lower-case `inr` on the wire
+        proves the route's own normalisation (`.strip().upper()`)
+        reaches the stored row as `CURRENCY_PATTERN`'s required
+        upper-case ISO 4217 form."""
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        entity_id = str(uuid.uuid4())
+
+        response = client.post(
+            "/reviewer/extract/claims",
+            cookies={COOKIE_NAME: token},
+            headers=SAME_ORIGIN,
+            data=_create_claim_payload(
+                entity_id,
+                official_source,
+                field="verified_charges",
+                value="50000",
+                currency="inr",
+            ),
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/reviewer/queue"
+
+        try:
+            rows = (
+                admin_client.table("claims")
+                .select("*")
+                .eq("entity_id", entity_id)
+                .execute()
+                .data
+            )
+            assert len(rows) == 1
+            row = rows[0]
+            assert row["field"] == "verified_charges"
+            assert row["currency"] == "INR"
+            assert row["extracted_by"] == "ai"
+            assert row["status"] == "draft"
+        finally:
+            admin_client.table("claims").delete().eq("entity_id", entity_id).execute()
+
+    def test_fee_component_field_proposal_with_a_currency_creates_a_draft_claim(
+        self, admin_client: Client, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        """RULES-10's `fee_component:<name>` prefix convention is also a
+        money field (`_is_money_field`'s prefix check) -- proven
+        separately from the three fixed money-field names above."""
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        entity_id = str(uuid.uuid4())
+
+        response = client.post(
+            "/reviewer/extract/claims",
+            cookies={COOKIE_NAME: token},
+            headers=SAME_ORIGIN,
+            data=_create_claim_payload(
+                entity_id,
+                official_source,
+                field="fee_component:tuition",
+                value="12000",
+                currency="INR",
+            ),
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/reviewer/queue"
+
+        try:
+            rows = (
+                admin_client.table("claims")
+                .select("*")
+                .eq("entity_id", entity_id)
+                .execute()
+                .data
+            )
+            assert len(rows) == 1
+            assert rows[0]["currency"] == "INR"
+        finally:
+            admin_client.table("claims").delete().eq("entity_id", entity_id).execute()
+
+    def test_money_field_proposal_with_no_currency_is_still_refused(
+        self, admin_client: Client, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        """SCOPE-13's own validator is not weakened by this fix: a money
+        field submitted with no currency at all (the form field entirely
+        absent, as a hand-crafted request might try) is still a clean
+        422-turned-redirect, never a silently-accepted null-currency
+        money claim."""
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        entity_id = str(uuid.uuid4())
+
+        response = client.post(
+            "/reviewer/extract/claims",
+            cookies={COOKIE_NAME: token},
+            headers=SAME_ORIGIN,
+            data=_create_claim_payload(
+                entity_id, official_source, field="verified_charges", value="50000"
+            ),
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/reviewer/extract?error=invalid_input"
+
+        rows = (
+            admin_client.table("claims").select("id").eq("entity_id", entity_id).execute().data
+        )
+        assert rows == []
+
+    def test_a_currency_smuggled_onto_a_non_money_field_is_still_refused(
+        self, admin_client: Client, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        """The template only ever renders the currency input for a money
+        field, so a non-money proposal's own form never sends one -- but
+        this route forwards whatever `currency` a caller DOES send
+        straight to `CreateClaimRequest` with no field-kind gating of
+        its own (see `reviewer_extract_create_claim`'s own docstring):
+        the fix satisfies `currency_matches_field_kind`, it never routes
+        around it. A hand-crafted POST that adds `currency` to a
+        non-money proposal (`minimum_age`, the default payload's field)
+        still hits that same existing 422, exactly as it did before this
+        fix."""
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        entity_id = str(uuid.uuid4())
+
+        response = client.post(
+            "/reviewer/extract/claims",
+            cookies={COOKIE_NAME: token},
+            headers=SAME_ORIGIN,
+            data=_create_claim_payload(entity_id, official_source, currency="INR"),
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/reviewer/extract?error=invalid_input"
+
+        rows = (
+            admin_client.table("claims").select("id").eq("entity_id", entity_id).execute().data
+        )
+        assert rows == []
+
+
+# ---------------------------------------------------------------------
 # Completion-report proof: a direct attempt to publish an
 # extracted_by="ai" draft (bypassing the reviewer console/this card's
 # code entirely) is refused by the EXISTING database rule

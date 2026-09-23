@@ -166,6 +166,25 @@ def _draft_payload(source_id: str, created_by: str, **overrides: object) -> dict
     return payload
 
 
+def _row_html(page_text: str, claim_id: str) -> str:
+    """SCOPE-13: the single `<section class="card">...</section>` block
+    for one claim, isolated out of the full queue page. The queue lists
+    every draft/in_review claim in the whole table, not just this test's
+    own -- on a shared local stack, other tests (including this file's
+    own duplicate-warning tests) or another concurrent session can have
+    their own rows sitting in the same queue at the same moment,
+    plausible for `has_published_duplicate` specifically since that is
+    the exact condition these tests create and remove. Scoping an
+    assertion to this row's own block means it can't be satisfied, or
+    defeated, by some unrelated claim rendered elsewhere on the page.
+    """
+    marker = f"/reviewer/claims/{claim_id}/"
+    marker_pos = page_text.index(marker)
+    start = page_text.rfind('<section class="card">', 0, marker_pos)
+    end = page_text.index("</section>", marker_pos)
+    return page_text[start:end]
+
+
 class TestReviewerSignIn:
     """Every test here posts through `signed_out_client()` — see that
     helper for why a shared cookie jar and SEC-2's CSRF guard do not
@@ -286,6 +305,196 @@ class TestReviewerQueueAuth:
         response = client.get("/reviewer/queue", cookies={COOKIE_NAME: token})
         assert response.status_code == 200
         assert "Nothing waiting on review" in response.text
+
+
+class TestReviewerQueueMoneyMetadataColumns:
+    """SCOPE-13: jurisdiction/academic_cycle/currency are on `ClaimOut`
+    now (app/api/claims.py) and rendered as three explicit columns on the
+    queue (app/web/templates/reviewer_queue.html) -- proved with a row
+    that carries genuinely non-default values for all three, not just the
+    'IN' default every claim already has."""
+
+    def test_queue_shows_jurisdiction_cycle_and_currency_for_a_listed_claim(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        claim = (
+            admin_client.table("claims")
+            .insert(
+                _draft_payload(
+                    official_source,
+                    reviewer_id,
+                    jurisdiction="GB",
+                    academic_cycle="2026-27",
+                    currency="GBP",
+                )
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get("/reviewer/queue", cookies={COOKIE_NAME: token})
+            assert response.status_code == 200
+            assert "GB" in response.text
+            assert "2026-27" in response.text
+            assert "GBP" in response.text
+        finally:
+            admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+
+    def test_queue_shows_not_available_for_a_claim_with_no_cycle_or_currency(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        """A non-money, non-cycle-scoped claim genuinely has neither -- the
+        columns must still render (never silently dropped, per this
+        card's own non-negotiable), reading 'Not available' rather than a
+        blank cell or a missing row."""
+        reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        claim = (
+            admin_client.table("claims")
+            .insert(_draft_payload(official_source, reviewer_id, field="minimum_age", value=16))
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get("/reviewer/queue", cookies={COOKIE_NAME: token})
+            assert response.status_code == 200
+            assert "Jurisdiction" in response.text
+            assert "Cycle" in response.text
+            assert "Currency" in response.text
+            assert response.text.count("Not available") >= 2  # cycle + currency
+        finally:
+            admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+
+
+class TestReviewerQueueDuplicateWarning:
+    """SCOPE-13: a read-side-only warning against the existing `claims`
+    table -- another PUBLISHED claim for the same entity_type+entity_id+
+    field, no new migration. Both directions proved: present when a
+    duplicate genuinely exists, absent when it doesn't."""
+
+    def test_a_published_duplicate_shows_a_warning(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        entity_id = str(uuid.uuid4())
+        draft = (
+            admin_client.table("claims")
+            .insert(_draft_payload(official_source, reviewer_id, entity_id=entity_id))
+            .execute()
+            .data[0]
+        )
+        published = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": entity_id,
+                    "field": "verified_charges",
+                    "value": 50000,
+                    "currency": "INR",
+                    "source_id": official_source,
+                    "verification_date": TODAY.isoformat(),
+                    "verifier": run_name("reviewer-console-test-fixture"),
+                    "status": "published",
+                    "review_due_date": DUE,
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get("/reviewer/queue", cookies={COOKIE_NAME: token})
+            assert response.status_code == 200
+            row = _row_html(response.text, draft["id"])
+            assert "already published" in row.lower()
+        finally:
+            admin_client.table("claims").delete().eq("id", draft["id"]).execute()
+            admin_client.table("claims").delete().eq("id", published["id"]).execute()
+
+    def test_no_warning_when_no_published_duplicate_exists(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        claim = (
+            admin_client.table("claims")
+            .insert(_draft_payload(official_source, reviewer_id))
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get("/reviewer/queue", cookies={COOKIE_NAME: token})
+            assert response.status_code == 200
+            row = _row_html(response.text, claim["id"])
+            assert "already published" not in row.lower()
+        finally:
+            admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+
+    def test_a_different_field_on_the_same_entity_does_not_trigger_the_warning(
+        self,
+        admin_client: Client,
+        reviewer: tuple[str, Client],
+        official_source: str,
+    ) -> None:
+        """The match is on the full (entity_type, entity_id, field) triple
+        -- a published claim on a DIFFERENT field of the same entity must
+        not be mistaken for a duplicate of this one."""
+        reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        entity_id = str(uuid.uuid4())
+        draft = (
+            admin_client.table("claims")
+            .insert(
+                _draft_payload(
+                    official_source, reviewer_id, entity_id=entity_id, field="minimum_age",
+                    value=16,
+                )
+            )
+            .execute()
+            .data[0]
+        )
+        published = (
+            admin_client.table("claims")
+            .insert(
+                {
+                    "entity_type": "Pathway",
+                    "entity_id": entity_id,
+                    "field": "verified_charges",
+                    "value": 50000,
+                    "currency": "INR",
+                    "source_id": official_source,
+                    "verification_date": TODAY.isoformat(),
+                    "verifier": run_name("reviewer-console-test-fixture"),
+                    "status": "published",
+                    "review_due_date": DUE,
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        try:
+            response = client.get("/reviewer/queue", cookies={COOKIE_NAME: token})
+            assert response.status_code == 200
+            row = _row_html(response.text, draft["id"])
+            assert "already published" not in row.lower()
+        finally:
+            admin_client.table("claims").delete().eq("id", draft["id"]).execute()
+            admin_client.table("claims").delete().eq("id", published["id"]).execute()
 
 
 class TestReviewerApproveAction:

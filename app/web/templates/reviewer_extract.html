@@ -133,6 +133,20 @@
                     <label class="block text-sm font-medium text-charcoal mb-1">Review due date</label>
                     <input type="date" name="review_due_date" required class="input" />
                   </div>
+                  {% if is_money_field(p.field) %}
+                    <div>
+                      <label class="block text-sm font-medium text-charcoal mb-1">Currency</label>
+                      <input
+                        type="text" name="currency" required class="input" maxlength="3"
+                        pattern="[A-Za-z]{3}" value="{{ default_currency }}"
+                        title="ISO 4217, e.g. INR"
+                      />
+                      <p class="text-xs text-neutral mt-1">
+                        '{{ p.field }}' is a money field and must carry a currency
+                        (ISO 4217, e.g. INR) -- confirm or change this pilot's default.
+                      </p>
+                    </div>
+                  {% endif %}
                 </div>
 
                 <button

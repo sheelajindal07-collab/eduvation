@@ -117,7 +117,59 @@
               <dt class="text-neutral">Review due</dt>
               <dd class="text-charcoal">{{ c.review_due_date }}</dd>
             </div>
+            {# SCOPE-13: jurisdiction / cycle / currency -- read straight
+               off the claim (db/migrations/0008_jurisdiction_currency.sql),
+               never inferred or guessed. jurisdiction always has a value
+               (defaults 'IN' at the database layer); cycle/currency are
+               genuinely absent for a lot of real claims (a non-cycle-scoped
+               fact, a non-money field), so each renders the same "Not
+               available" wording the rest of this app already uses for a
+               missing fact rather than a blank cell. #}
+            <div>
+              <dt class="text-neutral">Jurisdiction</dt>
+              <dd class="text-charcoal">{{ c.jurisdiction }}</dd>
+            </div>
+            <div>
+              <dt class="text-neutral">Cycle</dt>
+              <dd class="text-charcoal">
+                {%- if c.academic_cycle -%}
+                  {{ c.academic_cycle }}
+                {%- else -%}
+                  <span class="text-neutral italic">Not available</span>
+                {%- endif -%}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-neutral">Currency</dt>
+              <dd class="text-charcoal">
+                {%- if c.currency -%}
+                  {{ c.currency }}
+                {%- else -%}
+                  <span class="text-neutral italic">Not available</span>
+                {%- endif -%}
+              </dd>
+            </div>
           </dl>
+
+          {% if row.has_published_duplicate %}
+            {# SCOPE-13: a PUBLISHED claim already exists for this exact
+               entity+field -- a real, actionable warning for the reviewer
+               (are these two claims about the same correction, or does
+               one need to be superseded?), never a block: this console has
+               no merge/auto-resolve action, so the decision stays with the
+               reviewer. Same alert--caution "explain, don't block" tone as
+               every other non-error notice on this page (see the CSS
+               comment in app/web/styles/input.css). #}
+            <div class="alert alert--caution mb-4">
+              <span aria-hidden="true">&#9888;</span>
+              <span>
+                A claim for this {{ c.entity_type|lower }}&rsquo;s
+                &ldquo;{{ c.field }}&rdquo; is already published. Check
+                whether this is meant to replace it (supersede) before
+                approving, so the two don&rsquo;t both stay on record.
+              </span>
+            </div>
+          {% endif %}
 
           {# Zero-JS: each action is its own plain form POST, no
              confirmation dialog or script involved. One primary action

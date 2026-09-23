@@ -54,6 +54,11 @@ def _create_payload(source_id: str, **overrides: object) -> dict:
         "verification_date": TODAY.isoformat(),
         "verifier": run_name("test-fixture-reviewer"),
         "review_due_date": DUE,
+        # SCOPE-13: "verified_charges" is a money field -- every existing
+        # test in this file that doesn't care about currency needs a
+        # valid one here now, or the new validator's own 422 would fail
+        # every one of them for an unrelated reason.
+        "currency": "INR",
     }
     payload.update(overrides)
     return payload
@@ -75,6 +80,13 @@ class TestCreateClaim:
         assert response.status_code == 201
         body = response.json()
         assert body["status"] == "draft"
+        # SCOPE-13: jurisdiction/academic_cycle/currency now round-trip on
+        # ClaimOut -- jurisdiction defaults 'IN' at the DB layer even
+        # though this payload never sets it; currency is exactly what the
+        # request sent; academic_cycle is genuinely absent here.
+        assert body["jurisdiction"] == "IN"
+        assert body["academic_cycle"] is None
+        assert body["currency"] == "INR"
         try:
             assert body["value"] == 42000
         finally:
@@ -129,6 +141,108 @@ class TestCreateClaim:
             headers=_auth(token),
         )
         assert response.status_code == 404
+
+
+class TestCurrencyValidation:
+    """SCOPE-13: currency required on money fields, forbidden on every
+    other field -- enforced by `app/api/claims.py`'s own pydantic
+    validator on `CreateClaimRequest`, not a form/template-only check, so
+    every case here is a clean 422 (pydantic's own shape), never a raw
+    Postgres error and never a 201 that silently wrote a bad row."""
+
+    def test_a_money_field_with_no_currency_is_rejected(
+        self, admin_client: Client, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        response = client.post(
+            "/claims",
+            json=_create_payload(official_source, currency=None),
+            headers=_auth(token),
+        )
+        assert response.status_code == 422
+        # Nothing was written -- a 422 must mean no row, not a bad one.
+        rows = (
+            admin_client.table("claims")
+            .select("id")
+            .eq("entity_id", "11111111-1111-1111-1111-111111111111")
+            .eq("field", "verified_charges")
+            .execute()
+            .data
+        )
+        assert rows == []
+
+    def test_a_fee_component_field_with_no_currency_is_also_rejected(
+        self, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        """The `fee_component:<name>` prefix convention (RULES-10) counts
+        as a money field too, not just the three fixed scalar names."""
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        response = client.post(
+            "/claims",
+            json=_create_payload(
+                official_source, field="fee_component:tuition", currency=None
+            ),
+            headers=_auth(token),
+        )
+        assert response.status_code == 422
+
+    def test_a_non_money_field_with_a_currency_is_rejected(
+        self, admin_client: Client, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        """`minimum_age` is a real, existing eligibility field
+        (`app/ai/retrieval.py`'s `GENERIC_ELIGIBILITY_FIELDS`) that carries
+        no money at all -- a currency on it is not a harmless extra, it is
+        a claim about a fact that has no currency to state."""
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        entity_id = "22222222-2222-2222-2222-222222222222"
+        response = client.post(
+            "/claims",
+            json=_create_payload(
+                official_source, entity_id=entity_id, field="minimum_age", value=16
+            ),
+            headers=_auth(token),
+        )
+        assert response.status_code == 422
+        rows = (
+            admin_client.table("claims").select("id").eq("entity_id", entity_id).execute().data
+        )
+        assert rows == []
+
+    def test_a_non_money_field_with_no_currency_still_succeeds(
+        self, admin_client: Client, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        entity_id = "33333333-3333-3333-3333-333333333333"
+        response = client.post(
+            "/claims",
+            json=_create_payload(
+                official_source,
+                entity_id=entity_id,
+                field="minimum_age",
+                value=16,
+                currency=None,
+            ),
+            headers=_auth(token),
+        )
+        assert response.status_code == 201
+        admin_client.table("claims").delete().eq("id", response.json()["id"]).execute()
+
+    def test_a_money_field_with_a_valid_currency_still_succeeds(
+        self, admin_client: Client, reviewer: tuple[str, Client], official_source: str
+    ) -> None:
+        _reviewer_id, reviewer_client = reviewer
+        token = reviewer_client.auth.get_session().access_token
+        response = client.post(
+            "/claims", json=_create_payload(official_source), headers=_auth(token)
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["currency"] == "INR"
+        admin_client.table("claims").delete().eq("id", body["id"]).execute()
 
 
 class TestFullWorkflowThroughTheRealAPI:

@@ -114,6 +114,50 @@ router = APIRouter(prefix="/reviewer", tags=["reviewer-console"], include_in_sch
 ENTITY_TYPES: tuple[str, ...] = ("Pathway", "Career")
 
 # ---------------------------------------------------------------------
+# Money-field vocabulary -- mirrors `app/api/claims.py`'s own
+# `_MONEY_FIELD_NAMES`/`_is_money_field` exactly (copied, not imported,
+# matching this codebase's established file-local-constant convention
+# that module's own docstring names, e.g. `_ENTITY_TABLES` in
+# `app/web/reviewer/queue.py`). This module needs the same field-kind
+# check for a different reason than that one: `CreateClaimRequest.
+# currency_matches_field_kind` (SCOPE-13) rejects a money field with no
+# currency AND a non-money field WITH one, but this page's proposal
+# forms (built from `app/ai/extraction.py`'s `ExtractionProposal`, which
+# carries no currency of its own) never collected a currency at all
+# before this fix -- every money-field proposal 422'd unconditionally.
+# `_DEFAULT_CURRENCY_FOR_MONEY_FIELDS` is this pilot's own scope, not a
+# guess: docs/PRODUCT.md scopes BCION Lite to India only, so "INR" is a
+# safe, reviewer-editable starting value on the form, never silently
+# assumed in code -- the reviewer still explicitly confirms or changes
+# it before the value ever reaches `CreateClaimRequest`.
+#
+# `_is_money_field` below is used ONLY to decide the template's own
+# rendering (whether a given proposal's form shows/requires the
+# currency input at all) -- it does not gate what
+# `reviewer_extract_create_claim` forwards to `CreateClaimRequest`.
+# Enforcement stays exactly one place: that model's own
+# `currency_matches_field_kind` validator (see that route function's
+# docstring for why).
+# ---------------------------------------------------------------------
+
+_MONEY_FIELD_NAMES: frozenset[str] = frozenset(
+    {
+        "verified_charges",
+        "estimated_additional_expenses_hint",
+        "potential_assistance_not_yet_awarded",
+    }
+)
+
+_FEE_COMPONENT_FIELD_PREFIX = "fee_component:"
+
+_DEFAULT_CURRENCY_FOR_MONEY_FIELDS = "INR"
+
+
+def _is_money_field(field: str) -> bool:
+    return field in _MONEY_FIELD_NAMES or field.startswith(_FEE_COMPONENT_FIELD_PREFIX)
+
+
+# ---------------------------------------------------------------------
 # Fixed error-code vocabulary for `?error=` -- SEC-2's rule, applied here
 # too: the query string carries a CODE, never free text (see
 # app/web/reviewer/queue.py's own module docstring for the reasoning in
@@ -132,7 +176,9 @@ EXTRACT_ERROR_MESSAGES: dict[str, str] = {
     ),
     "invalid_input": (
         "That claim couldn't be created -- check the verifier field (it can't be the "
-        'literal "ai"; use your own name or id) and the other fields, then try again.'
+        'literal "ai"; use your own name or id), the currency field (required on a '
+        "money field, e.g. verified_charges, and must be a 3-letter code like INR), "
+        "and the other fields, then try again."
     ),
     "could_not_process": (
         "This claim couldn't be created. Try again -- if it keeps happening, report it."
@@ -294,6 +340,8 @@ def _render_extract_page(
                 "selected_entity_id": selected_entity_id,
                 "result_status": None,
                 "proposals": (),
+                "is_money_field": _is_money_field,
+                "default_currency": _DEFAULT_CURRENCY_FOR_MONEY_FIELDS,
             },
             status_code=503,
         )
@@ -313,6 +361,8 @@ def _render_extract_page(
             "selected_entity_id": selected_entity_id,
             "result_status": result_status,
             "proposals": proposals,
+            "is_money_field": _is_money_field,
+            "default_currency": _DEFAULT_CURRENCY_FOR_MONEY_FIELDS,
         },
         status_code=status_code,
     )
@@ -432,6 +482,7 @@ def reviewer_extract_create_claim(
     verification_date: date = Form(...),
     verifier: str = Form(...),
     review_due_date: date = Form(...),
+    currency: str | None = Form(default=None),
     session: AuthedSession | None = Depends(get_reviewer_session),
 ) -> Any:
     """One surviving proposal's pre-filled form, submitted for real. Calls
@@ -442,9 +493,32 @@ def reviewer_extract_create_claim(
     exactly as it already does for every claim. This is not a new
     database write path -- it is the existing one, called the same way
     `app/web/reviewer/queue.py`'s action routes already call the other
-    `app/api/claims.py` functions."""
+    `app/api/claims.py` functions.
+
+    `currency` (added for this fix -- see the "Money-field vocabulary"
+    comment above `_is_money_field`) is forwarded to `CreateClaimRequest`
+    exactly as submitted (normalised below), with no field-kind gating
+    of its own here: `CreateClaimRequest.currency_matches_field_kind`
+    (SCOPE-13, `app/api/claims.py`) is the one place that rule is
+    enforced, and this route must not duplicate or second-guess it --
+    the fix is to make this form SATISFY that validator, never to route
+    around it (see this module's own fix-round note). In the normal
+    template flow the currency input only exists on a money-field
+    proposal's own form, so a non-money proposal simply never sends this
+    field at all (`currency=None`, which `currency_matches_field_kind`
+    already accepts). A hand-crafted POST that smuggles a currency onto
+    a non-money field still hits that same validator's existing 422,
+    exactly as it did before this fix -- proven by
+    `tests/db/test_reviewer_extract.py`'s
+    `TestReviewerExtractCreateClaimCurrency` class."""
     reviewer_session = _require_reviewer(session)
 
+    # The template's `<input pattern="[A-Za-z]{3}">` (HTML5 client-side
+    # hint only, never trusted as validation) accepts lower case so a
+    # reviewer isn't tripped up by shift-lock; normalised to upper case
+    # here to match `CreateClaimRequest.currency`'s own strict
+    # `CURRENCY_PATTERN` (`^[A-Z]{3}$`) before that model ever sees it.
+    normalised_currency = currency.strip().upper() if currency else currency
     try:
         claim_request = CreateClaimRequest(
             entity_type=entity_type,
@@ -456,6 +530,7 @@ def reviewer_extract_create_claim(
             verifier=verifier,
             review_due_date=review_due_date,
             extracted_by="ai",
+            currency=normalised_currency,
         )
     except ValidationError:
         return _redirect_to_extract_with_error("invalid_input")
