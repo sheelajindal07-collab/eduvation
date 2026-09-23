@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_states.html" import alert %}
+
+{# AUTH-3 -- GET/POST /sign-in, zero-JS. `error`/`error_variant` come from
+   app/web/account_pages.py's sign_in_submit re-rendering whatever
+   HTTPException authenticate() raised (401 wrong credentials, 403
+   pending guardian consent, 429 rate-limited) as plain-language prose --
+   never a raw error body. `notice == "session_ended"` is
+   app/web/session.py's SESSION_ENDED_NOTICE, carried in the query string
+   by session_ended_redirect(); no route sends it yet (no protected page
+   exists), but a future one that redirects here should not need this
+   template to change. #}
+
+{% block title %}Sign in &mdash; BCION Lite{% endblock %}
+
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-2">Sign in</h1>
+  <p class="text-neutral mb-6">Sign in to pick up where you left off.</p>
+
+  {% if notice == "session_ended" %}
+    {{ alert("Your session ended. Please sign in again.", variant="caution", class_names="mb-6") }}
+  {% endif %}
+
+  {% if error %}
+    {{ alert(error, variant=error_variant or "caution", class_names="mb-6") }}
+  {% endif %}
+
+  {# Zero-JS: a plain HTML form POST is the whole mechanism. No client-
+     side validation replaces the server's own checks. #}
+  <form action="/sign-in" method="post" class="card max-w-sm space-y-4">
+    <div>
+      <label for="email" class="block text-sm font-medium text-charcoal mb-1">Email</label>
+      <input
+        type="email"
+        name="email"
+        id="email"
+        required
+        autocomplete="email"
+        class="input"
+        value="{{ email or '' }}"
+      />
+    </div>
+    <div>
+      <label for="password" class="block text-sm font-medium text-charcoal mb-1">Password</label>
+      <input
+        type="password"
+        name="password"
+        id="password"
+        required
+        autocomplete="current-password"
+        class="input"
+      />
+    </div>
+    <button type="submit" class="btn-primary w-full">Sign in</button>
+  </form>
+
+  <p class="text-sm text-neutral mt-4">
+    New here? <a href="/sign-up" class="text-accent underline">Sign up</a>.
+  </p>
+{% endblock %}

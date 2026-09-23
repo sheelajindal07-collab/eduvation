@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% from "_states.html" import alert %}
+
+{# AUTH-3 -- GET/POST /sign-up, zero-JS. Three mutually-exclusive states,
+   set by app/web/account_pages.py:
+
+     disabled          SIGNUP_ENABLED is off (app/core/config.py). No
+                        form is rendered and sign_up() is never called --
+                        docs/CONSENT.md section 3: real admission happens
+                        by entering an invite code AFTER first sign-in,
+                        never at account creation, so this honestly
+                        describes sign-up itself as closed rather than
+                        inventing an invite-code field this screen has no
+                        way to check.
+     pending_message   A real account now exists but isn't immediately
+                        usable yet (a self-declared minor awaiting
+                        guardian confirmation, or an 18+ account awaiting
+                        its own email confirmation) -- see
+                        account_pages.py's own module docstring for why
+                        this is never auto-signed-in.
+     (else)             The form, or the form plus `error`/`error_variant`
+                        re-rendering a failed attempt (400 bad input, 429
+                        rate-limited, 503 unavailable) with whatever was
+                        typed (except the password) preserved. #}
+
+{% block title %}Sign up &mdash; BCION Lite{% endblock %}
+
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-2">Sign up</h1>
+
+  {% if disabled %}
+    {{ alert(
+      "Sign-ups are closed for this pilot right now. Admission works by "
+      "invite: once you have one, you'll be able to create an account and "
+      "enter your invite code the first time you sign in.",
+      variant="neutral",
+      class_names="mb-6"
+    ) }}
+    <p class="text-sm text-neutral">
+      Already have an account? <a href="/sign-in" class="text-accent underline">Sign in</a>.
+    </p>
+  {% elif pending_message %}
+    {{ alert(pending_message, variant="neutral", class_names="mb-6") }}
+    <p class="text-sm text-neutral">
+      Already confirmed? <a href="/sign-in" class="text-accent underline">Sign in</a>.
+    </p>
+  {% else %}
+    {% if error %}
+      {{ alert(error, variant=error_variant or "caution", class_names="mb-6") }}
+    {% endif %}
+
+    <p class="text-neutral mb-6">
+      This pilot is invite-only. Creating an account here is the first step
+      &mdash; you'll be asked for your invite code the first time you sign in.
+    </p>
+
+    {# Zero-JS: a plain HTML form POST is the whole mechanism. No client-
+       side validation replaces the server's own checks. #}
+    <form action="/sign-up" method="post" class="card max-w-sm space-y-4">
+      <div>
+        <label for="email" class="block text-sm font-medium text-charcoal mb-1">Email</label>
+        <input
+          type="email"
+          name="email"
+          id="email"
+          required
+          autocomplete="email"
+          class="input"
+          value="{{ email or '' }}"
+        />
+      </div>
+      <div>
+        <label for="password" class="block text-sm font-medium text-charcoal mb-1">Password</label>
+        <input
+          type="password"
+          name="password"
+          id="password"
+          required
+          autocomplete="new-password"
+          class="input"
+        />
+      </div>
+      <div>
+        <label for="date_of_birth" class="block text-sm font-medium text-charcoal mb-1">
+          Date of birth
+        </label>
+        <input
+          type="date"
+          name="date_of_birth"
+          id="date_of_birth"
+          required
+          max="{{ today_iso }}"
+          class="input"
+          value="{{ date_of_birth or '' }}"
+        />
+        <p class="text-xs text-neutral mt-1">
+          Used to check whether a guardian's confirmation is needed. Not shown publicly.
+        </p>
+      </div>
+      <div>
+        <label for="guardian_email" class="block text-sm font-medium text-charcoal mb-1">
+          Guardian's email (only if you are under 18)
+        </label>
+        <input
+          type="email"
+          name="guardian_email"
+          id="guardian_email"
+          autocomplete="email"
+          class="input"
+          value="{{ guardian_email or '' }}"
+        />
+      </div>
+      <button type="submit" class="btn-primary w-full">Sign up</button>
+    </form>
+
+    <p class="text-sm text-neutral mt-4">
+      Already have an account? <a href="/sign-in" class="text-accent underline">Sign in</a>.
+    </p>
+  {% endif %}
+{% endblock %}

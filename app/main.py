@@ -100,6 +100,7 @@ from app.api.plans import router as plans_router
 from app.api.timeline import router as timeline_router
 from app.core.config import Settings, get_settings
 from app.core.logging import RequestIdLoggingMiddleware, configure_observability
+from app.web.account_pages import router as account_pages_router
 from app.web.ask_pages import router as ask_pages_router
 from app.web.cache_policy import CachePolicyMiddleware
 from app.web.consent_pages import router as consent_pages_router
@@ -316,6 +317,7 @@ EXPECTED_ROUTERS: tuple[str, ...] = (
     "ask_pages",
     "support_pages",
     "account",
+    "account_pages",
 )
 
 
@@ -359,6 +361,7 @@ def build_router_slots() -> list[RouterSlot]:
         RouterSlot("ask_pages", ask_pages_router),
         RouterSlot("support_pages", support_pages_router),
         RouterSlot("account", account_router),
+        RouterSlot("account_pages", account_pages_router),
     ]
 
 
