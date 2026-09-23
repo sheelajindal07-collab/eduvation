@@ -42,7 +42,8 @@
 {% from "_components.html" import why_seeing_this %}
 
 {% macro why_am_i_seeing_this(reasons=none, preferences=none, unknowns=none,
-                              change_preferences_url=none, heading=none) %}
+                              change_preferences_url=none, heading=none,
+                              unknown_change_label=none) %}
   {#- Arguments:
 
         reasons                 list of plain-language strings, each
@@ -57,10 +58,15 @@
         change_preferences_url  where to go to change them; docs/UI.md
                                 requires "how to change the preferences"
         heading                 override for the block's heading
+        unknown_change_label    additive (ux-qa-reviewer finding on
+                                UI-4) -- see `why_seeing_this`
+                                (`_components.html`) for what this names
+                                and when a caller has one to pass
 
      A thin forward to `why_seeing_this` (`_components.html`) — this slot
      decides nothing about markup, only whether a screen has anything to
      pass at all. -#}
   {{ why_seeing_this(reasons=reasons, preferences=preferences, unknowns=unknowns,
-                     change_preferences_url=change_preferences_url, heading=heading) }}
+                     change_preferences_url=change_preferences_url, heading=heading,
+                     unknown_change_label=unknown_change_label) }}
 {% endmacro %}

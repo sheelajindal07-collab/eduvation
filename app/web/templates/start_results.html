@@ -9,6 +9,7 @@
    `alert`/`empty_state` vocabulary, app/web/templates/_states.html). #}
 {% from "_states.html" import alert %}
 {% from "_why.html" import why_am_i_seeing_this %}
+{% from "_components.html" import pathway_detail_link %}
 {% block title %}Thanks &mdash; BCION Lite{% endblock %}
 {% block content %}
   <h1 class="text-2xl font-semibold text-charcoal mb-2">Thanks &mdash; here's what you told us</h1>
@@ -35,17 +36,27 @@
   </section>
 
   <section class="card mb-6">
-    <h2 class="text-lg font-semibold text-charcoal mb-3">Suggested pathways</h2>
+    {#- suggestions_broadened (UI-4's `SuggestionResult.is_broadened`, was
+        wired into this context but never read here -- ux-qa-reviewer
+        finding): a section-level heading swap, not a repeat of the
+        per-item reason sentence below (which already says, per
+        suggestion, that nothing matched). "Pathways available" is
+        deliberately calm and non-apologetic (docs/UI.md's difficult
+        state "No matching result" -> "Broader searches and
+        alternatives"), and reuses this screen's own "currently
+        available" vocabulary rather than inventing new copy. -#}
+    <h2 class="text-lg font-semibold text-charcoal mb-3">
+      {% if suggestions_broadened %}Pathways available{% else %}Suggested pathways{% endif %}
+    </h2>
     {% if suggestions %}
       <ul class="space-y-4">
         {% for suggestion in suggestions %}
           <li class="border-b border-neutral pb-4 last:border-0 last:pb-0">
-            <a href="/pathways/{{ suggestion.pathway_id }}/view" class="text-accent underline font-medium">
-              {{ suggestion.name }}
-            </a>
+            {{ pathway_detail_link(suggestion.pathway_id, label=suggestion.name) }}
             {{ why_am_i_seeing_this(reasons=suggestion.reasons, preferences=suggestion.preferences,
                                     unknowns=suggestion.unknowns, change_preferences_url=change_answers_url,
-                                    heading="Why this pathway") }}
+                                    heading="Why this pathway",
+                                    unknown_change_label=suggestion.unknown_change_label) }}
           </li>
         {% endfor %}
       </ul>
