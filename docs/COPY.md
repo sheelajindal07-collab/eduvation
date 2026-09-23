@@ -158,6 +158,16 @@ answer yet (Ask BCION is unbuilt). Fixed here ahead of that build.
 | `askbcion.answer.not_available` | We don't have a verified record for this yet. |
 | `askbcion.answer.insufficient_information` | We have some information, but not enough here for a confident answer. |
 
+**The fixed prompt labels** (`app/ai/prompts.py`'s `TEMPLATE_REGISTRY`, `app/api/ask.py`'s `ASK_TEMPLATES`) were built after this section was first frozen and never synced back here - added now, English text taken verbatim from what's actually shipped in `app/i18n/en.json` (Hindi drafts exist there too, not reproduced in this English-only reference table):
+
+| Key | English |
+| --- | --- |
+| `askbcion.prompt.cost_breakdown` | What will this cost? |
+| `askbcion.prompt.pathway_overview` | What does this pathway involve? |
+| `askbcion.prompt.eligibility_gap` | What do I need to be eligible? |
+| `askbcion.prompt.next_steps` | What should I do next? |
+| `askbcion.prompt.what_changed` | What changed? |
+
 ## 4. Approved phrasing (use these instead)
 
 | Situation | Use | Never |
