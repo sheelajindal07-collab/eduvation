@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% import "_states.html" as states %}
+{# CONSENT-8. Reached only by a real safeguarding-staff session
+   (app/web/support_pages.py's is_safeguarding_staff() check) -- a guest
+   or a signed-in non-staff visitor (including a content reviewer) never
+   reaches this template at all: they get a 303 redirect or a 403
+   "Permission denied" page instead. Same "not the student journey" reasoning
+   as reviewer_queue.html: no student nav, no utility menu. #}
+{% block student_nav %}{% endblock %}
+{% block utility_menu %}{% endblock %}
+{% block title %}Safeguarding support &mdash; BCION Lite{% endblock %}
+{% block content %}
+  <div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-charcoal mb-1">Safeguarding support</h1>
+      <p class="text-neutral text-sm">Flags waiting on safeguarding staff, and accounts in the withdrawal window.</p>
+    </div>
+    <form action="/reviewer/sign-out" method="post">
+      <button type="submit" class="btn-secondary">Sign out</button>
+    </form>
+  </div>
+
+  {% if unavailable %}
+    {{ states.alert("The safeguarding support page isn't available right now -- please try again shortly.", variant="caution") }}
+  {% else %}
+    <section class="mb-8">
+      <h2 class="text-lg font-semibold text-charcoal mb-3">Flags</h2>
+      {% if not flags %}
+        {{ states.empty_state("Nothing waiting on safeguarding staff right now.") }}
+      {% else %}
+        <div class="space-y-4">
+          {% for row in flags %}
+            {% set flag = row.flag %}
+            <section class="card{% if row.overdue %} border-2 border-caution{% endif %}">
+              {# docs/UI.md: a state is never colour alone -- the overdue
+                 highlight is border colour PLUS this explicit text+icon
+                 badge, not a bare colour change. #}
+              {% if row.overdue %}
+                <p class="status-badge status-badge--other mb-2" role="status">
+                  <span aria-hidden="true">&#9888;</span> Overdue -- flagged more than 24 hours ago
+                </p>
+              {% endif %}
+              <dl class="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-2">
+                <div>
+                  <dt class="text-neutral">Flagged</dt>
+                  <dd class="text-charcoal">{{ flag.created_at | date }}</dd>
+                </div>
+                <div>
+                  <dt class="text-neutral">Category</dt>
+                  <dd class="text-charcoal">{{ flag.category }}</dd>
+                </div>
+                <div class="sm:col-span-2">
+                  {# The task's own wording: "the student's OPAQUE id
+                     only -- never an email or name". This is the raw id,
+                     never resolved against auth.users/student_profiles. #}
+                  <dt class="text-neutral">Student (opaque id)</dt>
+                  <dd class="text-charcoal break-all">{{ flag.student_id }}</dd>
+                </div>
+              </dl>
+            </section>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-charcoal mb-3">Frozen accounts</h2>
+      {% if not frozen_accounts_available %}
+        {# CLAUDE.md: "a missing section says 'Not available', never
+           dropped silently." See app/web/support_pages.py's own docstring
+           for the exact RLS gap this reflects -- not an oversight. #}
+        {{ states.empty_state("Not available yet from this page -- this session has no way to read another student's account status. Contact the migration owner to add safeguarding-staff read access to student_accounts.") }}
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock %}

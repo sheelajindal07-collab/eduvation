@@ -105,6 +105,7 @@ from app.web.consent_pages import router as consent_pages_router
 from app.web.errors import register_error_handlers
 from app.web.pages import router as pages_router
 from app.web.reviewer import router as reviewer_pages_router
+from app.web.support_pages import router as support_pages_router
 
 
 class _ReservedSlotMiddleware:
@@ -312,6 +313,7 @@ EXPECTED_ROUTERS: tuple[str, ...] = (
     "consent_pages",
     "ask",
     "ask_pages",
+    "support_pages",
 )
 
 
@@ -353,6 +355,7 @@ def build_router_slots() -> list[RouterSlot]:
         RouterSlot("consent_pages", consent_pages_router),
         RouterSlot("ask", ask_router),
         RouterSlot("ask_pages", ask_pages_router),
+        RouterSlot("support_pages", support_pages_router),
     ]
 
 
