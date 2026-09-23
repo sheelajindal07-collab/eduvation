@@ -104,6 +104,24 @@ def reviewer_credentials(admin_client: Client) -> Iterator[dict[str, str]]:
 
 
 @pytest.fixture
+def non_reviewer_credentials(admin_client: Client) -> Iterator[dict[str, str]]:
+    """Same shape as `reviewer_credentials` above, EXCEPT no `reviewers`
+    row -- a real, sign-in-able account that `is_reviewer()` must say
+    `false` for. Exists to prove `main()`'s own reviewer-membership check
+    (data-security-reviewer finding) actually refuses this account,
+    rather than silently running the report against RLS-restricted,
+    published-only data."""
+    email = run_email("coveragereportnonreviewer", domain="example.com")
+    password = uuid.uuid4().hex
+    created = admin_client.auth.admin.create_user(
+        {"email": email, "password": password, "email_confirm": True}
+    )
+    user_id = created.user.id
+    yield {"email": email, "password": password, "user_id": user_id}
+    admin_client.auth.admin.delete_user(user_id)
+
+
+@pytest.fixture
 def official_source(admin_client: Client) -> Iterator[str]:
     """A real, allow-listed, non-synthetic source -- `nta.ac.in` is a
     real line in `content/allowed_domains.txt` today, so this is a
@@ -605,6 +623,50 @@ class TestMakerEqualsChecker:
             assert after_code == 0
 
 
+class TestMainRefusesANonReviewerCredential:
+    """data-security-reviewer finding: `main()`'s own docstring claimed a
+    reviewer-membership check existed; it didn't. A non-reviewer account
+    signing in successfully must be refused loudly (exit 2, no report
+    printed) rather than silently running against RLS-restricted,
+    published-only data and printing a falsely clean picture."""
+
+    def test_a_real_but_non_reviewer_account_is_refused(
+        self,
+        non_reviewer_credentials: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setenv("BCION_REVIEWER_EMAIL", non_reviewer_credentials["email"])
+        monkeypatch.setenv("BCION_REVIEWER_PASSWORD", non_reviewer_credentials["password"])
+
+        code = coverage_report_main([])
+
+        assert code == 2
+        output = capsys.readouterr()
+        assert "not in `reviewers`" in output.err
+        # No report content (e.g. the report's own section headings)
+        # ever reached stdout for a refused caller.
+        assert output.out == ""
+
+    def test_a_real_reviewer_account_is_still_accepted(
+        self,
+        reviewer_credentials: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Sanity check, proving the new check doesn't over-refuse: the
+        exact same credentials shape `TestHandCountedBatch`/etc. already
+        rely on must still pass through cleanly."""
+        monkeypatch.setenv("BCION_REVIEWER_EMAIL", reviewer_credentials["email"])
+        monkeypatch.setenv("BCION_REVIEWER_PASSWORD", reviewer_credentials["password"])
+
+        code = coverage_report_main([])
+
+        assert code in (0, 1)  # a real finding may or may not exist; never the refusal code (2)
+        output = capsys.readouterr()
+        assert "not in `reviewers`" not in output.err
+
+
 class TestIncompleteEligibilitySet:
     """The `required_fields` convention this card's own module docstring
     documents: an entity-level declaration claim (`field=
@@ -676,6 +738,16 @@ class TestIncompleteEligibilitySet:
 
 _FORBIDDEN_WRITE_METHODS = frozenset({"insert", "update", "delete", "upsert", "rpc"})
 
+# `.rpc("is_reviewer", ...)` is the one, narrowly-named exception: a
+# zero-argument, `stable`/read-only SECURITY DEFINER predicate
+# (db/migrations/0001_init.sql) this report's own main() calls to refuse
+# a non-reviewer credential loudly (data-security-reviewer finding) --
+# never a write, and it can only ever answer for the caller (no uid
+# parameter to point at anyone else). Any OTHER rpc name (e.g.
+# redeem_invite, withdraw_account, ai_reserve) stays fully forbidden --
+# this is a named allowlist of one, not a blanket "rpc is fine" carve-out.
+_ALLOWED_RPC_NAMES = frozenset({"is_reviewer"})
+
 
 def _write_calls_in_source(source_text: str) -> list[str]:
     """Every `<something>.<forbidden-method>(...)` call anywhere in
@@ -686,12 +758,20 @@ def _write_calls_in_source(source_text: str) -> list[str]:
     tree = ast.parse(source_text)
     found = []
     for node in ast.walk(tree):
-        if (
+        if not (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr in _FORBIDDEN_WRITE_METHODS
         ):
-            found.append(f"line {node.lineno}: .{node.func.attr}(...)")
+            continue
+        if (
+            node.func.attr == "rpc"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value in _ALLOWED_RPC_NAMES
+        ):
+            continue
+        found.append(f"line {node.lineno}: .{node.func.attr}(...)")
     return found
 
 
@@ -712,3 +792,14 @@ class TestReadOnlyGuarantee:
             injected = f"client.table('x').{method}({{'a': 1}}).execute()\n"
             found = _write_calls_in_source(injected)
             assert found, f"scanner failed to catch an injected .{method}(...) call"
+
+    def test_the_is_reviewer_rpc_allowlist_is_named_not_blanket(self) -> None:
+        """Revert-to-prove for the narrow `.rpc("is_reviewer", ...)`
+        exception: proves it is scoped to that exact name, not "any rpc
+        call is fine now" -- a DIFFERENT rpc name must still be caught."""
+        allowed = 'client.rpc("is_reviewer", {}).execute()\n'
+        assert _write_calls_in_source(allowed) == []
+
+        other_rpc = 'client.rpc("redeem_invite", {"code": "x"}).execute()\n'
+        found = _write_calls_in_source(other_rpc)
+        assert found, "scanner incorrectly allowed a non-allowlisted rpc call"

@@ -926,11 +926,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     try:
-        claims = fetch_claims(client)
-        sources = fetch_sources(client)
-    except Exception as exc:  # noqa: BLE001 -- e.g. a network error mid-fetch
-        print(f"Could not fetch data for this report: {exc}", file=sys.stderr)
-        return 2
+        # data-security-reviewer finding: a successful sign-in only proves
+        # BCION_REVIEWER_EMAIL/PASSWORD name a REAL account, not that the
+        # account is actually in `reviewers`. Without this check, an
+        # ordinary student credential signs in fine, RLS then correctly
+        # (silently) restricts fetch_claims() to published-only rows, and
+        # this report prints a falsely clean "nothing pending, no
+        # violations" picture instead of failing loudly -- exactly the
+        # "misleading status label" this report exists to catch elsewhere.
+        # `is_reviewer()` (0001_init.sql) takes no arguments and can only
+        # ever answer for the caller, so this cannot be pointed at anyone
+        # else's identity.
+        try:
+            is_reviewer_result = client.rpc("is_reviewer", {}).execute()
+        except Exception as exc:  # noqa: BLE001 -- e.g. a network error mid-check
+            print(f"Could not confirm reviewer membership: {exc}", file=sys.stderr)
+            return 2
+        if is_reviewer_result.data is not True:
+            print(
+                "BCION_REVIEWER_EMAIL names a real account, but it is not in "
+                "`reviewers` -- refusing to run this report as a non-reviewer, "
+                "since RLS would silently restrict every section below to "
+                "published-only data and this report would print a falsely "
+                "clean picture instead of the real one.",
+                file=sys.stderr,
+            )
+            return 2
+
+        try:
+            claims = fetch_claims(client)
+            sources = fetch_sources(client)
+        except Exception as exc:  # noqa: BLE001 -- e.g. a network error mid-fetch
+            print(f"Could not fetch data for this report: {exc}", file=sys.stderr)
+            return 2
     finally:
         client.postgrest.aclose()
 
