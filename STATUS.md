@@ -1130,6 +1130,35 @@ component set.
 ## Blockers
 **One real blocker remains, below — narrower than before, not gone.**
 
+## ⚠️ Read this one — a self-harm safety feature is built but held back, waiting on your decision
+CONSENT-7 (distress keyword detection + helpline) is **built, reviewed,
+committed on its own branch (`consent-7`) — and deliberately NOT merged
+into `main`.** The detection mechanism itself is good: pure, deterministic,
+no AI, never leaks a matched phrase or the student's own text anywhere,
+never blocks a plan save or sign-up, and the helpline copy is warm and
+honest. Both reviewers who checked it independently confirmed all of
+that live.
+
+**Here is the part that needs your call.** `safeguarding_flags` (already
+on `main`, from CONSENT-4) grants no INSERT to anyone — not even the
+student's own session. So right now, if this were merged, a real
+distress signal from a real student would show them a supportive
+helpline message, but **no flag would ever be recorded and nobody on
+your safeguarding team would ever be notified.** The student sees
+support; nothing happens behind it. That gap is proven, not guessed —
+a live test asserts zero rows exist in the table after a real match.
+
+This isn't a bug to fix and re-submit — the code is exactly right for
+what it can do without a database change it isn't scoped to make. The
+missing piece is one new migration (a `record_safeguarding_flag()`
+function, already fully drafted and ready for a migration-owner to
+apply) that doesn't exist yet. The actual decision is: **do you want the
+detection + helpline message live now, with the "someone gets notified"
+half following in a later migration — or do you want to hold the whole
+feature until both halves are ready together?** Either is defensible;
+neither is my call to make. Full writeup, both reviewers' own reasoning,
+and the drafted migration text: `docs/DECISIONS.md`'s 2026-09-23 entry.
+
 ## ⚠️ Read this one — a real, live vulnerability was found and fixed in code; it is NOT yet applied to your real Supabase project
 CONSENT-4 (admission axis + safeguarding schema) went through a full
 implement → 3-lens adversarial security review → fix round → re-review
@@ -1714,6 +1743,31 @@ removed. Your call: add a migration (+ the still-missing
 `import_claims.py`) and re-attempt, or formally rescope the card to drop
 verbatim quotes from the packet. See `docs/DECISIONS.md`'s 2026-09-23
 entry for the full detail.
+
+## AUTH-2, QA-7, SEC-6, CONSENT-8, CONSENT-10, QA-12 merged (2026-09-23)
+Six lanes, each independently reviewed, each verified live before push.
+**AUTH-2**: a student cookie session (`app/web/session.py`), not wired
+into any route yet (no sign-in page exists) — whoever builds it next
+calls `set_student_session_cookie` from there. **QA-7**: the guest
+journey now runs at both viewports end to end — and, as a real bonus,
+fixed a genuine `subprocess.PIPE` deadlock that had been silently
+hanging the entire `tests/e2e` directory (the child process's own log
+output filled the OS pipe buffer and blocked mid-request); e2e now
+completes in ~35-50s instead of never. **SEC-6**: migration `0016`
+closes two `SECURITY DEFINER` functions that were genuinely anon-callable
+(from the guardian-consent gate) and tightens table grants further —
+live revert-to-proved in all four directions, applied to the shared
+stack. **CONSENT-8**: the staff-only safeguarding queue, with a
+test-isolation fix for a shared-stack concurrency edge case. **CONSENT-10**:
+account withdrawal — one disclosed, non-blocking finding (a frozen
+account can't read its own saved plans during the 30-day grace window,
+a pre-existing RLS shape, not a new leak). **QA-12**: the residue-sweep
+tool, dry-run-only by construction, with a disclosed scoping gap (its
+marker set is narrower than this repo's real fixture-naming convention
+— see the task row in `tasks/INDEX.md`).
+
+**CONSENT-7 (distress detection) is the one held back** — see the ⚠️
+section above; it needs your decision, not further engineering.
 
 ## Concurrent sessions — multiple sessions worked this repo today
 This session shared the repo with at least one other active Claude

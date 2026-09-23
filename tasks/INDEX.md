@@ -43,7 +43,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] DESIGN-5 - Three journeys plus the teacher demonstration journey [W1]
 - [x] SCOPE-3 - Migration 0008: jurisdiction, cycle, currency columns, freeze-trigger update [W2]
 - [x] QA-6 - Cross-user access matrix with a table guard [W2]
-- [ ] SEC-6 - Migration 0013: grants and exposure hardening, catalogue test [W4]
+- [x] SEC-6 - Migration 0016 (real number, not the guessed 0013): grants and exposure hardening, catalogue test [W4, DONE, merged; closed two genuinely-open anon-callable functions (my_guardian_consent_status, create_guardian_consent_request), tightened table grants on 4 knowledge + 3 vault tables]
 
 ## Step 5 Private staging (M1) - PARTIAL (app on the VM, localhost only)
 - [ ] CONSENT-18 - Supabase dashboard sign-ups OFF [W0, owner, new]
@@ -91,7 +91,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] SCOPE-4 - Currency-safe cost display [W3b] -- its disclosed follow-up (itemised fee_component:* claims with no legacy verified_charges claim showed "Not available" on the display line while the total used the components) is now closed: merged b75f939 (2026-09-22)
 - [x] UI-7 - Timeline stage kinds and "Revise this scenario" [W3b] -- pathway_id/pathway_name are display-only context, not yet wired from any linking screen
 - [x] RULES-16 - Requirements screen: DOB input, cycle label, "not checked here" list [W3b]
-- [ ] QA-7 - Mobile and desktop viewport e2e, full guest journey [W3b]
+- [x] QA-7 - Mobile and desktop viewport e2e, full guest journey [W3b, DONE, merged; also found and fixed a real live_server stdout-pipe deadlock that was silently hanging the whole tests/e2e directory -- unblocks e2e entirely, likely also the separately-tracked click-navigation hang]
 - [ ] UI-15 - Owner phone walk-through and component-set freeze [W3, owner]
 - [ ] TRIAL-8 - Usability round 1: guest only, ADULTS ONLY, on the round1-rc tag [W4, people]
 - [ ] TRIAL-9 - Round-1 synthesis into a ranked fix list [W4]
@@ -113,13 +113,13 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] AUTH-5 - Migration 0010: next actions, plan validation [W2]
 - [ ] AUTH-6 - My Plan and Save controls, guest mode, new files only, cross-user lines [W3a]
 - [x] CONSENT-4 - Migrations 0012+0013 (renumbered from a stale 0014 planning slot — see the ledger note above): admission axis (`admitted_at`, `is_admitted()`, invite redemption via `pilot_invites`/`redeem_invite`) + safeguarding schema (`consents`, `safeguarding_staff`, `safeguarding_flags`, `withdraw_account()`) [W4, DONE, merged; 3-lens adversarial review, one fix round; also closed a live anon-key oracle on already-merged `account_active()` (0014), unrelated to this task's own scope but found while reviewing it] -- independently re-verified (2026-09-22 evening); two LOWs not carded, backlog only: (1) app/api/ask.py's 42501-as-404 catch should log when the caller isn't a guest, so a future grant misconfiguration doesn't silently look like "not found"; (2) 0012's `pilot_invites.used_by ... on delete set null` un-consumes an unexpired invite if the redeemer's auth.users row is ever deleted
-- [ ] AUTH-2 - Student cookie session [float]
+- [x] AUTH-2 - Student cookie session [float, DONE, merged; app/web/session.py, not yet wired into any HTML route -- whoever builds AUTH-3/the real sign-in page calls set_student_session_cookie from there]
 - [ ] AUTH-3 - Sign-in, sign-up (flagged off), sign-out pages [float]
 - [ ] AUTH-14 - My Plan signed-in mode, `needs_review` banner [float]
 - [ ] CONSENT-6 - Interim gate in the API: invite, 18+, terms [float]
-- [ ] CONSENT-7 - Distress keyword rule with helpline response (fails open) [float]
-- [ ] CONSENT-8 - Staff-only safeguarding queue [float]
-- [ ] CONSENT-10 - Withdraw consent and 30-day deletion runbook [float]
+- [~] CONSENT-7 - Distress keyword rule with helpline response (fails open) [float, BUILT but NOT MERGED -- see docs/DECISIONS.md 2026-09-23: the mechanism is committed on branch consent-7, but safeguarding_flags has no INSERT policy for anyone yet, so no staff notification can happen; both reviewers require an explicit owner decision (ship detection+helpline-only now, or hold for the migration) before this lands on main]
+- [x] CONSENT-8 - Staff-only safeguarding queue [float, DONE, merged; fix round: empty-state test no longer asserts a global invariant it can't control under concurrent shared-stack use]
+- [x] CONSENT-10 - Withdraw consent and 30-day deletion runbook [float, DONE, merged; disclosed, non-blocking finding: a frozen account's own saved_plans/student_profiles become unreadable too (over-restrictive, not a leak) -- pre-existing CONSENT-4 RLS shape, not introduced here]
 - [ ] CONSENT-6b - Sign-up form fields and withdraw button [float, new]
 - [ ] AUTH-9 - Student data export [P2]
 - [ ] UI-13 - Utility menu pages and footer [P2]
@@ -158,7 +158,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [ ] TRIAL-7 - Open the editor-hours log [W0, owner, day 4]
 - [~] CONTENT-2 - Import contract: CSV templates, closed vocabulary, hash rule — **contract half done** (the content-hash field list and source_version rule are frozen in `docs/CONTRACTS.md` "Publishing evidence in Phase 1"); **artefacts still open**: `docs/CONTENT-IMPORT.md`, `content/templates/claims_import.csv`, `content/templates/sources_register.csv`, the closed `field` vocabulary — deliberately left outside the contract-burst agent's owned files, needs its own small session before CONTENT-3 [W1, contract burst]
 - [x] CONTENT-3 - Offline draft extractor and inventory [W1]
-- [ ] QA-12 - Sweep test residue out of the live project (before DATA-10a) [W2]
+- [x] QA-12 - Sweep test residue out of the live project (before DATA-10a) [W2, DONE, merged; disclosed MEDIUM gap: the anchored marker set is narrower than this repo's own real fixture-naming convention (run_name()'s [run:...] tag, plain "QA ... test career" names) -- a 0-match dry-run does not mean the project has no test residue at all, only none matching this specific marker set]
 - [x] CONTENT-4 - Source register and allow-list checker (`make content-check`) [W2-W3, mixed]
 - [x] CONTENT-5 - Curate the trial subset (deadline, backup, scholarship per family) [W2-W3, mixed]
 - [x] CONTENT-15 - Editor and checker handbook [W2-W3, mixed]

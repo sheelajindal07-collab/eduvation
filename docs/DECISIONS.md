@@ -5,6 +5,161 @@ never deleted.
 
 ---
 
+## 2026-09-23 — Six lanes merged (AUTH-2, QA-7, SEC-6, CONSENT-8, CONSENT-10, QA-12); CONSENT-7 built but held for an owner decision
+**AUTH-2 merged.** `app/web/session.py` — a cookie-based student session
+(`bcion_student_session`, matching `docs/CONTRACTS.md`'s settled shape
+exactly), mirroring the already-reviewed reviewer-cookie pattern. Not
+wired into any route yet (no HTML sign-in page exists) — tested via a
+private in-file probe app. The `/plans` JSON-API-stays-header-only
+boundary was specifically re-proven: a genuinely valid access token
+carried only as this new cookie still 401s; the same token as a Bearer
+header 200s.
+
+**QA-7 merged**, with a real bonus fix. Viewport-parametrized (360×740,
+1280×800) e2e guest journey covering quick-start through a real official
+source link, exercising UI-6's cost-assumption editing with real
+arithmetic (₹50,000 + ₹15,000 override = ₹65,000). While building it,
+found and fixed a genuine root-cause bug in `tests/e2e/conftest.py`:
+`live_server`'s `subprocess.PIPE` was never drained, so once combined
+app/uvicorn/httpx logging filled the ~64KB OS pipe buffer, the child
+process's next log write blocked and froze the whole server mid-request
+— `pytest tests/e2e` had been silently hanging indefinitely on more than
+~5-6 navigations. Fixed with a background stdout-draining thread. This
+is shared e2e infrastructure, so the fix's effect isn't scoped to this
+task's own test — it very plausibly also affects the separately-tracked
+click-navigation hang another lane owns; flagged to them. Two
+pre-existing, unrelated e2e failures surfaced once the suite could
+finally complete (`test_shared_device.py`'s missing `Clear-Site-Data`
+header, `test_start.py`'s zero-pathway career fixture) — confirmed
+genuinely pre-existing on unmodified `main`, not introduced here, left
+for their own owners.
+
+**SEC-6 merged** as `db/migrations/0016_grants_hardening.sql` (real
+number — the card's guessed 0013 was already taken twice over). Closes
+two genuinely-open `SECURITY DEFINER` functions
+(`my_guardian_consent_status`, `create_guardian_consent_request`, both
+from the guardian-consent gate) that had no grant restriction at all —
+confirmed anon-callable live before the fix, confirmed closed after,
+full revert-to-prove both directions. Tightens anon's table-level grants
+on the four knowledge tables (SELECT-only, was broader) and revokes
+everything on three vault/reviewer tables. Also proves 0016's table-grant
+layer is a genuine SECOND line of defence, not merely redundant with
+0014's function-level fix: re-granted `account_active()` EXECUTE to anon
+while leaving 0016's table revoke in place, and `student_profiles`/
+`saved_plans` still correctly denied. Applied to the shared
+`bcion-lite-test` stack. 13 access-matrix cells strengthened from
+DENY_EMPTY to DENY_ERROR (Postgres now refuses before RLS is even
+consulted) — a stronger guarantee, not a weakened test.
+
+**CONSENT-8 merged**, after a fix. `GET /reviewer/support` — a
+staff-only safeguarding queue gated on `is_safeguarding_staff()`, never
+`is_reviewer()` (live-proven: a real content-reviewer session gets 403,
+never the wrong "authorized, empty" state). Two disclosed schema gaps
+handled honestly (a real "Not available" state / a 404) rather than
+faked: no acknowledge write path, no frozen-accounts read path — both
+come with proposed migration SQL for a follow-up, not applied here.
+Fix round: the new empty-state test asserted the whole
+`safeguarding_flags` table is empty, a global invariant no single test
+can guarantee under this repo's own approved concurrent-worktree model
+— live-reproduced failing when a sibling worktree's identical test file
+transiently seeded a real flag mid-run. Fixed by checking the real
+precondition first and skipping honestly, rather than asserting
+something outside the test's control.
+
+**CONSENT-10 merged.** `POST /account/withdraw` — freezes the account,
+revokes consents, sets `deletion_due_at` ~30 days out, idempotent, takes
+no id parameter (cannot target anyone but the caller).
+`docs/RUNBOOK-deletion.md`'s cascade table independently verified
+against every `references auth.users` foreign key across all migrations
+— complete. **One disclosed, non-blocking finding**: a frozen account's
+own `saved_plans`/`student_profiles` become unreadable too (RLS-filtered
+to zero rows), which conflicts with this card's own "can still read its
+own data" wording — root cause is `account_active(auth.uid())` in
+`saved_plans_select_own`/`student_profiles_select_own`
+(0012_admission_axis.sql), a pre-existing CONSENT-4 RLS shape, not
+introduced by this route. Fails toward over-restriction, not a leak.
+Left as-is pending a product decision on whether a CONSENT-4 follow-up
+migration should carve out an exception for a frozen (not yet deleted)
+account's own reads.
+
+**QA-12 merged.** `scripts/sweep_test_residue.py` — dry-run is the only
+thing a bare invocation does; `--apply` is the only recognised flag,
+anything else raises rather than silently falling back. Destructive-path
+verification used a scoped `DeletionPlan` restricted to 5 self-seeded
+nonce-tagged rows on the shared stack, never the unscoped full-table
+plan, specifically because that stack turned out to have ~30 rows of
+real pre-existing residue not this card's to touch. **Disclosed MEDIUM
+gap**: the anchored marker set (`E2E`, `RLS test`, `SYNTHETIC`, `TEST
+FIXTURE`, two verifier names, `example.invalid`, `bcion-test-`/
+`bcion-e2e-` emails) is narrower than this repo's own actual, currently-
+used fixture-naming convention (`run_name()`'s `[run:<hex>]` tag,
+dozens of plain "QA ... test career"/"... test pathway" names across
+`tests/db/*.py`) — a `TOTAL: 0` dry-run result does not mean the live
+project has no test residue at all, only none matching this specific,
+literal, non-heuristic list. Not a false-positive risk (the matcher's
+near-miss rejection is correctly built and tested); a scoping/
+communication point for whoever reads a real sweep's output next.
+
+**CONSENT-7 built, committed on its own branch, deliberately NOT merged
+— needs an explicit owner decision, not a silent merge.** The distress-
+keyword detection mechanism itself (`app/safeguarding/distress.py`,
+English/Hindi/Hinglish, pure and deterministic, no AI) is well-built and
+independently verified by both reviewers: it never leaks the matched
+phrase or input text anywhere (return value, log, or database row —
+live-confirmed, not just asserted), never blocks a plan save or sign-up,
+and the helpline copy is warm, honest, and contains zero banned
+language. It is hooked into the only two free-text surfaces that
+currently exist (`plans.notes`, sign-up's `pending_plan.notes`, adult
+branch only — a self-declared minor's `pending_plan` was already never
+processed, a pre-existing, unrelated gap).
+
+**The reason it is not merged:** `db/migrations/0013_safeguarding_schema.sql`
+grants NO insert policy on `safeguarding_flags` to any role at all — not
+even the acting student's own session. `record_distress_flag()`'s RPC
+call to a not-yet-existing `record_safeguarding_flag()` function is
+therefore a confirmed no-op today (live-proven:
+`tests/db/test_distress_flag.py::TestSafeguardingFlagWritePathGap`
+asserts zero rows exist after a real match). Concretely: **a real
+distress signal from a real student today would show them a supportive
+helpline message, but no flag would ever be recorded and no
+`<SAFEGUARDING-CONTACT>` would ever be notified** — the
+`docs/CONSENT.md` section 6 promise ("raises a `safeguarding_flags` row
+... notifying `<SAFEGUARDING-CONTACT>` within 24 hours") is not met by
+what was built. This is not a code defect — the implementer correctly
+declined to work around it (no service-role credential in application
+code, ever, is this codebase's own non-negotiable) and disclosed it
+thoroughly rather than papering over it, including a fully-specified
+proposed migration for the missing `record_safeguarding_flag()` RPC,
+mirroring `redeem_invite()`/`withdraw_account()`'s own
+revoke-then-grant, `auth.uid()`-bound pattern. Both the
+data-security-reviewer and ux-qa-reviewer independently marked this
+NEEDS_FIXES for the same reason: per this review's own standing
+consent/safeguarding rule ("you flag, you do not approve this on your
+own"), shipping a detection-and-helpline-only version of a self-harm
+safeguarding feature — with no working staff-alert path behind it — is
+a product/safety decision for the owner, not something a clean diff or
+a passing test suite can authorize on its own.
+
+**What happens next is the owner's call, not decided here:**
+1. Ship the mechanism now, accepting that the helpline message runs
+   ahead of the notification path, with this gap tracked openly (this
+   entry, plus the `[~]` marker on CONSENT-7 in `tasks/INDEX.md`) until
+   a migration-owner lane builds `record_safeguarding_flag()`; or
+2. Hold CONSENT-7 off `main` entirely until that migration lands first,
+   so the detection and the notification path ship together.
+Either way, the phrase list itself (36 phrases, EN/HI/HI-Latn) is
+correctly, repeatedly self-disclosed as a starting mechanism only —
+CONSENT-9's human (Hindi-speaker, safeguarding-professional) review is
+what actually settles real-world coverage, not this task.
+
+**Verified before every merge above:** ruff/mypy clean, live `tests/db`
+runs for each lane, full `tests/unit` (1557 passed after all six),
+CI green on `main` post-push for each (runs 35845150040 combining SEC-6
++CONSENT-8, 35845511047 CONSENT-10, 35845648947 QA-12; AUTH-2/QA-7
+confirmed green on their own preceding pushes).
+
+---
+
 ## 2026-09-23 — TRIAL-3 merged; CONTENT-8 merged with a fix round; CONTENT-7 correctly stopped, needs a decision
 **TRIAL-3 merged.** `docs/research/outcome-instrument.md` — a five-item
 open-recall decision-quality instrument (EN + draft HI), 0/2 rubric, T0/
