@@ -281,24 +281,32 @@ _PUBLIC_KB: tuple[Cell, ...] = (
     *_row(
         "sources",
         UPDATE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=EMPTY,
         student_b=EMPTY,
         reviewer=ALLOW,
         why=(
             "0001 sources_write_reviewers is the only UPDATE policy; its USING "
-            "(is_reviewer()) hides the row from everyone else, so their update matches "
-            "zero rows rather than erroring."
+            "(is_reviewer()) hides the row from `authenticated` non-reviewers (student_a, "
+            "student_b), so their update matches zero rows rather than erroring. `guest` is "
+            "DENY_ERROR, not DENY_EMPTY (db/migrations/0016_grants_hardening.sql): `anon` no "
+            "longer holds UPDATE on `sources` at all (only SELECT), so a guest's request "
+            "never reaches RLS — refused at the privilege check first, a STRONGER guarantee "
+            "than the previous 'filtered to zero rows', not a weaker one."
         ),
     ),
     *_row(
         "sources",
         DELETE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=EMPTY,
         student_b=EMPTY,
         reviewer=ALLOW,
-        why="0001 sources_write_reviewers, DELETE side — same USING clause as UPDATE.",
+        why=(
+            "0001 sources_write_reviewers, DELETE side — same USING clause as UPDATE. `guest` "
+            "is DENY_ERROR for the same 0016_grants_hardening.sql reasoning as the UPDATE row "
+            "directly above (`anon` lost DELETE on `sources` too)."
+        ),
     ),
     *_row(
         "careers",
@@ -321,20 +329,28 @@ _PUBLIC_KB: tuple[Cell, ...] = (
     *_row(
         "careers",
         UPDATE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=EMPTY,
         student_b=EMPTY,
         reviewer=ALLOW,
-        why="0001 careers_write_reviewers: `using (is_reviewer())` filters the row away.",
+        why=(
+            "0001 careers_write_reviewers: `using (is_reviewer())` filters the row away for "
+            "`authenticated` non-reviewers. `guest` is DENY_ERROR, not DENY_EMPTY "
+            "(0016_grants_hardening.sql: `anon` lost UPDATE on `careers`) — same reasoning as "
+            "sources' UPDATE row above."
+        ),
     ),
     *_row(
         "careers",
         DELETE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=EMPTY,
         student_b=EMPTY,
         reviewer=ALLOW,
-        why="0001 careers_write_reviewers, DELETE side.",
+        why=(
+            "0001 careers_write_reviewers, DELETE side. `guest` is DENY_ERROR — same "
+            "0016_grants_hardening.sql reasoning as the UPDATE row directly above."
+        ),
     ),
     *_row(
         "pathways",
@@ -357,20 +373,29 @@ _PUBLIC_KB: tuple[Cell, ...] = (
     *_row(
         "pathways",
         UPDATE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=EMPTY,
         student_b=EMPTY,
         reviewer=ALLOW,
-        why="0001 pathways_write_reviewers: `using (is_reviewer())`.",
+        why=(
+            "0001 pathways_write_reviewers: `using (is_reviewer())`. `guest` is DENY_ERROR, "
+            "not DENY_EMPTY (0016_grants_hardening.sql: `anon` lost UPDATE on `pathways`) — "
+            "same reasoning as sources'/careers' UPDATE rows above; live-reproduced by "
+            "tests/db/test_scope_columns.py's own "
+            "`test_a_guest_cannot_write_a_pathway_jurisdiction`."
+        ),
     ),
     *_row(
         "pathways",
         DELETE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=EMPTY,
         student_b=EMPTY,
         reviewer=ALLOW,
-        why="0001 pathways_write_reviewers, DELETE side.",
+        why=(
+            "0001 pathways_write_reviewers, DELETE side. `guest` is DENY_ERROR — same "
+            "0016_grants_hardening.sql reasoning as the UPDATE row directly above."
+        ),
     ),
 )
 
@@ -419,7 +444,7 @@ _CLAIMS: tuple[Cell, ...] = (
     *_row(
         "claims",
         UPDATE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=EMPTY,
         student_b=EMPTY,
         reviewer=ALLOW,
@@ -429,13 +454,17 @@ _CLAIMS: tuple[Cell, ...] = (
             "non-null created_by and a null reviewed_by precisely so the maker-checker WITH "
             "CHECK is satisfiable — with BOTH null, `null is distinct from null` is false and "
             "even a reviewer is denied (that self-approval shape is test_maker_checker.py's "
-            "subject, not this matrix's)."
+            "subject, not this matrix's). `guest` is DENY_ERROR, not DENY_EMPTY "
+            "(0016_grants_hardening.sql: `anon` lost UPDATE on `claims`, keeping SELECT only) "
+            "— live-reproduced by tests/db/test_scope_columns.py's own "
+            "`test_a_guest_cannot_either`. `authenticated` (student_a, student_b) keeps its "
+            "own UPDATE grant, so their write still just matches nothing, no error."
         ),
     ),
     *_row(
         "claims",
         DELETE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=EMPTY,
         student_b=EMPTY,
         reviewer=EMPTY,
@@ -443,7 +472,11 @@ _CLAIMS: tuple[Cell, ...] = (
             "NO delete policy exists on claims in any migration — 0001 adds select/insert/"
             "update, 0003 replaces update, 0007 adds a select. A claim is corrected by "
             "superseding it (0003's docstring), never by deletion, so nobody — reviewer "
-            "included — can delete one through the API."
+            "included — can delete one through the API. `guest` is DENY_ERROR, not "
+            "DENY_EMPTY (0016_grants_hardening.sql: `anon` lost DELETE on `claims` at the "
+            "grant layer, on top of there being no DELETE policy either); `authenticated` "
+            "(student_a, student_b, reviewer) keeps its own DELETE grant, so their attempt "
+            "still just matches nothing, no error."
         ),
     ),
 )
@@ -456,15 +489,19 @@ _REVIEWERS: tuple[Cell, ...] = (
     *_row(
         "reviewers",
         SELECT,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=EMPTY,
         student_b=EMPTY,
         reviewer=EMPTY,
         why=(
             "0001 enables RLS on reviewers and deliberately adds NO policy: 'only the "
             "is_reviewer() security-definer function touches it'. Zero matching policies "
-            "means zero rows — for a reviewer reading another reviewer's row too. The grants "
-            "are still in place, so this is a filtered read, not a privilege error."
+            "means zero rows for `authenticated` — for a reviewer reading another reviewer's "
+            "row too — a filtered read, not a privilege error, since `authenticated`'s own "
+            "grants are untouched. `guest` is DENY_ERROR, not DENY_EMPTY "
+            "(0016_grants_hardening.sql: `revoke all on table ... reviewers from anon` — "
+            "`anon` now holds NOTHING on this table, not even SELECT, so a guest's request "
+            "never reaches RLS at all)."
         ),
     ),
     *_row(
@@ -476,27 +513,39 @@ _REVIEWERS: tuple[Cell, ...] = (
         reviewer=ERROR,
         why=(
             "0001, no policy: an INSERT with no permissive policy fails the RLS check "
-            "outright (42501). Self-promotion to reviewer is impossible through the API — "
-            "only the service role can add a row."
+            "outright (42501) for `authenticated`. Self-promotion to reviewer is impossible "
+            "through the API — only the service role can add a row. `guest` was ALREADY "
+            "DENY_ERROR before 0016 (a WITH CHECK violation is always a 42501, never an empty "
+            "result), so `anon`'s grant revocation (0016_grants_hardening.sql) is a no-op for "
+            "this cell — it now fails at the privilege check instead of the RLS check, same "
+            "observable outcome."
         ),
     ),
     *_row(
         "reviewers",
         UPDATE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=EMPTY,
         student_b=EMPTY,
         reviewer=EMPTY,
-        why="0001, no policy: nothing is visible to update.",
+        why=(
+            "0001, no policy: nothing is visible to update for `authenticated`. `guest` is "
+            "DENY_ERROR, not DENY_EMPTY — same 0016_grants_hardening.sql reasoning as the "
+            "SELECT row above (`anon` holds no grant on this table at all)."
+        ),
     ),
     *_row(
         "reviewers",
         DELETE,
-        guest=EMPTY,
+        guest=ERROR,
         student_a=EMPTY,
         student_b=EMPTY,
         reviewer=EMPTY,
-        why="0001, no policy: nothing is visible to delete (a reviewer cannot demote another).",
+        why=(
+            "0001, no policy: nothing is visible to delete for `authenticated` (a reviewer "
+            "cannot demote another). `guest` is DENY_ERROR — same 0016_grants_hardening.sql "
+            "reasoning as the SELECT/UPDATE rows above."
+        ),
     ),
 )
 
