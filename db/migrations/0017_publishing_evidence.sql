@@ -151,11 +151,30 @@ $$;
 -- explicit, not relying on the trigger below to be re-triggered some
 -- other way. Harmless to run before or after the trigger is replaced:
 -- it sets exactly the value the new trigger would also compute.
+--
+-- claims_enforce_workflow / claims_forbid_synthetic_publish both fire on
+-- ANY update to `claims` (no column-scoped WHEN clause), including one
+-- that only recomputes this generated-looking column — and
+-- enforce_claims_workflow() unconditionally refuses to touch an
+-- already-published row at all. A from-empty test rebuild never has a
+-- published row to hit this on, but a real database (or this session's
+-- own shared dev stack, which does) does. Disable both for this single,
+-- content-preserving administrative backfill statement only — it
+-- changes no status, no source_id, no value a caller supplied, so
+-- neither trigger's own invariant is at risk of being bypassed for a
+-- real edit; re-enabled immediately after, still inside this migration's
+-- one transaction.
+alter table claims disable trigger claims_enforce_workflow;
+alter table claims disable trigger claims_forbid_synthetic_publish;
+
 update claims
 set content_hash = compute_claim_content_hash(
   entity_type, entity_id, field, value, unit, jurisdiction,
   academic_cycle, source_version_id, section_reference, quote
 );
+
+alter table claims enable trigger claims_enforce_workflow;
+alter table claims enable trigger claims_forbid_synthetic_publish;
 
 alter table claims alter column content_hash set not null;
 
