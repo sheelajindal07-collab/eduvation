@@ -5,6 +5,54 @@ never deleted.
 
 ---
 
+## 2026-09-23 — UI-4 and UI-6 backlog fixes merged, deliberately low-risk
+**Decision.** Merged two small, already-diagnosed cosmetic fix rounds,
+chosen specifically to carry no new database, auth, RLS or feature
+surface, and to be file-disjoint from every other lane in flight at the
+time (a 7-lane feature/security wave, a 3-lane content/docs wave, and a
+separate lead session's BCI-026/BCI-027 AI-track work).
+
+**UI-4 polish** (`app/planning/suggest.py`, `_components.html`, `_why.html`,
+`start_results.html`): the "change preferences" link now names which
+preference is actually unknown when there is exactly one (e.g. "Change
+your interest"), falling back to the generic wording otherwise; goal
+labels capitalized to match interest/priority labels so a joined "What
+you told us" line is never mixed-case; the previously-computed-but-unused
+`is_broadened` signal now swaps the section heading to "Pathways
+available" for the no-match case; `start_results.html` reuses the
+canonical `pathway_detail_link()` macro instead of a hand-written anchor.
+ux-qa-reviewer independently re-ran the full `tests/unit` suite (1452
+passed) and flagged one real, non-blocking trade-off: reusing
+`pathway_detail_link()` shrinks and rewords the suggestion list's
+pathway-name display ("See the full record for X" instead of a
+prominent standalone name) — non-misleading, arguably better for
+screen readers, but less scannable; queued as a fast-follow (add a
+separate name heading, matching `explore.html`'s own two-part pattern),
+not a merge blocker.
+
+**UI-6 polish** (`compare.html`): the Funding/Work realities/Alternatives
+"no data yet" notes now use the same dashed-border `trust_badge(not_available)`
+pattern as every other missing field on the same pathway card, instead
+of the generic `empty_state()`/`.alert--neutral` box UI-6 originally
+used. ux-qa-reviewer's own cross-reference against docs/UI.md's state
+table confirmed this was a real doc-conformance gap (the "no record for
+this field at all" case, not the "empty list" case `empty_state()` is
+meant for), not just a look-and-feel mismatch. Implementation note:
+`_components.html`'s own `_not_published()` macro is the exact shared
+pattern, but Jinja refuses to import a name starting with an underscore
+across templates — reproduced its body as a local `_section_not_published()`
+macro in `compare.html` instead of editing the out-of-scope shared file,
+matching the existing page-local-macro convention already used elsewhere
+(`detail.html`'s `_fact`, `explore.html`'s `_region_cards`).
+
+**Verified before merge:** ruff clean, isolated mypy clean, live
+`tests/db` run for the UI-6 fix (10 passed), full `tests/unit` after
+merge (1491 passed, includes the other lead session's BCI-026/027
+additions that landed in the same shared checkout in the interim), CI
+green on `main` post-push (run 35838097441).
+
+---
+
 ## 2026-09-22 — CONSENT-4 merged; review found and closed a live vulnerability on an already-deployed migration
 **Decision.** Merged CONSENT-4 (admission axis + safeguarding schema) to
 `main` as `db/migrations/0012_admission_axis.sql` and

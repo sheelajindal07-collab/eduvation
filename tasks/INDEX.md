@@ -68,7 +68,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] DESIGN-18 - Content component macros; fills `_ask` and `_why` stubs [W2]
 - [ ] I18N-3 - Extract strings from existing templates, split by file; string-lint merges last [W3a]
 - [x] UI-3 - Landing page and stateless quick start [W3a]
-- [x] UI-4 - Suggestion rule and "why am I seeing this" [W3a]
+- [x] UI-4 - Suggestion rule and "why am I seeing this" [W3a] -- fix round (2026-09-23): unknown-preference link text, consistent capitalization, broadened-signal heading, pathway_detail_link reuse; known follow-up not yet carded: reusing pathway_detail_link changed the suggestion list's pathway-name display from a prominent standalone link to smaller text embedded in "See the full record for X" -- non-misleading, but less scannable; add a separate name heading matching explore.html's own two-part pattern
 - [x] SCOPE-6 - Derived coverage and "not verified yet" states [W3b, DONE, merged; fix round: demo-mode security test, 44px touch targets, aria-current, honest copy]
 - [ ] I18N-4 - Language switch with a prod flag [P2]
 
@@ -87,7 +87,7 @@ Memory refresh tasks are under "Cross-cutting" below.
 - [x] UI-5 - Career card and pathway detail page [W3a]
 - [x] RULES-8 - Wire RuleSets into the eligibility API [W3a] -- invented the "rule_key" claim-field convention (no prior one existed; see docs/DECISIONS.md 2026-09-22); non-IN pathway display-only gate still not implemented on the fallback path
 - [x] RULES-9 - Timeline seeding from stage claims (session 1 W3a, session 2 W3b) -- invented the "stage:<order>:*" claim convention (no prior one existed; see docs/DECISIONS.md 2026-09-22)
-- [x] UI-6 - Cost-assumption editing on Compare [W3b, DONE, merged; fix round: implausible-value plausibility ceiling]
+- [x] UI-6 - Cost-assumption editing on Compare [W3b, DONE, merged; fix round: implausible-value plausibility ceiling; second fix round (2026-09-23): Funding/Work realities/Alternatives normalised to the dashed-border not_available badge, matching every other missing field on the same card]
 - [x] SCOPE-4 - Currency-safe cost display [W3b] -- its disclosed follow-up (itemised fee_component:* claims with no legacy verified_charges claim showed "Not available" on the display line while the total used the components) is now closed: merged b75f939 (2026-09-22)
 - [x] UI-7 - Timeline stage kinds and "Revise this scenario" [W3b] -- pathway_id/pathway_name are display-only context, not yet wired from any linking screen
 - [x] RULES-16 - Requirements screen: DOB input, cycle label, "not checked here" list [W3b]

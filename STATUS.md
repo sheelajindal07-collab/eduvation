@@ -1659,6 +1659,34 @@ locally by the tracked numpy-stub environment issue (unrelated to these
 changes, see `docs/TESTING.md`) — CI's clean, lockfile-only run is the
 authoritative full-project check.
 
+## UI-4 and UI-6 backlog fixes merged (2026-09-23) — deliberately low-risk, no new surface
+Two small fix rounds, chosen specifically to touch no database, auth,
+RLS or feature surface and to be file-disjoint from every other lane in
+flight (a 7-lane feature/security wave, a 3-lane content/docs wave, and
+a separate lead session's own AI-track work).
+
+**UI-4**: the "change preferences" link now names the one actually-unknown
+preference when there's exactly one (e.g. "Change your interest");
+goal-label capitalization now matches interest/priority labels; the
+previously-unused `is_broadened` signal now swaps the section heading to
+"Pathways available" for the no-match case; the suggestion list reuses
+the canonical `pathway_detail_link()` macro instead of a hand-written
+anchor. **One real, flagged trade-off, not a merge blocker**: that macro
+reuse shrinks and rewords the pathway-name display ("See the full record
+for X" instead of a prominent standalone name) — non-misleading,
+arguably better for screen readers, but less scannable across the up-to-
+three suggestions. Queued as a fast-follow (a separate name heading,
+matching `explore.html`'s own two-part pattern).
+
+**UI-6**: Funding/Work realities/Alternatives now use the same
+dashed-border "not available" badge every other missing field on the
+Compare card already uses, instead of a generic info-box — a real
+docs/UI.md conformance gap (the reviewer's own cross-reference against
+the state-pattern table confirmed this), not just a look mismatch.
+
+Verified: ruff/mypy clean, live `tests/db` run for UI-6 (10 passed),
+full `tests/unit` after merge (1491 passed), CI green (run 35838097441).
+
 ## Concurrent sessions — multiple sessions worked this repo today
 This session shared the repo with at least one other active Claude
 session for a significant stretch (same machine, same working
