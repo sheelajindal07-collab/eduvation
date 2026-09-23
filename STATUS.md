@@ -176,10 +176,10 @@ no such convention existed before this task, and it isn't a contract
 decision, just what the code needed to exist. Whoever builds
 content-authoring around named rule sets next should either adopt it
 or deliberately change it; see `docs/DECISIONS.md`'s 2026-09-22 "RULES-8"
-entry for the exact shape. Also disclosed, not fixed: a non-`IN`
-(foreign) pathway's claims still reach the eligibility engine on the
-fallback path, contrary to `docs/CONTRACTS.md` — no live impact today
-(no foreign-pathway content exists yet), flagged for a follow-up.
+entry for the exact shape. Also disclosed at the time, not fixed then: a
+non-`IN` (foreign) pathway's claims still reached the eligibility engine
+on the fallback path, contrary to `docs/CONTRACTS.md` — **now closed,
+see the follow-up entry below.**
 
 **`RULES-9` merged** — `GET /timeline/view?pathway_id=X` now does a real
 database-backed prefill (the pathway's name + published stages), not
@@ -213,6 +213,31 @@ unblocks **`RULES-9`** (timeline seeding from published stage claims —
 its other two dependencies, `RULES-1` and `UI-2`, were already done).
 `tests/unit`: 981 passed. `tests/db`: 574 passed, 8 xfailed, 0 skipped,
 0 failed.
+
+**RULES-8's disclosed non-`IN` fallback gap, closed.**
+`_resolve_and_evaluate`'s generic claims-based fallback (used whenever a
+pathway has no published `rule_key` claim) now checks the pathway's OWN
+`jurisdiction` column (`app.data.models.Pathway.jurisdiction`, migration
+`0008`) before reading any of its claims: a non-`IN` pathway never has
+`_criteria_from_claims` called at all on this path, and instead reports
+`insufficient_information` + `no_verified_rules` with a dedicated
+`not_checked` entry naming why (`NON_IN_PATHWAY_NOTE`) —
+docs/CONTRACTS.md "Entity vocabulary": a non-`IN` pathway's fields are
+display-only, "never fed to the eligibility engine or into a total." The
+named-rule-set path is untouched — it already exact-matches its own
+jurisdiction via the `rule_key` claim's own `jurisdiction` column, which
+is what already stopped a foreign pathway being silently answered by an
+India-only rule set there. New live test
+(`TestNonINPathwayIsNeverEvaluatedOnTheFallbackPath`, 2 tests): a
+`minimum_age=17` claim on a `"GB"` pathway that would otherwise `meet`
+for an 18-year-old and `does_not_meet` for a 10-year-old now reports
+`insufficient_information` either way — revert-to-prove verified (both
+new tests fail with the gate disabled, pass with it restored).
+`tests/unit`: 1020 passed (unchanged — no unit test exercises this
+DB-backed path). `tests/db`: 579 passed, 8 xfailed, 0 failed -> 581
+passed, 8 xfailed, 0 failed (both counts run live this session against
+the local Supabase stack). `ruff check app tests` and `mypy app
+--follow-imports=skip` both clean.
 
 ## What works right now — live routes, all verified
 - `GET /careers` — published careers/pathways.

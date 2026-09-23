@@ -5,6 +5,47 @@ never deleted.
 
 ---
 
+## 2026-09-22 — RULES-8 follow-up: non-`IN` pathways gated out of the generic eligibility fallback
+**Event:** RULES-8's own entry below (and `STATUS.md`) disclosed, not fixed,
+that `app/api/eligibility.py`'s generic claims-based fallback path
+(`_criteria_from_claims`, used whenever a pathway has no published
+`rule_key` claim) read a pathway's `minimum_age`/`maximum_age`/
+`minimum_marks_percentage`/`required_subjects`/`domicile_states` claims
+regardless of the pathway's own `jurisdiction` — contrary to
+docs/CONTRACTS.md "Entity vocabulary": "Fields on a non-`IN` pathway are
+display-only ... never fed to the eligibility engine or into a total."
+**Fix:** `check_eligibility` now fetches the pathway's own `jurisdiction`
+column (`app.data.models.Pathway.jurisdiction`, migration `0008`) and
+`_resolve_and_evaluate` gates the fallback branch on it: a non-`IN`
+pathway never has `_criteria_from_claims` called at all — not
+called-then-discarded — and instead goes through the same
+`evaluate_ruleset` every other "nothing to evaluate" case already uses,
+with zero criteria and a dedicated `NotChecked` entry
+(`NON_IN_PATHWAY_NOTE`) naming why, giving `insufficient_information` +
+`no_verified_rules`. **Deliberately scoped to the fallback path only**:
+the named-rule-set path (a published `rule_key` claim) is untouched,
+because it already exact-matches its own jurisdiction via that claim's
+own `jurisdiction` column (`app.rules.ruleset.get_rule_set`'s exact
+`(exam_key, cycle, jurisdiction)` match) — the mechanism that already
+stops a foreign pathway being silently answered by an India-only rule
+set on that path. No pathway jurisdiction has ever been fetched by this
+route before this change; a missing/pre-migration pathway row degrades
+to the existing `DEFAULT_JURISDICTION` ("IN") fallback, same convention
+`app/planning/comparison.py` and `app/api/explore.py` already use for
+this column.
+**Verified live, this session:** `tests/db/test_api_eligibility.py`
+gained `TestNonINPathwayIsNeverEvaluatedOnTheFallbackPath` (2 tests) — a
+published `minimum_age=17` claim on a `"GB"` pathway that would
+otherwise `meet` for an 18-year-old and `does_not_meet` for a
+10-year-old now reports `insufficient_information` either way.
+Revert-to-prove: both new tests fail with the gate disabled, pass with
+it restored. `tests/unit`: 1020 passed, unchanged (no unit test reaches
+this DB-backed code path). `tests/db`: 579 passed / 8 xfailed / 0 failed
+before this change -> 581 passed / 8 xfailed / 0 failed after (both runs
+live against the local Supabase stack, not assumed from a prior
+session's number). `ruff check app tests` and `mypy app
+--follow-imports=skip` both clean.
+
 ## 2026-09-22 — RULES-9: a second invented claim convention (timeline stages), plus real database-backed prefill
 **Event:** `app/planning/timeline_assembly.py`'s `stages_from_claims()` reads a
 pathway's published timeline stages from claims for the first time. As with

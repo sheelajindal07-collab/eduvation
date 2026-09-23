@@ -512,6 +512,126 @@ class TestDraftClaimsNeverAffectEligibilityOutcome:
         assert body["criteria"][0]["name"] == "minimum_age"
 
 
+@pytest.fixture
+def non_in_pathway_with_generic_claims(
+    admin_client: Client,
+) -> Iterator[dict[str, Any]]:
+    """A pathway whose own `jurisdiction` column (SCOPE-3,
+    db/migrations/0008_jurisdiction_currency.sql) is `"GB"`, carrying a
+    published `minimum_age=17` claim and NO `rule_key` claim -- i.e. it
+    would hit the generic claims-based fallback path if that path ever
+    read its claims. docs/CONTRACTS.md "Entity vocabulary": a non-`IN`
+    pathway's fields are display-only and must never be fed to the
+    eligibility engine."""
+    official_source = (
+        admin_client.table("sources")
+        .insert(
+            {
+                "authority_name": run_name("API TEST NON-IN SOURCE (fixture)"),
+                "official_url": "https://example.invalid/non-in-source",
+                "source_type": "official",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    career = (
+        admin_client.table("careers")
+        .insert({"name": run_name("Non-IN test career (SYNTHETIC)")})
+        .execute()
+        .data[0]
+    )
+    pathway = (
+        admin_client.table("pathways")
+        .insert(
+            {
+                "career_id": career["id"],
+                "name": run_name("Non-IN test pathway (SYNTHETIC)"),
+                "description": "Seeded by tests/db/test_api_eligibility.py",
+                "jurisdiction": "GB",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    claim = (
+        admin_client.table("claims")
+        .insert(
+            {
+                "entity_type": "Pathway",
+                "entity_id": pathway["id"],
+                "field": "minimum_age",
+                "value": "17",
+                "source_id": official_source["id"],
+                "verification_date": "2026-09-01",
+                "verifier": run_name("test-fixture-reviewer"),
+                "status": "published",
+                "review_due_date": "2099-01-01",
+            }
+        )
+        .execute()
+        .data[0]
+    )
+
+    yield {"career": career, "pathway": pathway, "source": official_source, "claims": [claim]}
+
+    admin_client.table("claims").delete().eq("id", claim["id"]).execute()
+    admin_client.table("pathways").delete().eq("id", pathway["id"]).execute()
+    admin_client.table("careers").delete().eq("id", career["id"]).execute()
+    admin_client.table("sources").delete().eq("id", official_source["id"]).execute()
+
+
+class TestNonINPathwayIsNeverEvaluatedOnTheFallbackPath:
+    """docs/CONTRACTS.md "Entity vocabulary": "Fields on a non-`IN`
+    pathway are display-only ... never fed to the eligibility engine or
+    into a total." Disclosed as a known, unfixed gap in `STATUS.md`'s
+    RULES-8 entry -- this is that follow-up, proven against the real
+    database rather than by inspection.
+
+    The fixture's published `minimum_age=17` claim would, on the ordinary
+    fallback path, `meet` for an 18-year-old and `does_not_meet` for a
+    10-year-old -- both checked here, so this isn't just "no criteria
+    fired," it's "no criteria fired regardless of which real answer the
+    claim data would otherwise have produced."
+    """
+
+    def test_a_student_who_would_have_met_the_claim_gets_insufficient_information(
+        self, non_in_pathway_with_generic_claims: dict[str, Any]
+    ) -> None:
+        response = client.post(
+            "/eligibility",
+            json={"pathway_id": non_in_pathway_with_generic_claims["pathway"]["id"], "age": 18},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["outcome"] == "insufficient_information"
+        assert body["no_verified_rules"] is True
+        assert body["criteria"] == []
+        assert [n["name"] for n in body["not_checked"]] == ["jurisdiction"]
+        # Not a named rule set either -- nothing invented in their place.
+        assert body["rule_version"] is None
+        assert body["cycle"] is None
+        assert body["jurisdiction"] is None
+
+    def test_a_student_who_would_have_failed_the_claim_also_gets_insufficient_information(
+        self, non_in_pathway_with_generic_claims: dict[str, Any]
+    ) -> None:
+        """The other direction: a definite `does_not_meet` under the
+        ordinary fallback (age 10 fails `minimum_age=17`) must be gated
+        exactly the same as a would-be `meets` above -- this pathway's
+        claims are never evaluated for ANY outcome, not merely
+        never evaluated for a passing one."""
+        response = client.post(
+            "/eligibility",
+            json={"pathway_id": non_in_pathway_with_generic_claims["pathway"]["id"], "age": 10},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["outcome"] == "insufficient_information"
+        assert body["no_verified_rules"] is True
+        assert body["criteria"] == []
+
+
 # ---------------------------------------------------------------------
 # RULES-8: the named-RuleSet path.
 # ---------------------------------------------------------------------

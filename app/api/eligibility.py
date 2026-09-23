@@ -37,6 +37,21 @@ Two ways a pathway's criteria can be decided, in this order:
 
    Any of these that isn't published simply contributes no criterion.
 
+   **Gated on the pathway's own jurisdiction.** docs/CONTRACTS.md "Entity
+   vocabulary": "Fields on a non-`IN` pathway are display-only ... never
+   fed to the eligibility engine or into a total." A pathway whose own
+   `jurisdiction` (`app.data.models.Pathway.jurisdiction`,
+   db/migrations/0008) is not `"IN"` never has this fallback read its
+   claims at all — not read-then-discarded, never called — and instead
+   reports `insufficient_information` + `no_verified_rules`, with a
+   dedicated `NotChecked` entry (`NON_IN_PATHWAY_NOTE`) naming why. This
+   does NOT apply to path 1 above: a named rule set already carries and
+   exact-matches its own jurisdiction via the `rule_key` claim's own
+   `jurisdiction` column, which is what already keeps a foreign pathway
+   from being silently answered by an India-only rule set on that path.
+   Disclosed as a known gap in `STATUS.md`'s RULES-8 entry; this is that
+   follow-up.
+
 **Zero criteria is never `meets`.** Both paths run through
 `app.rules.ruleset.evaluate_ruleset`, so a pathway with nothing published
 returns `insufficient_information` + `no_verified_rules` — docs/CONTRACTS.md
@@ -83,7 +98,7 @@ from supabase import Client
 
 from app.api.deps import get_db_client
 from app.core.config import get_settings
-from app.data.models import Claim, ClaimStatus, Source, SourceType, TrustLabel
+from app.data.models import DEFAULT_JURISDICTION, Claim, ClaimStatus, Source, SourceType, TrustLabel
 from app.planning.comparison import safe_source_url, trust_label_for_claim
 from app.rules.criteria_extra import NotChecked
 from app.rules.eligibility import (
@@ -184,6 +199,21 @@ UNREADABLE_RULE_KEY_NOTE = (
     "rules were applied — confirm the requirements against the official "
     "notification."
 )
+
+NON_IN_PATHWAY_NOTE = (
+    "This pathway is outside India, so its published fields are shown for "
+    "information only and were not checked against any eligibility rule — "
+    "confirm requirements with the official notification."
+)
+"""docs/CONTRACTS.md "Entity vocabulary": "Fields on a non-`IN` pathway are
+display-only: shown with source and currency, never fed to the eligibility
+engine or into a total." `_resolve_and_evaluate` reads this note onto a
+dedicated `NotChecked` entry — never a criterion, and never a silent empty
+list — when a pathway's own `jurisdiction` (`app.data.models.Pathway.
+jurisdiction`, `db/migrations/0008_jurisdiction_currency.sql`) is not `"IN"`
+and it has no published `rule_key` claim to name a registered rule set
+instead. Disclosed as a known gap in `STATUS.md`'s RULES-8 entry — this is
+that follow-up."""
 
 
 @lru_cache(maxsize=1)
@@ -595,8 +625,19 @@ def _resolve_and_evaluate(
     sources_by_id: dict[str, Source],
     *,
     as_of: date,
+    pathway_jurisdiction: str,
 ) -> tuple[RuleSetResult, bool, tuple[NotChecked, ...]]:
     """Pick the rule source for this pathway and run it.
+
+    `pathway_jurisdiction` gates the fallback branch only (see
+    `NON_IN_PATHWAY_NOTE`): a named `rule_key` claim is still resolved and
+    evaluated regardless of the pathway's own jurisdiction, because that
+    path already carries — and exact-matches on — its OWN jurisdiction via
+    the claim's `jurisdiction` column (SCOPE-3, docs/CONTRACTS.md "Entity
+    vocabulary"), which is the mechanism that keeps a foreign pathway from
+    ever being silently answered with an India-only rule set. It is only
+    the generic claims-based fallback below — which has no jurisdiction
+    concept of its own at all — that needs this new, separate gate.
 
     Returns `(result, named, extra_not_checked)` — `named` is True when a
     published `rule_key` claim drove the lookup, which is what decides
@@ -670,6 +711,33 @@ def _resolve_and_evaluate(
         )
         return result, True, extra
 
+    if pathway_jurisdiction != DEFAULT_JURISDICTION:
+        # docs/CONTRACTS.md "Entity vocabulary": a non-`IN` pathway's
+        # fields are display-only and must never be fed to the
+        # eligibility engine. `_criteria_from_claims` is never even
+        # called here -- not called-then-discarded -- so a malformed
+        # claim on a foreign pathway can't reach `logger.warning` either;
+        # there is nothing to degrade because nothing was ever read for
+        # evaluation. Zero criteria through the same `evaluate_ruleset`
+        # every other "nothing to evaluate" case already goes through
+        # gives the same honest `no_verified_rules` +
+        # `insufficient_information`, with the reason visible via
+        # `NON_IN_PATHWAY_NOTE` rather than inferred from an empty list.
+        not_checked: tuple[NotChecked, ...] = (
+            NotChecked(name="jurisdiction", note=NON_IN_PATHWAY_NOTE),
+        )
+        ad_hoc = RuleSet(
+            exam_key=PATHWAY_CLAIMS_EXAM_KEY,
+            cycle="",
+            cycle_end=date.max,
+            jurisdiction="",
+            rule_version="",
+            criteria=(),
+            not_checked=not_checked,
+        )
+        result = evaluate_ruleset(ad_hoc, student, as_of=as_of, evidence_stale=False)
+        return result, False, ()
+
     criteria, malformed = _criteria_from_claims(claim_rows)
     ad_hoc = RuleSet(
         exam_key=PATHWAY_CLAIMS_EXAM_KEY,
@@ -736,6 +804,25 @@ def check_eligibility(
     )
     claim_rows = cast("list[dict[str, Any]]", claims_result.data)
 
+    # SCOPE-3 (`app.data.models.Pathway.jurisdiction`,
+    # db/migrations/0008_jurisdiction_currency.sql): the PATHWAY's own
+    # jurisdiction, not a claim's -- fetched once here so
+    # `_resolve_and_evaluate` can gate the generic-claims fallback on it
+    # (see `NON_IN_PATHWAY_NOTE`). `.get("jurisdiction") or
+    # DEFAULT_JURISDICTION`, same fallback `app/planning/comparison.py`
+    # and `app/api/explore.py` already use for this exact column, covers
+    # both a pathway row PostgREST didn't return at all (bad id -- the
+    # rest of this function already tolerates that; claim_rows is simply
+    # empty too) and the pre-migration-0008 deploy window where the
+    # column doesn't exist yet.
+    pathway_result = db.table("pathways").select("jurisdiction").eq("id", pathway_id).execute()
+    pathway_rows = cast("list[dict[str, Any]]", pathway_result.data)
+    pathway_jurisdiction = (
+        (pathway_rows[0].get("jurisdiction") or DEFAULT_JURISDICTION)
+        if pathway_rows
+        else DEFAULT_JURISDICTION
+    )
+
     # Resolved for display only -- same defense-in-depth as
     # _criteria_from_claims: only a PUBLISHED claim's source is ever
     # exposed. A draft criterion never contributes a Criterion in the
@@ -772,6 +859,7 @@ def check_eligibility(
         published_claims_by_id,
         sources_by_id,
         as_of=as_of,
+        pathway_jurisdiction=pathway_jurisdiction,
     )
 
     criteria_out = []
