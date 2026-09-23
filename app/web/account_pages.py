@@ -96,24 +96,129 @@ degrades to a friendly message rather than a raw 422 — the exact
 "explain, don't just error" convention `app/web/compare_pages.py`'s
 `_safe_estimated_additional_expenses` already uses) is handled the same
 way.
+
+## AUTH-9 — GET /account, GET /account/export
+
+Adds two routes to this SAME router (the task's own instruction: this is
+not a new module) — a minimal signed-in-only account page, and a JSON
+download of everything this app has saved for the caller's own account.
+
+**Dependency choice**: `get_student_session` (yields `AuthedSession |
+None`), not `app.api.deps.require_auth` (401 JSON) — a guest or a
+signed-out browser hitting either of these must get an ordinary 303
+redirect to `/sign-in`, the same shape `tests/db/test_account_pages.py`'s
+own probe already proves for a protected page built on this dependency
+(no other protected page existed until now — AUTH-6/AUTH-14 are still
+open per `tasks/INDEX.md`).
+
+**Only the caller's own RLS-scoped client, never service-role**: both
+routes read exclusively through `session.client` (the connection
+`get_student_session` builds from the caller's own cookie token) — the
+same "RLS is the actual enforcement, not application code" convention
+`app/api/plans.py`/`app/api/account.py` already state in their own
+docstrings. This function adds no ownership filter of its own; two
+students' exports are isolated because their own-row policies are
+(`student_profiles_select_own`, `saved_plans_select_own`,
+`plan_actions_own_row`, `consents_select_own`), not because this code
+remembered to add a `WHERE`.
+
+**What's actually in the payload, checked against the CURRENT migration
+ledger (`db/migrations/0001`-`0017`), not assumed**: `student_profiles`
+(0001), `saved_plans` (0002) with each plan's own `plan_actions` (0010),
+and `consents` (0013) all exist and are included. `plan_versions` —
+named in this task's own acceptance criteria — does **not** exist
+anywhere in this schema; rather than invent an empty `"plan_versions": []`
+key for a table that was never built, it is omitted from the payload
+entirely. Each of the three real tables still degrades to the string
+`"not available"` (CLAUDE.md: a missing section says "Not available",
+never dropped silently) rather than crashing, for an environment that
+somehow hasn't applied the relevant migration yet (`_select_own_rows`'s
+own `42P01` check).
+
+**Reviewers**: this route does not special-case `is_reviewer()` at all,
+and by design. The ordinary case — a reviewer who only ever holds
+`bcion_reviewer_session` (`app/web/reviewer/auth.py`'s own, separate
+cookie) — is refused implicitly: `get_student_session` never reads that
+cookie name, so that request is indistinguishable from a guest's and
+gets the same redirect, no data. The unusual case — the same identity
+ALSO signs in normally and holds a real `bcion_student_session` — reaches
+the exact same RLS-scoped query as any other student; their own row's
+`auth.uid()` is what every table's own-row policy scopes to, the same
+guarantee any two ordinary students already get from each other. Chosen
+over an explicit `is_reviewer()` refusal because the existing session
+mechanism already makes the common path structurally safe, and the
+uncommon path is no less safe than the student-vs-student case this
+codebase already tests everywhere else — live-proven in
+`tests/db/test_account_export.py`, not just asserted here.
+
+**Never logged**: `app/core/logging.py`'s `RequestIdLoggingMiddleware` —
+the only per-request log line this app emits — is read directly before
+writing this route, not assumed: it logs only method, route template,
+status code and latency, and its own docstring states it "never" reads a
+request or response body. Neither route here adds any logging of its
+own, so the export payload is never written to a log line by
+construction, not by a filter that could miss something.
+
+**`no-store` on both** (docs/PRODUCT.md shared-device hygiene) —
+`account_page` wraps its `TemplateResponse` the same way every other GET
+page in this module does; `export_account_data` wraps its `JSONResponse`
+the same way.
+
+**Access-matrix disclosure, not silently worked around**:
+`tests/db/access_matrix.py`'s own `UNBUILT_OPERATIONS`/`Operation.EXPORT`
+placeholder, and `tests/db/test_access_matrix.py`'s
+`test_unbuilt_capability_placeholder` (`xfail(strict=True)`,
+parametrized over `UNBUILT_CELLS`), exist specifically to go red the
+moment an export route is built, via `_export_surfaces` scanning
+`app.main.app.routes` for any route path containing `"export"`. Checked
+LIVE, not assumed, after adding `GET /account/export`: with the FastAPI
+version this repo currently pins (`fastapi==0.141.1`), `app.routes`
+holds one `fastapi.routing._IncludedRouter` wrapper per
+`app.include_router(...)` call, and that wrapper object carries no
+`.path` attribute at all (the real routes live one level down, on its
+own `.original_router.routes`) — so `_export_surfaces`'s bare
+`getattr(route, "path", "")` scan cannot see ANY nested route, this new
+one included, and the four `EXPORT` cells stayed `XFAIL` (verified by
+actually running `test_unbuilt_capability_placeholder` against this
+branch, not inferred). This is a pre-existing gap in that test helper's
+own route-walking, unrelated to this task and not something a route
+addition could trigger differently — it would just as invisibly miss
+any OTHER export-like route added anywhere in this app today. Neither
+`tests/db/access_matrix.py` nor `tests/db/test_access_matrix.py` is in
+this task's own `Touches` list, so neither is edited here — flagged in
+this session's own report instead, for whoever owns that file: the
+`EXPORT` placeholder now needs BOTH a real per-role cell replacement
+(the same way `db/migrations/0017_publishing_evidence.sql` replaced the
+matching `STORAGE` placeholder) AND a fix to `_export_surfaces` itself
+(e.g. walking `route.original_router.routes` when present) before the
+placeholder's own "goes red the day export exists" promise is true again.
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from datetime import date as date_type
-from typing import Any
+from typing import Any, cast
 
-from fastapi import APIRouter, Form, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
+from fastapi.responses import JSONResponse, RedirectResponse
+from postgrest.exceptions import APIError
 from pydantic import ValidationError
+from supabase import Client
 
 from app.api.auth import SignUpRequest, authenticate, sign_up
+from app.api.deps import AuthedSession
 from app.core.config import get_settings
 from app.db import get_anon_client
 from app.web.guest_session import clear_session_cookie as _clear_guest_session_cookie
 from app.web.session import COOKIE_NAME as _STUDENT_COOKIE_NAME
 from app.web.session import COOKIE_PATH as _STUDENT_COOKIE_PATH
-from app.web.session import no_store, set_student_session_cookie
+from app.web.session import (
+    get_student_session,
+    no_store,
+    session_ended_redirect,
+    set_student_session_cookie,
+)
 from app.web.templating import templates
 
 router = APIRouter(include_in_schema=False)  # HTML pages, not the JSON API surface
@@ -361,4 +466,117 @@ def sign_out_submit() -> Any:
     response = RedirectResponse(url="/", status_code=303)
     response.delete_cookie(key=_STUDENT_COOKIE_NAME, path=_STUDENT_COOKIE_PATH)
     _clear_guest_session_cookie(response)
+    return no_store(response)
+
+
+# --------------------------------------------------------------------
+# AUTH-9 -- GET /account, GET /account/export
+# --------------------------------------------------------------------
+
+# Postgres: "undefined_table" -- raised when a table named below doesn't
+# exist in the current schema at all. See this module's own docstring,
+# "AUTH-9", for why this degrades to "not available" instead of a 500.
+_UNDEFINED_TABLE = "42P01"
+
+
+def _select_own_rows(
+    client: Client, table: str, *, columns: str = "*"
+) -> list[dict[str, Any]] | None:
+    """The caller's OWN rows from `table` -- RLS on `client` (the caller's
+    own token, from `get_student_session`) is what scopes this, not a
+    filter added here (this module's own docstring, "AUTH-9"). `None`
+    means `table` itself does not exist in the current schema; an empty
+    list means the table exists and the caller simply has no rows in it
+    -- two different facts this module's own caller keeps distinct
+    rather than collapsing into one "nothing here" shape.
+    """
+    try:
+        result = client.table(table).select(columns).execute()
+    except APIError as exc:
+        if exc.code == _UNDEFINED_TABLE:
+            return None
+        raise
+    return cast("list[dict[str, Any]]", result.data)
+
+
+def _select_own_plan_actions(client: Client, plan_id: str) -> list[dict[str, Any]] | None:
+    """Same contract as `_select_own_rows`, for the one table that needs
+    a `WHERE plan_id = ...` on top of RLS -- `plan_actions` has no
+    `student_id` of its own (ownership is via the parent plan;
+    `db/migrations/0010_plan_actions.sql`'s own comment), so every plan's
+    actions must be fetched by that plan's id, mirroring
+    `app.api.plans.list_plan_actions`'s own query exactly."""
+    try:
+        result = (
+            client.table("plan_actions")
+            .select("action_key, done, done_at")
+            .eq("plan_id", plan_id)
+            .execute()
+        )
+    except APIError as exc:
+        if exc.code == _UNDEFINED_TABLE:
+            return None
+        raise
+    return cast("list[dict[str, Any]]", result.data)
+
+
+def _export_payload(client: Client) -> dict[str, Any]:
+    """Assemble the signed-in caller's own export. See this module's own
+    docstring, "AUTH-9", for the full reasoning behind what is and isn't
+    included here."""
+    profile_rows = _select_own_rows(client, "student_profiles")
+    plans = _select_own_rows(client, "saved_plans")
+    if plans is not None:
+        for plan in plans:
+            actions = _select_own_plan_actions(client, cast(str, plan["id"]))
+            plan["actions"] = actions if actions is not None else "not available"
+    consents = _select_own_rows(client, "consents")
+
+    return {
+        "exported_at": datetime.now(UTC).isoformat(),
+        "profile": (
+            (profile_rows[0] if profile_rows else None)
+            if profile_rows is not None
+            else "not available"
+        ),
+        "plans": plans if plans is not None else "not available",
+        "consents": consents if consents is not None else "not available",
+    }
+
+
+@router.get("/account")
+def account_page(
+    request: Request, session: AuthedSession | None = Depends(get_student_session)
+) -> Any:
+    """A minimal signed-in-only page with one action: download your data.
+    See this module's own docstring, "AUTH-9", for the dependency choice
+    and why this is also the first route to pass `session_state="account"`
+    into `base.html`."""
+    if session is None:
+        return session_ended_redirect("/sign-in")
+    return no_store(
+        templates.TemplateResponse(
+            request,
+            "account.html",
+            {"session_state": "account"},
+        )
+    )
+
+
+@router.get("/account/export")
+def export_account_data(
+    session: AuthedSession | None = Depends(get_student_session),
+) -> Any:
+    """A JSON download of the signed-in student's own data. See this
+    module's own docstring, "AUTH-9", for the full design reasoning --
+    the dependency choice, why only `session.client` is ever used, what
+    is and isn't in the payload, the reviewer design decision, and why
+    the payload is never logged."""
+    if session is None:
+        return session_ended_redirect("/sign-in")
+    payload = _export_payload(session.client)
+    response = JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": 'attachment; filename="bcion-my-data.json"'},
+    )
     return no_store(response)

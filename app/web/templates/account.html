@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{# AUTH-9 -- GET /account, zero-JS. Signed-in only (app/web/account_pages.py's
+   `account_page`, built on `get_student_session`) -- a guest or a
+   signed-out browser never reaches this template at all, it is
+   redirected to /sign-in before rendering. The one action this page
+   offers is a plain link to GET /account/export, a JSON download of
+   everything this app has saved for the caller's own account (see that
+   route's own docstring for exactly what is and isn't included). #}
+
+{% block title %}Your account &mdash; BCION Lite{% endblock %}
+
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-2">Your account</h1>
+  <p class="text-neutral mb-6">
+    Download a copy of everything BCION Lite has saved for your account:
+    your profile (if you have one), your saved plans and their
+    next-action checklists, and your consent history (if any).
+  </p>
+
+  {# A plain GET link, not a form -- this download has no side effects,
+     so no POST/CSRF machinery is needed, matching the zero-JS,
+     no-hidden-mechanism convention every other page in this router
+     already follows. #}
+  <a href="/account/export" class="btn-primary">Download my data (JSON)</a>
+{% endblock %}
