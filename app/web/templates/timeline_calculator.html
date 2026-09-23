@@ -33,6 +33,18 @@
       &mdash; add its stages below, in weeks, to see the total time. Adjust anything and
       recalculate as often as you like.
     </p>
+
+    {# AUTH-6: a small, self-contained "Save this route" form -- additive
+       only, outside the calculator form below so the two never nest.
+       pathway_id here may be display-only context UI-7 never validated
+       as a real UUID (e.g. a stale/hand-typed link) -- app/web/
+       plan_pages.py's own POST handler degrades a malformed id to an
+       honest "didn't save" message rather than trusting it, so no extra
+       guard is needed in this template. #}
+    <form method="post" action="/my-plan/save" class="mb-6">
+      <input type="hidden" name="pathway_id" value="{{ pathway_id }}" />
+      <button type="submit" class="btn-secondary">Save this route</button>
+    </form>
   {% else %}
     <p class="text-neutral mb-6">
       A standalone what-if calculator &mdash; not tied to any one pathway. Add the stages of your

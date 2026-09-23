@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "_states.html" import alert, empty_state, save_failed %}
+{% from "_trust_badge.html" import evidence_line %}
+{% block title %}My Plan &mdash; BCION Lite{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-semibold text-charcoal mb-6">My Plan</h1>
+
+  {% if error %}
+    {% call alert(error, variant="caution", class_names="mb-6") %}
+      <a href="/explore" class="underline">Back to explore</a>.
+    {% endcall %}
+  {% else %}
+    {# "Never say Saved unless it saved" (docs/UI.md difficult state
+       "Save failed"; app/web/plan_pages.py's own docstring). This banner
+       and the plan lists below always render together in the SAME
+       response -- the student's existing plans are the "draft" that
+       stays visible; nothing here ever also says "Saved". #}
+    {% if save_error %}
+      {{ save_failed(class_names="mb-6") }}
+    {% endif %}
+    {% if notice_message %}
+      {{ alert(notice_message, variant="caution", class_names="mb-6") }}
+    {% endif %}
+
+    {# "Current decision" -- only ever a real account's saved_plans.is_current
+       row (see app/web/plan_pages.py's own docstring, "Which plan is
+       'current'"). A guest never has one: nobody's decision is invented
+       for them, the same philosophy tests/db/test_plan_actions.py already
+       pins for accounts, extended here rather than guessed at differently
+       per session kind. #}
+    <section class="card mb-6">
+      <h2 class="text-lg font-semibold text-charcoal mb-3">Current decision</h2>
+      {% if current %}
+        <p class="text-charcoal font-medium mb-4">
+          {{ pathway_names.get(current.pathway_id, "This pathway") }}
+        </p>
+
+        <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-2">
+          Next actions
+        </h3>
+        {% if next_actions and next_actions.actions %}
+          <ul class="list-disc list-inside text-sm text-charcoal space-y-3 mb-4">
+            {% for a in next_actions.actions %}
+              <li>
+                {{ action_labels.get(a.action_key, a.action_key) }}
+                {{ evidence_line(a.source_authority, a.source_url, a.verification_date) }}
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          {{ empty_state(
+               "Not verified yet -- nothing published lets us suggest next actions for "
+               "this pathway.",
+               class_names="mb-4"
+          ) }}
+        {% endif %}
+
+        <form method="post" action="/my-plan/remove">
+          <input type="hidden" name="plan_id" value="{{ current.id }}" />
+          <button type="submit" class="btn-secondary">Remove</button>
+        </form>
+      {% else %}
+        {{ empty_state("No current decision saved yet.") }}
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2 class="text-lg font-semibold text-charcoal mb-3">Saved alternatives</h2>
+      {% if alternatives %}
+        <ul class="space-y-4">
+          {% for plan in alternatives %}
+            <li class="flex items-center justify-between gap-3 flex-wrap {{ 'border-t border-charcoal/10 pt-4' if not loop.first else '' }}">
+              <span class="text-charcoal">{{ pathway_names.get(plan.pathway_id, "This pathway") }}</span>
+              <form method="post" action="/my-plan/remove">
+                <input type="hidden" name="plan_id" value="{{ plan.id }}" />
+                <button type="submit" class="btn-secondary">Remove</button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        {{ empty_state(
+             "Nothing saved here yet. Compare a few pathways and save the ones you want "
+             "to keep."
+        ) }}
+      {% endif %}
+    </section>
+
+    <p class="mt-8 text-center">
+      <a href="/explore" class="text-accent underline">Back to explore</a>
+    </p>
+  {% endif %}
+{% endblock %}

@@ -117,6 +117,18 @@
           {% if c.pathway_id in pathway_names %}
             {{ ask_bcion("pathway_overview", pathway_id=c.pathway_id) }}
             {{ pathway_detail_link(c.pathway_id, label=pathway_names[c.pathway_id]) }}
+            {# AUTH-6: a small, self-contained "Save this route" form --
+               additive only, alongside the still-empty save_action() stub
+               below (a separate, not-yet-built saved_items/UI-16
+               feature). Same resolved-pathway-only guard as the two
+               calls above: an unresolved id must never be posted into a
+               save. Lands on /my-plan, matching this task's own
+               acceptance line ("a guest saves from Compare and sees it
+               on /my-plan"). #}
+            <form method="post" action="/my-plan/save" class="mt-2">
+              <input type="hidden" name="pathway_id" value="{{ c.pathway_id }}" />
+              <button type="submit" class="btn-secondary">Save this route</button>
+            </form>
           {% endif %}
           {{ save_action("pathway", c.pathway_id, return_to="/compare/view") }}
 

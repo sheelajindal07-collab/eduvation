@@ -106,6 +106,7 @@ from app.web.cache_policy import CachePolicyMiddleware
 from app.web.consent_pages import router as consent_pages_router
 from app.web.errors import register_error_handlers
 from app.web.pages import router as pages_router
+from app.web.plan_pages import router as plan_pages_router
 from app.web.reviewer import router as reviewer_pages_router
 from app.web.support_pages import router as support_pages_router
 
@@ -318,6 +319,7 @@ EXPECTED_ROUTERS: tuple[str, ...] = (
     "support_pages",
     "account",
     "account_pages",
+    "plan_pages",
 )
 
 
@@ -362,6 +364,7 @@ def build_router_slots() -> list[RouterSlot]:
         RouterSlot("support_pages", support_pages_router),
         RouterSlot("account", account_router),
         RouterSlot("account_pages", account_pages_router),
+        RouterSlot("plan_pages", plan_pages_router),
     ]
 
 
