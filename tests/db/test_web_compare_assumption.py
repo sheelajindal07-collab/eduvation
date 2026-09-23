@@ -307,6 +307,20 @@ class TestAssumptionForm:
         # Jinja autoescapes the apostrophe in "isn't" as &#39; -- match the
         # actual rendered text, not the template source's literal string.
         assert "published for this pathway yet" in response.text
-        assert 'role="status"' in response.text
         # One note per field per pathway -- two pathways, three fields:
         assert response.text.count("published for this pathway yet") >= 6
+        # ux-qa-reviewer finding (UI-6 follow-up, 2026-09-23): these three
+        # notes used to render through the generic `empty_state()`
+        # info-box (`role="status"`, `.alert--neutral`), a different
+        # visual/semantic treatment from every OTHER missing field on the
+        # same pathway card (Entry requirements, Main stages, Time,
+        # Location, Potential assistance), which all render through
+        # `field_value()`'s dashed-border `trust_badge("not_available")`.
+        # Both readings were honest; this only normalises the visual
+        # treatment -- so the shape of the assertion changes (no more
+        # `role="status"` alert box) but the underlying honest-disclosure
+        # guarantee above (never silently dropped, always says "not yet
+        # published") still holds and is still tested.
+        assert "alert--neutral" not in response.text
+        assert "component-empty" in response.text
+        assert "trust-badge--not_available" in response.text

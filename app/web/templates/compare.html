@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_trust_badge.html" import field_value %}
+{% from "_trust_badge.html" import field_value, trust_badge %}
 {# UI-1 pre-wires the per-owner stub partials here so their call sites
    exist before their owners build them (see each partial's own header).
    Every one of them renders nothing today; none of this screen's own
@@ -8,7 +8,28 @@
 {% from "_save.html" import save_action %}
 {% from "_why.html" import why_am_i_seeing_this %}
 {% from "_components.html" import pathway_detail_link %}
-{% from "_states.html" import alert, empty_state %}
+{% from "_states.html" import alert %}
+
+{# ux-qa-reviewer finding (UI-6 follow-up, 2026-09-23): reproduces
+   `_components.html`'s own `_not_published(message)` body exactly (the
+   shared "this section has nothing published yet" treatment: the same
+   dashed-border `trust_badge("not_available")` badge every missing FIELD
+   on this card already gets via `field_value()`, plus an optional plain-
+   language note, so a missing section and a missing field read as one
+   vocabulary). Inlined here rather than imported because Jinja refuses
+   to import a name starting with an underscore across templates
+   ("names starting with an underline can not be imported") -- `trust_badge`
+   itself has no such restriction and is imported directly above, same as
+   `field_value` already was. If `_not_published` is ever renamed without
+   its leading underscore, this local copy should be deleted in favour of
+   importing it. #}
+{% macro _section_not_published(message) %}
+  <p class="component-empty">
+    {{ trust_badge("not_available") }}
+    <span class="component-empty__note">{{ message }}</span>
+  </p>
+{% endmacro %}
+
 {% block title %}Compare pathways &mdash; BCION Lite{% endblock %}
 {% block content %}
   <h1 class="text-2xl font-semibold text-charcoal mb-6">Compare</h1>
@@ -238,17 +259,31 @@
                beyond what Cost above already shows -- none of the three
                has a data source yet (this screen's own top-of-loop
                comment). Previously skipped outright; this card asks for
-               an explicit "no data yet" note instead, through the shared
-               `empty_state()` macro (role="status": nothing failed, this
-               content simply doesn't exist yet) rather than silently
-               dropping the row, so a short field list here never reads as
-               "these are all the fields there are" (docs/UI.md: a missing
-               section says "Not available", never dropped silently). #}
+               an explicit "no data yet" note instead, rather than
+               silently dropping the row, so a short field list here never
+               reads as "these are all the fields there are" (docs/UI.md:
+               a missing section says "Not available", never dropped
+               silently).
+
+               ux-qa-reviewer finding (UI-6 follow-up, 2026-09-23): these
+               three used the generic `empty_state()` info-box while every
+               OTHER missing field on this same card (Entry requirements,
+               Main stages, Time, Location, Potential assistance above)
+               renders through `field_value()`'s dashed-border
+               `trust_badge("not_available")` treatment -- a visual/
+               semantic inconsistency on one card, not a correctness bug
+               (both readings were honest). Normalised to this template's
+               own `_section_not_published()` (above, at the top of this
+               file), a local copy of `_components.html`'s
+               `_not_published()` -- the same "missing SECTION, not just
+               a missing field" wrapper `career_card()` already uses --
+               same dashed-border badge, plus the same plain-language
+               note this screen already had. #}
             <div>
               <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
                 Funding
               </h3>
-              {{ empty_state(
+              {{ _section_not_published(
                    "Funding information (confirmed and potential, beyond the cost figures "
                    "above) isn't published for this pathway yet."
               ) }}
@@ -265,14 +300,14 @@
               <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
                 Work realities
               </h3>
-              {{ empty_state("Work-reality information isn't published for this pathway yet.") }}
+              {{ _section_not_published("Work-reality information isn't published for this pathway yet.") }}
             </div>
 
             <div>
               <h3 class="text-sm font-semibold text-neutral uppercase tracking-wide mb-1">
                 Alternatives if plans change
               </h3>
-              {{ empty_state(
+              {{ _section_not_published(
                    "Alternative-pathway information isn't published for this pathway yet."
               ) }}
             </div>
